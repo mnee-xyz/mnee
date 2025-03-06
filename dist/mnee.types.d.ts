@@ -1,0 +1,79 @@
+export type MNEEFee = {
+    min: number;
+    max: number;
+    fee: number;
+};
+export type MNEEConfig = {
+    approver: string;
+    feeAddress: string;
+    burnAddress: string;
+    mintAddress: string;
+    fees: MNEEFee[];
+    decimals: number;
+    tokenId: string;
+};
+export type MNEEOperation = "transfer" | "burn" | "deploy+mint";
+export type MNEEUtxo = {
+    data: {
+        bsv21: {
+            amt: number;
+            dec: number;
+            icon: string;
+            id: string;
+            op: string;
+            sym: string;
+        };
+        cosign: {
+            address: string;
+            cosigner: string;
+        };
+    };
+    height: number;
+    idx: number;
+    outpoint: string;
+    owners: string[];
+    satoshis: number;
+    score: number;
+    script: string;
+    txid: string;
+    vout: number;
+};
+export type SignatureRequest = {
+    prevTxid: string;
+    outputIndex: number;
+    inputIndex: number;
+    satoshis: number;
+    address: string | string[];
+    script?: string;
+    sigHashType?: number;
+    csIdx?: number;
+    data?: unknown;
+};
+export type TransactionFormat = "tx" | "beef" | "ef";
+export type MNEEBalance = {
+    amount: number;
+    decimalAmount: number;
+};
+export type SendMNEE = {
+    address: string;
+    amount: number;
+};
+export type GetSignatures = {
+    rawtx: string;
+    sigRequests: SignatureRequest[];
+    format?: TransactionFormat;
+};
+export type SignatureResponse = {
+    inputIndex: number;
+    sig: string;
+    pubKey: string;
+    sigHashType: number;
+    csIdx?: number;
+};
+export type GorillaPoolErrorMessage = {
+    message: string;
+};
+export type GorillaPoolBroadcastResponse = {
+    txid?: string;
+    message?: string;
+};
