@@ -1,2 +1,3 @@
 .prettierrc
 mnee*.tgz
+node_modules/
