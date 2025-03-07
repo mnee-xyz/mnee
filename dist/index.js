@@ -4,6 +4,12 @@ export default class Mnee {
     constructor(apiToken) {
         this.service = new MNEEService(apiToken);
     }
+    toAtomicAmount(amount, decimals) {
+        return this.service.toAtomicAmount(amount, decimals);
+    }
+    async config() {
+        return this.service.getConfig();
+    }
     async balance(address) {
         return this.service.getBalance(address);
     }

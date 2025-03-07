@@ -1,6 +1,6 @@
 {
   "name": "mnee",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A simple package for interacting with the MNEE USD",
   "main": "dist/index.js",
   "type": "module",
