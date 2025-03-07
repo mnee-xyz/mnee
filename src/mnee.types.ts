@@ -14,7 +14,7 @@ export type MNEEConfig = {
   tokenId: string;
 };
 
-export type MNEEOperation = "transfer" | "burn" | "deploy+mint";
+export type MNEEOperation = 'transfer' | 'burn' | 'deploy+mint';
 
 export type MNEEUtxo = {
   data: {
@@ -54,7 +54,7 @@ export type SignatureRequest = {
   data?: unknown;
 };
 
-export type TransactionFormat = "tx" | "beef" | "ef";
+export type TransactionFormat = 'tx' | 'beef' | 'ef';
 
 export type MNEEBalance = {
   amount: number;
@@ -88,3 +88,30 @@ export type GorillaPoolBroadcastResponse = {
   txid?: string;
   message?: string;
 };
+
+export type MneeInscription = {
+  p: string;
+  op: string;
+  id: string;
+  amt: string;
+};
+
+export type ParsedCosigner = {
+  cosigner: string;
+  address: string;
+};
+
+export interface File {
+  hash: string;
+  size: number;
+  type: string;
+  content: number[];
+}
+
+export interface Inscription {
+  file?: File;
+  fields?: { [key: string]: any };
+  parent?: string;
+}
+
+export type TransferResponse = { txid?: string; rawtx?: string; error?: string };

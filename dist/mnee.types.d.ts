@@ -12,7 +12,7 @@ export type MNEEConfig = {
     decimals: number;
     tokenId: string;
 };
-export type MNEEOperation = "transfer" | "burn" | "deploy+mint";
+export type MNEEOperation = 'transfer' | 'burn' | 'deploy+mint';
 export type MNEEUtxo = {
     data: {
         bsv21: {
@@ -49,7 +49,7 @@ export type SignatureRequest = {
     csIdx?: number;
     data?: unknown;
 };
-export type TransactionFormat = "tx" | "beef" | "ef";
+export type TransactionFormat = 'tx' | 'beef' | 'ef';
 export type MNEEBalance = {
     amount: number;
     decimalAmount: number;
@@ -76,4 +76,32 @@ export type GorillaPoolErrorMessage = {
 export type GorillaPoolBroadcastResponse = {
     txid?: string;
     message?: string;
+};
+export type MneeInscription = {
+    p: string;
+    op: string;
+    id: string;
+    amt: string;
+};
+export type ParsedCosigner = {
+    cosigner: string;
+    address: string;
+};
+export interface File {
+    hash: string;
+    size: number;
+    type: string;
+    content: number[];
+}
+export interface Inscription {
+    file?: File;
+    fields?: {
+        [key: string]: any;
+    };
+    parent?: string;
+}
+export type TransferResponse = {
+    txid?: string;
+    rawtx?: string;
+    error?: string;
 };

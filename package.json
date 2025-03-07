@@ -1,19 +1,32 @@
 {
   "name": "mnee",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "A simple package for interacting with the MNEE USD",
+  "type": "module",
+  "source": "src/index.ts",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "type": "module",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.cjs"
+      },
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.modern.js"
+      },
+      "default": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.modern.js"
+      }
     }
   },
+  "module": "./dist/index.module.js",
+  "unpkg": "./dist/index.umd.js",
   "scripts": {
     "clean": "rm -rf dist",
-    "build": "npm run clean && tsc",
+    "build": "npm run clean && microbundle --globals @bsv/sdk=bsv && npm pack",
     "start": "node dist/index.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "prepublishOnly": "npm run build"
@@ -26,6 +39,7 @@
   "author": "Dan Wagner",
   "license": "MIT",
   "devDependencies": {
+    "microbundle": "^0.15.1",
     "typescript": "^5.4.5"
   },
   "dependencies": {
