@@ -8,7 +8,7 @@ export declare class MNEEService {
     private gorillaPoolApi;
     constructor(apiToken?: string);
     getConfig(): Promise<MNEEConfig | undefined>;
-    toAtomicAmount(amount: number, decimals: number): number;
+    toAtomicAmount(amount: number): number;
     private createInscription;
     private getUtxos;
     private broadcast;

@@ -50,8 +50,8 @@ export class MNEEService {
     }
   }
 
-  public toAtomicAmount(amount: number, decimals: number): number {
-    return Math.round(amount * 10 ** decimals);
+  public toAtomicAmount(amount: number): number {
+    return Math.round(amount * 10 ** this.MNEE_DECIMALS);
   }
 
   private async createInscription(recipient: string, amount: number, config: MNEEConfig) {
@@ -207,7 +207,7 @@ export class MNEEService {
 
       const totalAmount = request.reduce((sum, req) => sum + req.amount, 0);
       if (totalAmount <= 0) return { error: 'Invalid amount' };
-      const totalAtomicTokenAmount = this.toAtomicAmount(totalAmount, config.decimals);
+      const totalAtomicTokenAmount = this.toAtomicAmount(totalAmount);
 
       const privateKey = PrivateKey.fromWif(wif);
       const address = privateKey.toAddress();
@@ -250,9 +250,7 @@ export class MNEEService {
       }
 
       for (const req of request) {
-        tx.addOutput(
-          await this.createInscription(req.address, this.toAtomicAmount(req.amount, config.decimals), config),
-        );
+        tx.addOutput(await this.createInscription(req.address, this.toAtomicAmount(req.amount), config));
       }
       if (fee > 0) tx.addOutput(await this.createInscription(config.feeAddress, fee, config));
 

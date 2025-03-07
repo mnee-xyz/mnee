@@ -7,6 +7,9 @@ export interface MneeInterface {
     transfer(request: SendMNEE[], wif: string): Promise<TransferResponse>;
     toAtomicAmount(amount: number, decimals: number): number;
 }
+/**
+ * Represents the Mnee class that provides methods to interact with the MNEE service.
+ */
 export default class Mnee implements MneeInterface {
     private service;
     constructor(apiToken?: string);
@@ -19,13 +22,17 @@ export default class Mnee implements MneeInterface {
      */
     validateMneeTx(rawtx: string, request?: SendMNEE[]): Promise<boolean>;
     /**
-     * Converts a given amount to its atomic representation based on the specified number of decimals.
+     * Converts a given amount to its atomic representation based on the specified number.
      *
      * @param amount - The amount to be converted.
-     * @param decimals - The number of decimal places to consider for the atomic conversion.
      * @returns The atomic representation of the given amount.
+     *
+     * @example
+     * ```typescript
+     * toAtomicAmount(1.5); // 150000
+     * ```
      */
-    toAtomicAmount(amount: number, decimals: number): number;
+    toAtomicAmount(amount: number): number;
     /**
      * Retrieves the configuration for the MNEE service.
      *
