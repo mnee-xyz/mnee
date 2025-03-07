@@ -1,4 +1,5 @@
 import { MNEEBalance, MNEEConfig, SendMNEE } from "./mnee.types.js";
+export * from "./mnee.types.js";
 export interface MneeInterface {
     config(): Promise<MNEEConfig | undefined>;
     balance(address: string): Promise<MNEEBalance>;

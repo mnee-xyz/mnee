@@ -1,4 +1,5 @@
 import { MNEEService } from "./mneeService.js";
+export * from "./mnee.types.js";
 export default class Mnee {
     service;
     constructor(apiToken) {

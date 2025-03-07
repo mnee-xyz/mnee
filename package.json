@@ -1,9 +1,16 @@
 {
   "name": "mnee",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "A simple package for interacting with the MNEE USD",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
   "scripts": {
     "clean": "rm -rf dist",
     "build": "npm run clean && tsc",
@@ -23,7 +30,6 @@
   },
   "dependencies": {
     "@bsv/sdk": "^1.3.30",
-    "axios": "^1.8.1",
     "js-1sat-ord": "^0.1.80"
   }
 }
