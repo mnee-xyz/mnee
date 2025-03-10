@@ -17,25 +17,27 @@ import {
   MNEEConfig,
   MneeInscription,
   MNEEOperation,
+  MneeSync,
   MNEEUtxo,
   SendMNEE,
   SignatureRequest,
   SignatureResponse,
+  TxHistory,
+  TxHistoryResponse,
 } from './mnee.types.js';
 import CosignTemplate from './mneeCosignTemplate.js';
 import * as jsOneSat from 'js-1sat-ord';
-import { parseCosignerScripts, parseInscription } from './utils/helper.js';
+import { parseCosignerScripts, parseInscription, parseSyncToTxHistory } from './utils/helper.js';
 
 export class MNEEService {
-  private MNEE_TOKEN_ID = 'ae59f3b898ec61acbdb6cc7a245fabeded0c094bf046f35206a3aec60ef88127_0'; // prod mnee token
-  private MNEE_COSIGNER_PROD = '020a177d6a5e6f3a8689acd2e313bd1cf0dcf5a243d1cc67b7218602aee9e04b2f'; // prod cosigner
-  private MNEE_DECIMALS = 5;
   private mneeApiToken = '92982ec1c0975f31979da515d46bae9f';
   private mneeApi = 'https://proxy-api.mnee.net';
   private gorillaPoolApi = 'https://ordinals.1sat.app';
+  private mneeConfig: MNEEConfig | undefined;
 
   constructor(apiToken?: string) {
     if (apiToken) this.mneeApiToken = apiToken;
+    this.getConfig();
   }
 
   public async getConfig(): Promise<MNEEConfig | undefined> {
@@ -43,6 +45,7 @@ export class MNEEService {
       const response = await fetch(`${this.mneeApi}/v1/config?auth_token=${this.mneeApiToken}`, { method: 'GET' });
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const data: MNEEConfig = await response.json();
+      this.mneeConfig = data;
       return data;
     } catch (error) {
       console.error('Failed to fetch config:', error);
@@ -51,7 +54,8 @@ export class MNEEService {
   }
 
   public toAtomicAmount(amount: number): number {
-    return Math.round(amount * 10 ** this.MNEE_DECIMALS);
+    if (!this.mneeConfig) throw new Error('Config not fetched');
+    return Math.round(amount * 10 ** this.mneeConfig.decimals);
   }
 
   private async createInscription(recipient: string, amount: number, config: MNEEConfig) {
@@ -202,7 +206,7 @@ export class MNEEService {
 
   public async transfer(request: SendMNEE[], wif: string): Promise<{ txid?: string; rawtx?: string; error?: string }> {
     try {
-      const config = await this.getConfig();
+      const config = this.mneeConfig || (await this.getConfig());
       if (!config) throw new Error('Config not fetched');
 
       const totalAmount = request.reduce((sum, req) => sum + req.amount, 0);
@@ -316,7 +320,7 @@ export class MNEEService {
 
   public async getBalance(address: string): Promise<MNEEBalance> {
     try {
-      const config = await this.getConfig();
+      const config = this.mneeConfig || (await this.getConfig());
       if (!config) throw new Error('Config not fetched');
       const res = await this.getUtxos(address);
       const balance = res.reduce((acc, utxo) => {
@@ -336,20 +340,21 @@ export class MNEEService {
 
   public async validateMneeTx(rawTx: string, request?: SendMNEE[]) {
     try {
+      if (!this.mneeConfig) throw new Error('Config not fetched');
       const tx = Transaction.fromHex(rawTx);
       const scripts = tx.outputs.map((output) => output.lockingScript);
       const parsedScripts = parseCosignerScripts(scripts);
 
       if (!request) {
         parsedScripts.forEach((parsed) => {
-          if (parsed && parsed.cosigner !== this.MNEE_COSIGNER_PROD) {
+          if (parsed && parsed.cosigner !== this.mneeConfig!.approver) {
             throw new Error(`Invalid cosigner: ${parsed.cosigner}`);
           }
         });
       } else {
         request.forEach((req, idx) => {
           const { address, amount } = req;
-          const cosigner = parsedScripts.find((parsed) => parsed?.cosigner === this.MNEE_COSIGNER_PROD);
+          const cosigner = parsedScripts.find((parsed) => parsed?.cosigner === this.mneeConfig!.approver);
           if (!cosigner) {
             throw new Error(`Cosigner not found for address: ${address} at index: ${idx}`);
           }
@@ -367,8 +372,9 @@ export class MNEEService {
           const inscriptionJson: MneeInscription = JSON.parse(inscriptionData);
           if (inscriptionJson.p !== 'bsv-20') throw new Error(`Invalid bsv 20 protocol: ${inscriptionJson.p}`);
           if (inscriptionJson.op !== 'transfer') throw new Error(`Invalid operation: ${inscriptionJson.op}`);
-          if (inscriptionJson.id !== this.MNEE_TOKEN_ID) throw new Error(`Invalid token id: ${inscriptionJson.id}`);
-          if (inscriptionJson.amt !== Math.round(amount * 10 ** this.MNEE_DECIMALS).toString()) {
+          if (inscriptionJson.id !== this.mneeConfig!.tokenId)
+            throw new Error(`Invalid token id: ${inscriptionJson.id}`);
+          if (inscriptionJson.amt !== Math.round(amount * 10 ** this.mneeConfig!.decimals).toString()) {
             throw new Error(`Invalid amount: ${inscriptionJson.amt}`);
           }
         });
@@ -378,6 +384,58 @@ export class MNEEService {
     } catch (error) {
       console.error(error);
       return false;
+    }
+  }
+
+  private async getMneeSyncs(address: string, fromScore = 0, limit = 100): Promise<MneeSync[] | undefined> {
+    try {
+      const response = await fetch(
+        `${this.mneeApi}/v1/sync?auth_token=${this.mneeApiToken}&from=${fromScore}&limit=${limit}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify([address]),
+        },
+      );
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      const data: MneeSync[] = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Failed to fetch config:', error);
+      return undefined;
+    }
+  }
+
+  public async getRecentTxHistory(address: string, fromScore?: number, limit?: number): Promise<TxHistoryResponse> {
+    try {
+      const config = this.mneeConfig || (await this.getConfig());
+      if (!config) throw new Error('Config not fetched');
+
+      const syncs = await this.getMneeSyncs(address, fromScore, limit);
+      if (!syncs || syncs.length === 0) return { history: [], nextScore: fromScore || 0 };
+
+      const txHistory: TxHistory[] = [];
+      for (const sync of syncs) {
+        const historyItem = parseSyncToTxHistory(sync, address, config);
+        if (historyItem) {
+          txHistory.push(historyItem);
+        }
+      }
+
+      const sortedByHeight = txHistory.sort((a, b) => b.height - a.height);
+      const sortedUnconfirmedFirst = sortedByHeight.sort((a, b) => (a.status === 'unconfirmed' ? -1 : 1));
+
+      if (sortedUnconfirmedFirst.length === 0) return { history: [], nextScore: fromScore || 0 };
+      if (limit && sortedUnconfirmedFirst.length > limit) {
+        return { history: sortedUnconfirmedFirst.slice(0, limit), nextScore: sortedUnconfirmedFirst[limit - 1].score };
+      }
+
+      const nextScore = txHistory[txHistory.length - 1].score;
+
+      return { history: sortedUnconfirmedFirst, nextScore };
+    } catch (error) {
+      console.error('Failed to fetch tx history:', error);
+      return { history: [], nextScore: fromScore || 0 };
     }
   }
 }

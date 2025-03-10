@@ -105,3 +105,33 @@ export type TransferResponse = {
     rawtx?: string;
     error?: string;
 };
+export type MneeSync = {
+    txid: string;
+    outs: null;
+    height: number;
+    idx: number;
+    score: number;
+    rawtx: string;
+    senders: string[];
+    receivers: string[];
+};
+export type Counterparty = {
+    address: string;
+    amount: number;
+};
+export type TxStatus = 'confirmed' | 'unconfirmed';
+export type TxType = 'send' | 'receive';
+export type TxHistory = {
+    txid: string;
+    height: number;
+    status: TxStatus;
+    type: TxType;
+    amount: number;
+    counterparties: Counterparty[];
+    fee: number;
+    score: number;
+};
+export type TxHistoryResponse = {
+    history: TxHistory[];
+    nextScore: number;
+};

@@ -1,11 +1,9 @@
-import { MNEEBalance, MNEEConfig, SendMNEE } from './mnee.types.js';
+import { MNEEBalance, MNEEConfig, SendMNEE, TxHistoryResponse } from './mnee.types.js';
 export declare class MNEEService {
-    private MNEE_TOKEN_ID;
-    private MNEE_COSIGNER_PROD;
-    private MNEE_DECIMALS;
     private mneeApiToken;
     private mneeApi;
     private gorillaPoolApi;
+    private mneeConfig;
     constructor(apiToken?: string);
     getConfig(): Promise<MNEEConfig | undefined>;
     toAtomicAmount(amount: number): number;
@@ -21,4 +19,6 @@ export declare class MNEEService {
     }>;
     getBalance(address: string): Promise<MNEEBalance>;
     validateMneeTx(rawTx: string, request?: SendMNEE[]): Promise<boolean>;
+    private getMneeSyncs;
+    getRecentTxHistory(address: string, fromScore?: number, limit?: number): Promise<TxHistoryResponse>;
 }

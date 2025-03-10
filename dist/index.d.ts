@@ -1,4 +1,4 @@
-import { MNEEBalance, MNEEConfig, SendMNEE, TransferResponse } from './mnee.types.js';
+import { MNEEBalance, MNEEConfig, SendMNEE, TransferResponse, TxHistoryResponse } from './mnee.types.js';
 export * from './mnee.types.js';
 export interface MneeInterface {
     config(): Promise<MNEEConfig | undefined>;
@@ -6,6 +6,7 @@ export interface MneeInterface {
     validateMneeTx(rawtx: string, request?: SendMNEE[]): Promise<boolean>;
     transfer(request: SendMNEE[], wif: string): Promise<TransferResponse>;
     toAtomicAmount(amount: number, decimals: number): number;
+    recentTxHistory(address: string, fromScore?: number, limit?: number): Promise<TxHistoryResponse>;
 }
 /**
  * Represents the Mnee class that provides methods to interact with the MNEE service.
@@ -55,4 +56,14 @@ export default class Mnee implements MneeInterface {
      * @returns {Promise<TransferResponse>} A promise that resolves to a TransferResponse object containing the result of the transfer.
      */
     transfer(request: SendMNEE[], wif: string): Promise<TransferResponse>;
+    /**
+     * Retrieves the recent transaction history for a given address.
+     *
+     * @param address - The address to retrieve the transaction history for.
+     * @param fromScore - The starting score to retrieve the transaction history from.
+     * @param limit - The maximum number of transactions to retrieve.
+     * @returns A promise that resolves to a TxHistoryResponse object containing the transaction
+     * history and the next score to retrieve additional transactions.
+     */
+    recentTxHistory(address: string, fromScore?: number, limit?: number): Promise<TxHistoryResponse>;
 }
