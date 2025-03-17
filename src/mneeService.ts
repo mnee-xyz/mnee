@@ -19,6 +19,7 @@ import {
   MNEEOperation,
   MneeSync,
   MNEEUtxo,
+  ParseTxResponse,
   SendMNEE,
   SignatureRequest,
   SignatureResponse,
@@ -437,5 +438,53 @@ export class MNEEService {
       console.error('Failed to fetch tx history:', error);
       return { history: [], nextScore: fromScore || 0 };
     }
+  }
+
+  public async parseTx(txid: string): Promise<ParseTxResponse> {
+    const config = this.mneeConfig || (await this.getConfig());
+    const tx = await this.fetchBeef(txid);
+    if (!tx) throw new Error('Failed to fetch transaction');
+    const outScripts = tx.outputs.map((output) => output.lockingScript);
+    const sourceTxs = tx.inputs.map((input) => {
+      return { txid: input.sourceTXID, vout: input.sourceOutputIndex };
+    });
+    let inputs = [];
+    let outputs = [];
+    for (const tx of sourceTxs) {
+      if (!tx.txid) continue;
+      const fetchedTx = await this.fetchBeef(tx.txid);
+      const output = fetchedTx.outputs[tx.vout];
+      const parsedCosigner = parseCosignerScripts([output.lockingScript])[0];
+      if (parsedCosigner?.cosigner !== config?.approver) continue;
+      const insc = parseInscription(output.lockingScript);
+      const content = insc?.file?.content;
+      if (!content) continue;
+      const inscriptionData = Utils.toUTF8(content);
+      if (!inscriptionData) continue;
+      const inscriptionJson = JSON.parse(inscriptionData);
+      if (inscriptionJson) {
+        inputs.push({ address: parsedCosigner.address, amount: parseInt(inscriptionJson.amt) });
+      }
+    }
+
+    for (const script of outScripts) {
+      const parsedCosigner = parseCosignerScripts([script])[0];
+      if (parsedCosigner?.cosigner !== config?.approver) continue;
+      const insc = parseInscription(script);
+      const content = insc?.file?.content;
+      if (!content) continue;
+      const inscriptionData = Utils.toUTF8(content);
+      if (!inscriptionData) continue;
+      const inscriptionJson = JSON.parse(inscriptionData);
+      if (inscriptionJson) {
+        outputs.push({ address: parsedCosigner.address, amount: parseInt(inscriptionJson.amt) });
+      }
+    }
+
+    const totalInput = inputs.reduce((acc, input) => acc + input.amount, 0);
+    const totalOutput = outputs.reduce((acc, output) => acc + output.amount, 0);
+
+    if (totalInput !== totalOutput) throw new Error('Inputs and outputs are not equal');
+    return { txid, inputs, outputs };
   }
 }

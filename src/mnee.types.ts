@@ -150,3 +150,14 @@ export type TxHistoryResponse = {
   history: TxHistory[];
   nextScore: number;
 };
+
+export type TxAddressAmount = {
+  address: string;
+  amount: number;
+};
+
+export type ParseTxResponse = {
+  txid: string;
+  inputs: TxAddressAmount[];
+  outputs: TxAddressAmount[];
+};

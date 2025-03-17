@@ -1,4 +1,4 @@
-import { MNEEBalance, MNEEConfig, SendMNEE, TxHistoryResponse } from './mnee.types.js';
+import { MNEEBalance, MNEEConfig, ParseTxResponse, SendMNEE, TxHistoryResponse } from './mnee.types.js';
 export declare class MNEEService {
     private mneeApiToken;
     private mneeApi;
@@ -21,4 +21,5 @@ export declare class MNEEService {
     validateMneeTx(rawTx: string, request?: SendMNEE[]): Promise<boolean>;
     private getMneeSyncs;
     getRecentTxHistory(address: string, fromScore?: number, limit?: number): Promise<TxHistoryResponse>;
+    parseTx(txid: string): Promise<ParseTxResponse>;
 }
