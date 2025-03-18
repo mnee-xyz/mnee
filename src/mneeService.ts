@@ -341,7 +341,8 @@ export class MNEEService {
 
   public async validateMneeTx(rawTx: string, request?: SendMNEE[]) {
     try {
-      if (!this.mneeConfig) throw new Error('Config not fetched');
+      const config = this.mneeConfig || (await this.getConfig());
+      if (!config) throw new Error('Config not fetched');
       const tx = Transaction.fromHex(rawTx);
       const scripts = tx.outputs.map((output) => output.lockingScript);
       const parsedScripts = parseCosignerScripts(scripts);
