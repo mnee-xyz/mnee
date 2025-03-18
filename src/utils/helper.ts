@@ -67,8 +67,9 @@ export const parseInscription = (script: Script) => {
 export const parseCosignerScripts = (scripts: any): ParsedCosigner[] => {
   return scripts.map((script: any) => {
     const chunks = script.chunks;
-    for (let i = 0; i <= chunks.length - 6; i++) {
+    for (let i = 0; i <= chunks.length - 4; i++) {
       if (
+        chunks.length > i + 6 &&
         chunks[0 + i].op === OP.OP_DUP &&
         chunks[1 + i].op === OP.OP_HASH160 &&
         chunks[2 + i].data?.length === 20 &&
@@ -79,6 +80,18 @@ export const parseCosignerScripts = (scripts: any): ParsedCosigner[] => {
       ) {
         return {
           cosigner: Utils.toHex(chunks[5 + i].data || []),
+          address: Utils.toBase58Check(chunks[2 + i].data || [], [0]),
+        };
+      } else if (
+        // P2PKH
+        chunks[0 + i].op === OP.OP_DUP &&
+        chunks[1 + i].op === OP.OP_HASH160 &&
+        chunks[2 + i].data?.length === 20 &&
+        chunks[3 + i].op === OP.OP_EQUALVERIFY &&
+        chunks[4 + i].op === OP.OP_CHECKSIG
+      ) {
+        return {
+          cosigner: '',
           address: Utils.toBase58Check(chunks[2 + i].data || [], [0]),
         };
       }
@@ -96,13 +109,11 @@ export const parseSyncToTxHistory = (sync: MneeSync, address: string, config: MN
   const txHex = Utils.toHex(txArray);
   const tx = Transaction.fromHex(txHex);
 
-  // parse scripts
   const outScripts = tx.outputs.map((output) => output.lockingScript);
   const mneeScripts = parseCosignerScripts(outScripts);
   const parsedOutScripts = outScripts.map(parseInscription);
   const mneeAddresses = mneeScripts.map((script) => script.address);
 
-  // figure out fee address / sender
   const feeAddressIndex = mneeAddresses.indexOf(config.feeAddress);
   const sender = sync.senders[0]; // only one sender for now
 
@@ -124,19 +135,16 @@ export const parseSyncToTxHistory = (sync: MneeSync, address: string, config: MN
       return;
     }
 
-    // check token type
     if (inscriptionJson.p !== 'bsv-20' || inscriptionJson.id !== config.tokenId) return;
 
     const inscriptionAmt = parseInt(inscriptionJson.amt, 10);
     if (Number.isNaN(inscriptionAmt)) return;
 
-    // if it's the fee address and we're the sender
     if (feeAddressIndex === index && sender === address) {
       fee += inscriptionAmt;
       return;
     }
 
-    // accumulate amounts for each address
     const outAddr = mneeAddresses[index];
     const prevAmt = counterpartyAmounts.get(outAddr) || 0;
     counterpartyAmounts.set(outAddr, prevAmt + inscriptionAmt);
@@ -144,25 +152,20 @@ export const parseSyncToTxHistory = (sync: MneeSync, address: string, config: MN
 
   const amountSentToAddress = counterpartyAmounts.get(address) || 0;
 
-  // if we are the sender, reduce the user’s total by the amount that ended up back at the user address
   if (txType === 'send') {
     const senderAmt = counterpartyAmounts.get(sender) || 0;
     counterpartyAmounts.set(sender, senderAmt - amountSentToAddress);
   }
 
-  // build the counterparties array
   let counterparties: { address: string; amount: number }[] = [];
   if (txType === 'receive') {
-    // if we're receiving, the one "counterparty" is the sender with the amount we got
     counterparties = [{ address: sender, amount: amountSentToAddress }];
   } else {
-    // if we're sending, the counterparties are everyone we paid except ourselves & fee address
     counterparties = Array.from(counterpartyAmounts.entries())
       .map(([addr, amt]) => ({ address: addr, amount: amt }))
       .filter((cp) => cp.address !== address && cp.address !== config.feeAddress && cp.amount > 0);
   }
 
-  // sum the counterparties as "amount" for this TxHistory
   const totalCounterpartyAmount = counterparties.reduce((sum, cp) => sum + cp.amount, 0);
 
   return {

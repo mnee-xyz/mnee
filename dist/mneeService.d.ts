@@ -7,6 +7,7 @@ export declare class MNEEService {
     constructor(apiToken?: string);
     getConfig(): Promise<MNEEConfig | undefined>;
     toAtomicAmount(amount: number): number;
+    fromAtomicAmount(amount: number): number;
     private createInscription;
     private getUtxos;
     private broadcast;

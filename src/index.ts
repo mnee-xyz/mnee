@@ -14,7 +14,8 @@ export interface MneeInterface {
   balance(address: string): Promise<MNEEBalance>;
   validateMneeTx(rawtx: string, request?: SendMNEE[]): Promise<boolean>;
   transfer(request: SendMNEE[], wif: string): Promise<TransferResponse>;
-  toAtomicAmount(amount: number, decimals: number): number;
+  toAtomicAmount(amount: number): number;
+  fromAtomicAmount(amount: number): number;
   recentTxHistory(address: string, fromScore?: number, limit?: number): Promise<TxHistoryResponse>;
   parseTx(txid: string): Promise<ParseTxResponse>;
 }
@@ -53,6 +54,21 @@ export default class Mnee implements MneeInterface {
    */
   toAtomicAmount(amount: number): number {
     return this.service.toAtomicAmount(amount);
+  }
+
+  /**
+   * Converts a given atomic amount to its human-readable representation.
+   *
+   * @param amount - The atomic amount to be converted.
+   * @returns The human-readable representation of the given atomic amount.
+   *
+   * @example
+   * ```typescript
+   * fromAtomicAmount(150000); // 1.5
+   * ```
+   */
+  fromAtomicAmount(amount: number): number {
+    return this.service.fromAtomicAmount(amount);
   }
 
   /**

@@ -59,6 +59,11 @@ export class MNEEService {
     return Math.round(amount * 10 ** this.mneeConfig.decimals);
   }
 
+  public fromAtomicAmount(amount: number): number {
+    if (!this.mneeConfig) throw new Error('Config not fetched');
+    return amount / 10 ** this.mneeConfig.decimals;
+  }
+
   private async createInscription(recipient: string, amount: number, config: MNEEConfig) {
     const inscriptionData = {
       p: 'bsv-20',
@@ -331,7 +336,7 @@ export class MNEEService {
         return acc;
       }, 0);
 
-      const decimalAmount = parseFloat((balance / 10 ** (config.decimals || 0)).toFixed(config.decimals));
+      const decimalAmount = this.fromAtomicAmount(balance);
       return { amount: balance, decimalAmount };
     } catch (error) {
       console.error('Failed to fetch balance:', error);
@@ -349,14 +354,14 @@ export class MNEEService {
 
       if (!request) {
         parsedScripts.forEach((parsed) => {
-          if (parsed && parsed.cosigner !== this.mneeConfig!.approver) {
-            throw new Error(`Invalid cosigner: ${parsed.cosigner}`);
+          if (parsed?.cosigner !== '' && parsed?.cosigner !== config.approver) {
+            throw new Error('Invalid or missing cosigner');
           }
         });
       } else {
         request.forEach((req, idx) => {
           const { address, amount } = req;
-          const cosigner = parsedScripts.find((parsed) => parsed?.cosigner === this.mneeConfig!.approver);
+          const cosigner = parsedScripts.find((parsed) => parsed?.cosigner === config.approver);
           if (!cosigner) {
             throw new Error(`Cosigner not found for address: ${address} at index: ${idx}`);
           }
@@ -374,9 +379,8 @@ export class MNEEService {
           const inscriptionJson: MneeInscription = JSON.parse(inscriptionData);
           if (inscriptionJson.p !== 'bsv-20') throw new Error(`Invalid bsv 20 protocol: ${inscriptionJson.p}`);
           if (inscriptionJson.op !== 'transfer') throw new Error(`Invalid operation: ${inscriptionJson.op}`);
-          if (inscriptionJson.id !== this.mneeConfig!.tokenId)
-            throw new Error(`Invalid token id: ${inscriptionJson.id}`);
-          if (inscriptionJson.amt !== Math.round(amount * 10 ** this.mneeConfig!.decimals).toString()) {
+          if (inscriptionJson.id !== config.tokenId) throw new Error(`Invalid token id: ${inscriptionJson.id}`);
+          if (inscriptionJson.amt !== this.toAtomicAmount(amount).toString()) {
             throw new Error(`Invalid amount: ${inscriptionJson.amt}`);
           }
         });
@@ -443,6 +447,7 @@ export class MNEEService {
 
   public async parseTx(txid: string): Promise<ParseTxResponse> {
     const config = this.mneeConfig || (await this.getConfig());
+    if (!config) throw new Error('Config not fetched');
     const tx = await this.fetchBeef(txid);
     if (!tx) throw new Error('Failed to fetch transaction');
     const outScripts = tx.outputs.map((output) => output.lockingScript);
@@ -451,12 +456,14 @@ export class MNEEService {
     });
     let inputs = [];
     let outputs = [];
+    let inputTotal = 0n;
+    let outputTotal = 0n;
     for (const tx of sourceTxs) {
       if (!tx.txid) continue;
       const fetchedTx = await this.fetchBeef(tx.txid);
       const output = fetchedTx.outputs[tx.vout];
       const parsedCosigner = parseCosignerScripts([output.lockingScript])[0];
-      if (parsedCosigner?.cosigner !== config?.approver) continue;
+      if (parsedCosigner?.cosigner !== '' && parsedCosigner?.cosigner !== config.approver) continue;
       const insc = parseInscription(output.lockingScript);
       const content = insc?.file?.content;
       if (!content) continue;
@@ -464,13 +471,14 @@ export class MNEEService {
       if (!inscriptionData) continue;
       const inscriptionJson = JSON.parse(inscriptionData);
       if (inscriptionJson) {
+        inputTotal += BigInt(inscriptionJson.amt);
         inputs.push({ address: parsedCosigner.address, amount: parseInt(inscriptionJson.amt) });
       }
     }
 
     for (const script of outScripts) {
       const parsedCosigner = parseCosignerScripts([script])[0];
-      if (parsedCosigner?.cosigner !== config?.approver) continue;
+      if (parsedCosigner?.cosigner !== '' && parsedCosigner?.cosigner !== config.approver) continue;
       const insc = parseInscription(script);
       const content = insc?.file?.content;
       if (!content) continue;
@@ -478,14 +486,15 @@ export class MNEEService {
       if (!inscriptionData) continue;
       const inscriptionJson = JSON.parse(inscriptionData);
       if (inscriptionJson) {
+        outputTotal += BigInt(inscriptionJson.amt);
         outputs.push({ address: parsedCosigner.address, amount: parseInt(inscriptionJson.amt) });
       }
     }
 
-    const totalInput = inputs.reduce((acc, input) => acc + input.amount, 0);
-    const totalOutput = outputs.reduce((acc, output) => acc + output.amount, 0);
-
-    if (totalInput !== totalOutput) throw new Error('Inputs and outputs are not equal');
+    // If it's the origin mint the inputs and outputs won't be equal so we don't check
+    if (config.tokenId.split('_')[0] !== txid && inputTotal !== outputTotal) {
+      throw new Error('Inputs and outputs are not equal');
+    }
     return { txid, inputs, outputs };
   }
 }
