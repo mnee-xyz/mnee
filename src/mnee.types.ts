@@ -157,8 +157,11 @@ export type TxAddressAmount = {
   amount: number;
 };
 
+export type Environment = 'prod' | 'test';
+
 export type ParseTxResponse = {
   txid: string;
+  environment: Environment;
   type: TxOperation;
   inputs: TxAddressAmount[];
   outputs: TxAddressAmount[];

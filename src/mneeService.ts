@@ -12,6 +12,7 @@ import {
   Utils,
 } from '@bsv/sdk';
 import {
+  Environment,
   GetSignatures,
   MNEEBalance,
   MNEEConfig,
@@ -33,6 +34,8 @@ import { parseCosignerScripts, parseInscription, parseSyncToTxHistory } from './
 
 export class MNEEService {
   private mneeApiToken = '92982ec1c0975f31979da515d46bae9f';
+  private prodTokenId = 'ae59f3b898ec61acbdb6cc7a245fabeded0c094bf046f35206a3aec60ef88127_0';
+  private prodApprover = '020a177d6a5e6f3a8689acd2e313bd1cf0dcf5a243d1cc67b7218602aee9e04b2f';
   private mneeApi = 'https://proxy-api.mnee.net';
   private gorillaPoolApi = 'https://ordinals.1sat.app';
   private mneeConfig: MNEEConfig | undefined;
@@ -458,10 +461,12 @@ export class MNEEService {
     const sourceTxs = tx.inputs.map((input) => {
       return { txid: input.sourceTXID, vout: input.sourceOutputIndex };
     });
+
     let inputs = [];
     let outputs = [];
     let inputTotal = 0n;
     let outputTotal = 0n;
+    let environment: Environment = 'prod';
     let type: TxOperation = 'transfer';
     for (const tx of sourceTxs) {
       if (!tx.txid) continue;
@@ -471,7 +476,6 @@ export class MNEEService {
       if (parsedCosigner?.address === config.mintAddress) {
         type = txid === config.tokenId.split('_')[0] ? 'deploy' : 'mint';
       }
-      if (parsedCosigner?.cosigner !== '' && parsedCosigner?.cosigner !== config.approver) continue;
       const insc = parseInscription(output.lockingScript);
       const content = insc?.file?.content;
       if (!content) continue;
@@ -479,6 +483,9 @@ export class MNEEService {
       if (!inscriptionData) continue;
       const inscriptionJson: MneeInscription = JSON.parse(inscriptionData);
       if (inscriptionJson) {
+        if (inscriptionJson.id !== this.prodTokenId || parsedCosigner.cosigner !== this.prodApprover) {
+          environment = 'test';
+        }
         inputTotal += BigInt(inscriptionJson.amt);
         inputs.push({
           address: parsedCosigner.address,
@@ -489,7 +496,6 @@ export class MNEEService {
 
     for (const script of outScripts) {
       const parsedCosigner = parseCosignerScripts([script])[0];
-      if (parsedCosigner?.cosigner !== '' && parsedCosigner?.cosigner !== config.approver) continue;
       const insc = parseInscription(script);
       const content = insc?.file?.content;
       if (!content) continue;
@@ -499,6 +505,9 @@ export class MNEEService {
       if (inscriptionJson) {
         if (inscriptionJson.op === 'burn') {
           type = 'burn';
+        }
+        if (inscriptionJson.id !== this.prodTokenId || parsedCosigner.cosigner !== this.prodApprover) {
+          environment = 'test';
         }
         outputTotal += BigInt(inscriptionJson.amt);
         outputs.push({
@@ -512,6 +521,6 @@ export class MNEEService {
     if (config.tokenId.split('_')[0] !== txid && inputTotal !== outputTotal) {
       throw new Error('Inputs and outputs are not equal');
     }
-    return { txid, type, inputs, outputs };
+    return { txid, environment, type, inputs, outputs };
   }
 }

@@ -1,6 +1,8 @@
 import { MNEEBalance, MNEEConfig, ParseTxResponse, SendMNEE, TxHistoryResponse } from './mnee.types.js';
 export declare class MNEEService {
     private mneeApiToken;
+    private prodTokenId;
+    private prodApprover;
     private mneeApi;
     private gorillaPoolApi;
     private mneeConfig;
