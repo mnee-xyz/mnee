@@ -1,6 +1,6 @@
 {
   "name": "mnee",
-  "version": "1.3.2",
+  "version": "1.3.3",
   "description": "A simple package for interacting with the MNEE USD",
   "type": "module",
   "source": "src/index.ts",

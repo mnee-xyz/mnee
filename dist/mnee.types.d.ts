@@ -13,6 +13,7 @@ export type MNEEConfig = {
     tokenId: string;
 };
 export type MNEEOperation = 'transfer' | 'burn' | 'deploy+mint';
+export type TxOperation = 'transfer' | 'burn' | 'deploy' | 'mint';
 export type MNEEUtxo = {
     data: {
         bsv21: {
@@ -141,6 +142,7 @@ export type TxAddressAmount = {
 };
 export type ParseTxResponse = {
     txid: string;
+    type: TxOperation;
     inputs: TxAddressAmount[];
     outputs: TxAddressAmount[];
 };

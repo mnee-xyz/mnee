@@ -25,6 +25,7 @@ import {
   SignatureResponse,
   TxHistory,
   TxHistoryResponse,
+  TxOperation,
 } from './mnee.types.js';
 import CosignTemplate from './mneeCosignTemplate.js';
 import * as jsOneSat from 'js-1sat-ord';
@@ -433,7 +434,10 @@ export class MNEEService {
 
       if (sortedUnconfirmedFirst.length === 0) return { history: [], nextScore: fromScore || 0 };
       if (limit && sortedUnconfirmedFirst.length > limit) {
-        return { history: sortedUnconfirmedFirst.slice(0, limit), nextScore: sortedUnconfirmedFirst[limit - 1].score };
+        return {
+          history: sortedUnconfirmedFirst.slice(0, limit),
+          nextScore: sortedUnconfirmedFirst[limit - 1].score,
+        };
       }
 
       const nextScore = txHistory[txHistory.length - 1].score;
@@ -458,21 +462,28 @@ export class MNEEService {
     let outputs = [];
     let inputTotal = 0n;
     let outputTotal = 0n;
+    let type: TxOperation = 'transfer';
     for (const tx of sourceTxs) {
       if (!tx.txid) continue;
       const fetchedTx = await this.fetchBeef(tx.txid);
       const output = fetchedTx.outputs[tx.vout];
       const parsedCosigner = parseCosignerScripts([output.lockingScript])[0];
+      if (parsedCosigner?.address === config.mintAddress) {
+        type = txid === config.tokenId.split('_')[0] ? 'deploy' : 'mint';
+      }
       if (parsedCosigner?.cosigner !== '' && parsedCosigner?.cosigner !== config.approver) continue;
       const insc = parseInscription(output.lockingScript);
       const content = insc?.file?.content;
       if (!content) continue;
       const inscriptionData = Utils.toUTF8(content);
       if (!inscriptionData) continue;
-      const inscriptionJson = JSON.parse(inscriptionData);
+      const inscriptionJson: MneeInscription = JSON.parse(inscriptionData);
       if (inscriptionJson) {
         inputTotal += BigInt(inscriptionJson.amt);
-        inputs.push({ address: parsedCosigner.address, amount: parseInt(inscriptionJson.amt) });
+        inputs.push({
+          address: parsedCosigner.address,
+          amount: parseInt(inscriptionJson.amt),
+        });
       }
     }
 
@@ -486,8 +497,14 @@ export class MNEEService {
       if (!inscriptionData) continue;
       const inscriptionJson = JSON.parse(inscriptionData);
       if (inscriptionJson) {
+        if (inscriptionJson.op === 'burn') {
+          type = 'burn';
+        }
         outputTotal += BigInt(inscriptionJson.amt);
-        outputs.push({ address: parsedCosigner.address, amount: parseInt(inscriptionJson.amt) });
+        outputs.push({
+          address: parsedCosigner.address,
+          amount: parseInt(inscriptionJson.amt),
+        });
       }
     }
 
@@ -495,6 +512,6 @@ export class MNEEService {
     if (config.tokenId.split('_')[0] !== txid && inputTotal !== outputTotal) {
       throw new Error('Inputs and outputs are not equal');
     }
-    return { txid, inputs, outputs };
+    return { txid, type, inputs, outputs };
   }
 }

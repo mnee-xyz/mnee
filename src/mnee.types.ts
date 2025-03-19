@@ -15,6 +15,7 @@ export type MNEEConfig = {
 };
 
 export type MNEEOperation = 'transfer' | 'burn' | 'deploy+mint';
+export type TxOperation = 'transfer' | 'burn' | 'deploy' | 'mint';
 
 export type MNEEUtxo = {
   data: {
@@ -158,6 +159,7 @@ export type TxAddressAmount = {
 
 export type ParseTxResponse = {
   txid: string;
+  type: TxOperation;
   inputs: TxAddressAmount[];
   outputs: TxAddressAmount[];
 };
