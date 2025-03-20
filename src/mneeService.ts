@@ -517,9 +517,14 @@ export class MNEEService {
       }
     }
 
+    const isOrigin = config.tokenId.split('_')[0] === txid;
     // If it's the origin mint the inputs and outputs won't be equal so we don't check
-    if (config.tokenId.split('_')[0] !== txid && inputTotal !== outputTotal) {
+    if (!isOrigin && inputTotal !== outputTotal) {
       throw new Error('Inputs and outputs are not equal');
+    }
+
+    if (txid === this.prodTokenId.split('_')[0]) {
+      environment = 'prod';
     }
     return { txid, environment, type, inputs, outputs };
   }
