@@ -36,6 +36,13 @@ export class MNEEService {
   private mneeApiToken = '92982ec1c0975f31979da515d46bae9f';
   private prodTokenId = 'ae59f3b898ec61acbdb6cc7a245fabeded0c094bf046f35206a3aec60ef88127_0';
   private prodApprover = '020a177d6a5e6f3a8689acd2e313bd1cf0dcf5a243d1cc67b7218602aee9e04b2f';
+  private prodAddress = '1inHbiwj2jrEcZPiSYnfgJ8FmS1Bmk4Dh';
+  private devTokenId = '833a7720966a2a435db28d967385e8aa7284b6150ebb39482cc5228b73e1703f_0';
+  private devAddress = '1A1QNEkLuvAALsmG4Me3iubP8zb5C6jpv5';
+  private qaTokenId = '55cde0733049a226fdb6abc387ee9dcd036e859f7cbc69ab90050c0435139f00_0';
+  private qaAddress = '1BW7cejD27vDLiHsbK1Hvf1y4JTKvC1Yue';
+  private stageTokenId = '833a7720966a2a435db28d967385e8aa7284b6150ebb39482cc5228b73e1703f_0';
+  private stageAddress = '1AZNdbFYBDFTAEgzZMfPzANxyNrpGJZAUY';
   private mneeApi = 'https://proxy-api.mnee.net';
   private gorillaPoolApi = 'https://ordinals.1sat.app';
   private mneeConfig: MNEEConfig | undefined;
@@ -483,9 +490,28 @@ export class MNEEService {
       if (!inscriptionData) continue;
       const inscriptionJson: MneeInscription = JSON.parse(inscriptionData);
       if (inscriptionJson) {
-        if (inscriptionJson.id !== this.prodTokenId || parsedCosigner.cosigner !== this.prodApprover) {
-          environment = 'test';
+        const isProdToken = inscriptionJson.id === this.prodTokenId;
+        const isProdApprover = parsedCosigner.cosigner === this.prodApprover;
+        const isEmptyCosigner = parsedCosigner.cosigner === '';
+        const isMint = inscriptionJson.op === 'deploy+mint';
+        const isProdAddress = parsedCosigner.address === this.prodAddress;
+        const isDevAddress = parsedCosigner.address === this.devAddress;
+        const isQaAddress = parsedCosigner.address === this.qaAddress;
+        const isStageAddress = parsedCosigner.address === this.stageAddress;
+
+        if (!isProdToken || !isProdApprover) {
+          if (isEmptyCosigner && isMint && isProdAddress) {
+            environment = 'prod';
+            type = 'mint';
+          } else {
+            environment = 'test';
+          }
         }
+
+        if (type === 'transfer' && (isProdAddress || isDevAddress || isQaAddress || isStageAddress)) {
+          type = 'mint';
+        }
+
         inputTotal += BigInt(inscriptionJson.amt);
         inputs.push({
           address: parsedCosigner.address,
@@ -506,8 +532,22 @@ export class MNEEService {
         if (inscriptionJson.op === 'burn') {
           type = 'burn';
         }
-        if (inscriptionJson.id !== this.prodTokenId || parsedCosigner.cosigner !== this.prodApprover) {
-          environment = 'test';
+        const isProdToken = inscriptionJson.id === this.prodTokenId;
+        const isProdApprover = parsedCosigner.cosigner === this.prodApprover;
+        const isEmptyCosigner = parsedCosigner.cosigner === '';
+        const isProdAddress = parsedCosigner.address === this.prodAddress;
+        const isDeploy = inscriptionJson.op === 'deploy+mint';
+
+        if (isDeploy) {
+          type = 'deploy';
+        }
+
+        if (!isProdToken || !isProdApprover) {
+          if (isEmptyCosigner && isProdAddress) {
+            environment = 'prod';
+          } else {
+            environment = 'test';
+          }
         }
         outputTotal += BigInt(inscriptionJson.amt);
         outputs.push({
@@ -517,15 +557,16 @@ export class MNEEService {
       }
     }
 
-    const isOrigin = config.tokenId.split('_')[0] === txid;
-    // If it's the origin mint the inputs and outputs won't be equal so we don't check
-    if (!isOrigin && inputTotal !== outputTotal) {
+    if (type !== 'deploy' && inputTotal !== outputTotal) {
       throw new Error('Inputs and outputs are not equal');
     }
 
     if (txid === this.prodTokenId.split('_')[0]) {
       environment = 'prod';
+    } else if ([this.devTokenId, this.qaTokenId, this.stageTokenId].some(id => txid === id.split('_')[0])) {
+      environment = 'test';
     }
+
     return { txid, environment, type, inputs, outputs };
   }
 }

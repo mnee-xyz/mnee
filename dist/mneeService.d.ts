@@ -3,6 +3,13 @@ export declare class MNEEService {
     private mneeApiToken;
     private prodTokenId;
     private prodApprover;
+    private prodAddress;
+    private devTokenId;
+    private devAddress;
+    private qaTokenId;
+    private qaAddress;
+    private stageTokenId;
+    private stageAddress;
     private mneeApi;
     private gorillaPoolApi;
     private mneeConfig;
