@@ -1,4 +1,4 @@
-import { MNEEBalance, MNEEConfig, ParseTxResponse, SendMNEE, TransferResponse, TxHistoryResponse } from './mnee.types.js';
+import { MNEEBalance, MNEEConfig, SdkConfig, ParseTxResponse, SendMNEE, TransferResponse, TxHistoryResponse } from './mnee.types.js';
 export * from './mnee.types.js';
 export interface MneeInterface {
     config(): Promise<MNEEConfig | undefined>;
@@ -9,13 +9,14 @@ export interface MneeInterface {
     fromAtomicAmount(amount: number): number;
     recentTxHistory(address: string, fromScore?: number, limit?: number): Promise<TxHistoryResponse>;
     parseTx(txid: string): Promise<ParseTxResponse>;
+    parseTxFromRawTx(rawTxHex: string): Promise<ParseTxResponse>;
 }
 /**
  * Represents the Mnee class that provides methods to interact with the MNEE service.
  */
 export default class Mnee implements MneeInterface {
     private service;
-    constructor(apiToken?: string);
+    constructor(config: SdkConfig);
     /**
      * Validates an MNEE transaction.
      *
@@ -87,4 +88,11 @@ export default class Mnee implements MneeInterface {
      * @returns A promise that resolves to a `ParseTxResponse` containing the parsed transaction details.
      */
     parseTx(txid: string): Promise<ParseTxResponse>;
+    /**
+     * Parses a transaction from a raw transaction hex string.
+     *
+     * @param rawTxHex - The raw transaction hex string to be parsed.
+     * @returns A promise that resolves to a `ParseTxResponse` containing the parsed transaction details.
+     */
+    parseTxFromRawTx(rawTxHex: string): Promise<ParseTxResponse>;
 }

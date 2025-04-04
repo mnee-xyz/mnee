@@ -1,3 +1,8 @@
+export type Environment = 'production' | 'sandbox';
+export type SdkConfig = {
+    environment: Environment;
+    apiKey?: string;
+};
 export type MNEEFee = {
     min: number;
     max: number;
@@ -140,7 +145,6 @@ export type TxAddressAmount = {
     address: string;
     amount: number;
 };
-export type Environment = 'prod' | 'test';
 export type ParseTxResponse = {
     txid: string;
     environment: Environment;
