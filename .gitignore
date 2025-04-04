@@ -1,4 +1,4 @@
 .prettierrc
 mnee*.tgz
 node_modules/
-dist/
+dist
