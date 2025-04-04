@@ -475,10 +475,10 @@ export class MNEEService {
     let outputTotal = 0n;
     let environment: Environment = 'production';
     let type: TxOperation = 'transfer';
-    for (const tx of sourceTxs) {
-      if (!tx.txid) continue;
-      const fetchedTx = await this.fetchBeef(tx.txid);
-      const output = fetchedTx.outputs[tx.vout];
+    for (const sourceTx of sourceTxs) {
+      if (!sourceTx.txid) continue;
+      const fetchedTx = await this.fetchBeef(sourceTx.txid);
+      const output = fetchedTx.outputs[sourceTx.vout];
       const parsedCosigner = parseCosignerScripts([output.lockingScript])[0];
       if (parsedCosigner?.address === config.mintAddress) {
         type = txid === config.tokenId.split('_')[0] ? 'deploy' : 'mint';
