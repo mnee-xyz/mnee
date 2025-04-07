@@ -442,20 +442,19 @@ export class MNEEService {
         }
       }
 
-      const sortedByHeight = txHistory.sort((a, b) => b.height - a.height);
-      const sortedUnconfirmedFirst = sortedByHeight.sort((a, b) => (a.status === 'unconfirmed' ? -1 : 1));
+      const nextScore = txHistory[txHistory.length - 1].score;
 
-      if (sortedUnconfirmedFirst.length === 0) return { history: [], nextScore: fromScore || 0 };
-      if (limit && sortedUnconfirmedFirst.length > limit) {
+      if (limit && txHistory.length > limit) {
         return {
-          history: sortedUnconfirmedFirst.slice(0, limit),
-          nextScore: sortedUnconfirmedFirst[limit - 1].score,
+          history: txHistory.slice(0, limit),
+          nextScore,
         };
       }
 
-      const nextScore = txHistory[txHistory.length - 1].score;
-
-      return { history: sortedUnconfirmedFirst, nextScore };
+      return {
+        history: txHistory,
+        nextScore,
+      };
     } catch (error) {
       console.error('Failed to fetch tx history:', error);
       return { history: [], nextScore: fromScore || 0 };
