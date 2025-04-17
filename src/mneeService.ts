@@ -32,26 +32,39 @@ import {
 import CosignTemplate from './mneeCosignTemplate.js';
 import * as jsOneSat from 'js-1sat-ord';
 import { parseCosignerScripts, parseInscription, parseSyncToTxHistory } from './utils/helper.js';
-
+import {
+  MNEE_PROXY_API_URL,
+  SANDBOX_MNEE_API_URL,
+  GORILLA_POOL_API_URL,
+  PROD_TOKEN_ID,
+  PROD_ADDRESS,
+  DEV_ADDRESS,
+  QA_ADDRESS,
+  STAGE_ADDRESS,
+  PROD_APPROVER,
+  QA_TOKEN_ID,
+  DEV_TOKEN_ID,
+  STAGE_TOKEN_ID,
+} from './constants.js';
 export class MNEEService {
-  private readonly prodTokenId = 'ae59f3b898ec61acbdb6cc7a245fabeded0c094bf046f35206a3aec60ef88127_0';
-  private readonly prodApprover = '020a177d6a5e6f3a8689acd2e313bd1cf0dcf5a243d1cc67b7218602aee9e04b2f';
-  private readonly prodAddress = '1inHbiwj2jrEcZPiSYnfgJ8FmS1Bmk4Dh';
-  private readonly devTokenId = '833a7720966a2a435db28d967385e8aa7284b6150ebb39482cc5228b73e1703f_0';
-  private readonly devAddress = '1A1QNEkLuvAALsmG4Me3iubP8zb5C6jpv5';
-  private readonly qaTokenId = '55cde0733049a226fdb6abc387ee9dcd036e859f7cbc69ab90050c0435139f00_0';
-  private readonly qaAddress = '1BW7cejD27vDLiHsbK1Hvf1y4JTKvC1Yue';
-  private readonly stageTokenId = '833a7720966a2a435db28d967385e8aa7284b6150ebb39482cc5228b73e1703f_0';
-  private readonly stageAddress = '1AZNdbFYBDFTAEgzZMfPzANxyNrpGJZAUY';
-  private readonly productionMneeApi = 'https://proxy-api.mnee.net';
-  private readonly sandboxMneeApi = 'https://stg-api-cosigner.mnee.net';
-  private readonly gorillaPoolApi = 'https://ordinals.1sat.app';
+  // private readonly prodTokenId = 'ae59f3b898ec61acbdb6cc7a245fabeded0c094bf046f35206a3aec60ef88127_0';
+  // private readonly prodApprover = '020a177d6a5e6f3a8689acd2e313bd1cf0dcf5a243d1cc67b7218602aee9e04b2f';
+  // private readonly prodAddress = '1inHbiwj2jrEcZPiSYnfgJ8FmS1Bmk4Dh';
+  // private readonly devTokenId = '833a7720966a2a435db28d967385e8aa7284b6150ebb39482cc5228b73e1703f_0';
+  // private readonly devAddress = '1A1QNEkLuvAALsmG4Me3iubP8zb5C6jpv5';
+  // private readonly qaTokenId = '55cde0733049a226fdb6abc387ee9dcd036e859f7cbc69ab90050c0435139f00_0';
+  // private readonly qaAddress = '1BW7cejD27vDLiHsbK1Hvf1y4JTKvC1Yue';
+  // private readonly stageTokenId = '833a7720966a2a435db28d967385e8aa7284b6150ebb39482cc5228b73e1703f_0';
+  // private readonly stageAddress = '1AZNdbFYBDFTAEgzZMfPzANxyNrpGJZAUY';
+  // private readonly productionMneeApi = 'https://proxy-api.mnee.net';
+  // private readonly sandboxMneeApi = 'https://stg-api-cosigner.mnee.net';
+  // private readonly gorillaPoolApi = 'https://ordinals.1sat.app';
   private mneeApiKey = '92982ec1c0975f31979da515d46bae9f';
   private mneeConfig: MNEEConfig | undefined;
   private mneeApi: string;
   constructor(config: SdkConfig) {
     if (config?.apiKey) this.mneeApiKey = config.apiKey;
-    this.mneeApi = config.environment === 'production' ? this.productionMneeApi : this.sandboxMneeApi;
+    this.mneeApi = config.environment === 'production' ? MNEE_PROXY_API_URL : SANDBOX_MNEE_API_URL;
     this.getCosignerConfig();
   }
 
@@ -119,7 +132,7 @@ export class MNEEService {
   }
 
   private async broadcast(tx: Transaction): Promise<BroadcastResponse | BroadcastFailure> {
-    const url = `${this.gorillaPoolApi}/v5/tx`;
+    const url = `${GORILLA_POOL_API_URL}/v5/tx`;
     try {
       const response = await fetch(url, {
         method: 'POST',
@@ -150,7 +163,7 @@ export class MNEEService {
   }
 
   private async fetchBeef(txid: string): Promise<Transaction> {
-    const resp = await fetch(`${this.gorillaPoolApi}/v5/tx/${txid}/beef`);
+    const resp = await fetch(`${GORILLA_POOL_API_URL}/v5/tx/${txid}/beef`);
     if (resp.status === 404) throw new Error('Transaction not found');
     if (resp.status !== 200) {
       throw new Error(`${resp.status} - Failed to fetch beef for tx ${txid}`);
@@ -489,14 +502,14 @@ export class MNEEService {
       if (!inscriptionData) continue;
       const inscriptionJson: MneeInscription = JSON.parse(inscriptionData);
       if (inscriptionJson) {
-        const isProdToken = inscriptionJson.id === this.prodTokenId;
-        const isProdApprover = parsedCosigner.cosigner === this.prodApprover;
+        const isProdToken = inscriptionJson.id === PROD_TOKEN_ID;
+        const isProdApprover = parsedCosigner.cosigner === PROD_APPROVER;
         const isEmptyCosigner = parsedCosigner.cosigner === '';
         const isMint = inscriptionJson.op === 'deploy+mint';
-        const isProdAddress = parsedCosigner.address === this.prodAddress;
-        const isDevAddress = parsedCosigner.address === this.devAddress;
-        const isQaAddress = parsedCosigner.address === this.qaAddress;
-        const isStageAddress = parsedCosigner.address === this.stageAddress;
+        const isProdAddress = parsedCosigner.address === PROD_ADDRESS;
+        const isDevAddress = parsedCosigner.address === DEV_ADDRESS;
+        const isQaAddress = parsedCosigner.address === QA_ADDRESS;
+        const isStageAddress = parsedCosigner.address === STAGE_ADDRESS;
 
         if (!isProdToken || !isProdApprover) {
           if (isEmptyCosigner && isMint && isProdAddress) {
@@ -531,10 +544,10 @@ export class MNEEService {
         if (inscriptionJson.op === 'burn') {
           type = 'burn';
         }
-        const isProdToken = inscriptionJson.id === this.prodTokenId;
-        const isProdApprover = parsedCosigner.cosigner === this.prodApprover;
+        const isProdToken = inscriptionJson.id === PROD_TOKEN_ID;
+        const isProdApprover = parsedCosigner.cosigner === PROD_APPROVER;
         const isEmptyCosigner = parsedCosigner.cosigner === '';
-        const isProdAddress = parsedCosigner.address === this.prodAddress;
+        const isProdAddress = parsedCosigner.address === PROD_ADDRESS;
         const isDeploy = inscriptionJson.op === 'deploy+mint';
 
         if (isDeploy) {
@@ -560,9 +573,9 @@ export class MNEEService {
       throw new Error('Inputs and outputs are not equal');
     }
 
-    if (txid === this.prodTokenId.split('_')[0]) {
+    if (txid === PROD_TOKEN_ID.split('_')[0]) {
       environment = 'production';
-    } else if ([this.devTokenId, this.qaTokenId, this.stageTokenId].some((id) => txid === id.split('_')[0])) {
+    } else if ([DEV_TOKEN_ID, QA_TOKEN_ID, STAGE_TOKEN_ID].some((id) => txid === id.split('_')[0])) {
       environment = 'sandbox';
     }
 
