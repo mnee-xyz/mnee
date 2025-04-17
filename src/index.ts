@@ -2,6 +2,7 @@ import { MNEEService } from './mneeService.js';
 import {
   MNEEBalance,
   MNEEConfig,
+  SdkConfig,
   ParseTxResponse,
   SendMNEE,
   TransferResponse,
@@ -18,6 +19,7 @@ export interface MneeInterface {
   fromAtomicAmount(amount: number): number;
   recentTxHistory(address: string, fromScore?: number, limit?: number): Promise<TxHistoryResponse>;
   parseTx(txid: string): Promise<ParseTxResponse>;
+  parseTxFromRawTx(rawTxHex: string): Promise<ParseTxResponse>;
 }
 
 /**
@@ -26,8 +28,8 @@ export interface MneeInterface {
 export default class Mnee implements MneeInterface {
   private service: MNEEService;
 
-  constructor(apiToken?: string) {
-    this.service = new MNEEService(apiToken);
+  constructor(config: SdkConfig) {
+    this.service = new MNEEService(config);
   }
 
   /**
@@ -78,7 +80,7 @@ export default class Mnee implements MneeInterface {
    * or undefined if the configuration could not be retrieved.
    */
   async config(): Promise<MNEEConfig | undefined> {
-    return this.service.getConfig();
+    return this.service.getCosignerConfig();
   }
 
   /**
@@ -123,5 +125,15 @@ export default class Mnee implements MneeInterface {
    */
   async parseTx(txid: string): Promise<ParseTxResponse> {
     return this.service.parseTx(txid);
+  }
+
+  /**
+   * Parses a transaction from a raw transaction hex string.
+   *
+   * @param rawTxHex - The raw transaction hex string to be parsed.
+   * @returns A promise that resolves to a `ParseTxResponse` containing the parsed transaction details.
+   */
+  async parseTxFromRawTx(rawTxHex: string): Promise<ParseTxResponse> {
+    return this.service.parseTxFromRawTx(rawTxHex);
   }
 }
