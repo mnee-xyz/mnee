@@ -155,14 +155,14 @@ export class MNEEService {
     }
   }
 
-  private async fetchBeef(txid: string): Promise<Transaction> {
-    const resp = await fetch(`${GORILLA_POOL_API_URL}/v5/tx/${txid}/beef`);
+  private async fetchRawTx(txid: string): Promise<Transaction> {
+    const resp = await fetch(`${GORILLA_POOL_API_URL}/v5/tx/${txid}/raw`);
     if (resp.status === 404) throw new Error('Transaction not found');
     if (resp.status !== 200) {
-      throw new Error(`${resp.status} - Failed to fetch beef for tx ${txid}`);
+      throw new Error(`${resp.status} - Failed to fetch rawtx for txid: ${txid}`);
     }
-    const beef = [...Buffer.from(await resp.arrayBuffer())];
-    return Transaction.fromAtomicBEEF(beef);
+    const rawTx = [...Buffer.from(await resp.arrayBuffer())];
+    return Transaction.fromBinary(rawTx);
   }
 
   private async getSignatures(
@@ -265,7 +265,7 @@ export class MNEEService {
         const utxo = utxos.shift();
         if (!utxo) return { error: 'Insufficient MNEE balance' };
 
-        const sourceTransaction = await this.fetchBeef(utxo.txid);
+        const sourceTransaction = await this.fetchRawTx(utxo.txid);
         if (!sourceTransaction) return { error: 'Failed to fetch source transaction' };
 
         signingAddresses.push(utxo.owners[0]);
@@ -593,7 +593,7 @@ export class MNEEService {
     let type: TxOperation = 'transfer';
     for (const sourceTx of sourceTxs) {
       if (!sourceTx.txid) continue;
-      const fetchedTx = await this.fetchBeef(sourceTx.txid);
+      const fetchedTx = await this.fetchRawTx(sourceTx.txid);
       const output = fetchedTx.outputs[sourceTx.vout];
       const parsedCosigner = parseCosignerScripts([output.lockingScript])[0];
       if (parsedCosigner?.address === config.mintAddress) {
@@ -689,7 +689,7 @@ export class MNEEService {
   public async parseTx(txid: string): Promise<ParseTxResponse> {
     const config = this.mneeConfig || (await this.getCosignerConfig());
     if (!config) throw new Error('Config not fetched');
-    const tx = await this.fetchBeef(txid);
+    const tx = await this.fetchRawTx(txid);
     if (!tx) throw new Error('Failed to fetch transaction');
     return await this.parseTransaction(tx, config);
   }
