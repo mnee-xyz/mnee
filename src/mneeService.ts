@@ -28,6 +28,7 @@ import {
   TxHistory,
   TxHistoryResponse,
   TxOperation,
+  AddressHistoryParams,
 } from './mnee.types.js';
 import CosignTemplate from './mneeCosignTemplate.js';
 import * as jsOneSat from 'js-1sat-ord';
@@ -98,12 +99,16 @@ export class MNEEService {
     };
   }
 
-  private async getUtxos(address: string, ops: MNEEOperation[] = ['transfer', 'deploy+mint']): Promise<MNEEUtxo[]> {
+  private async getUtxos(
+    address: string | string[],
+    ops: MNEEOperation[] = ['transfer', 'deploy+mint'],
+  ): Promise<MNEEUtxo[]> {
     try {
+      const arrayAddress = Array.isArray(address) ? address : [address];
       const response = await fetch(`${this.mneeApi}/v1/utxos?auth_token=${this.mneeApiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify([address]),
+        body: JSON.stringify(arrayAddress),
       });
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const data: MNEEUtxo[] = await response.json();
@@ -343,19 +348,39 @@ export class MNEEService {
     try {
       const config = this.mneeConfig || (await this.getCosignerConfig());
       if (!config) throw new Error('Config not fetched');
-      const res = await this.getUtxos(address);
-      const balance = res.reduce((acc, utxo) => {
+      const utxos = await this.getUtxos(address);
+      const balance = utxos.reduce((acc, utxo) => {
         if (utxo.data.bsv21.op === 'transfer') {
           acc += utxo.data.bsv21.amt;
         }
         return acc;
       }, 0);
-
       const decimalAmount = this.fromAtomicAmount(balance);
-      return { amount: balance, decimalAmount };
+      return { address, amount: balance, decimalAmount };
     } catch (error) {
       console.error('Failed to fetch balance:', error);
-      return { amount: 0, decimalAmount: 0 };
+      return { address, amount: 0, decimalAmount: 0 };
+    }
+  }
+
+  public async getBalances(addresses: string[]): Promise<MNEEBalance[]> {
+    try {
+      const config = this.mneeConfig || (await this.getCosignerConfig());
+      if (!config) throw new Error('Config not fetched');
+      const utxos = await this.getUtxos(addresses);
+      return addresses.map((addr) => {
+        const addressUtxos = utxos.filter((utxo) => utxo.owners.includes(addr));
+        const balance = addressUtxos.reduce((acc, utxo) => {
+          if (utxo.data.bsv21.op === 'transfer') {
+            acc += utxo.data.bsv21.amt;
+          }
+          return acc;
+        }, 0);
+        return { address: addr, amount: balance, decimalAmount: this.fromAtomicAmount(balance) };
+      });
+    } catch (error) {
+      console.error('Failed to fetch balances:', error);
+      return addresses.map((addr) => ({ address: addr, amount: 0, decimalAmount: 0 }));
     }
   }
 
@@ -408,22 +433,36 @@ export class MNEEService {
     }
   }
 
-  private async getMneeSyncs(address: string, fromScore = 0, limit = 100): Promise<MneeSync[] | undefined> {
+  private async getMneeSyncs(
+    addresses: string | string[],
+    fromScore = 0,
+    limit = 100,
+  ): Promise<{ address: string; syncs: MneeSync[] }[]> {
     try {
+      const addressArray = Array.isArray(addresses) ? addresses : [addresses];
       const response = await fetch(
         `${this.mneeApi}/v1/sync?auth_token=${this.mneeApiKey}&from=${fromScore}&limit=${limit}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify([address]),
+          body: JSON.stringify(addressArray),
         },
       );
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const data: MneeSync[] = await response.json();
-      return data;
+
+      // Group syncs by address
+      const syncsByAddress = addressArray.map((address) => {
+        const filteredSyncs = data.filter((sync) => sync.senders.includes(address) || sync.receivers.includes(address));
+        return { address, syncs: filteredSyncs };
+      });
+
+      return syncsByAddress;
     } catch (error) {
-      console.error('Failed to fetch config:', error);
-      return undefined;
+      console.error('Failed to fetch syncs:', error);
+      return Array.isArray(addresses)
+        ? addresses.map((address) => ({ address, syncs: [] }))
+        : [{ address: addresses, syncs: [] }];
     }
   }
 
@@ -432,8 +471,10 @@ export class MNEEService {
       const config = this.mneeConfig || (await this.getCosignerConfig());
       if (!config) throw new Error('Config not fetched');
 
-      const syncs = await this.getMneeSyncs(address, fromScore, limit);
-      if (!syncs || syncs.length === 0) return { history: [], nextScore: fromScore || 0 };
+      const syncsByAddress = await this.getMneeSyncs(address, fromScore, limit);
+      const { syncs } = syncsByAddress[0]; // We're only requesting one address
+
+      if (!syncs || syncs.length === 0) return { address, history: [], nextScore: fromScore || 0 };
 
       const txHistory: TxHistory[] = [];
       for (const sync of syncs) {
@@ -443,22 +484,97 @@ export class MNEEService {
         }
       }
 
-      const nextScore = txHistory[txHistory.length - 1].score;
+      const nextScore = txHistory.length > 0 ? txHistory[txHistory.length - 1].score : fromScore || 0;
 
       if (limit && txHistory.length > limit) {
         return {
+          address,
           history: txHistory.slice(0, limit),
           nextScore,
         };
       }
 
       return {
+        address,
         history: txHistory,
         nextScore,
       };
     } catch (error) {
       console.error('Failed to fetch tx history:', error);
-      return { history: [], nextScore: fromScore || 0 };
+      return { address, history: [], nextScore: fromScore || 0 };
+    }
+  }
+
+  public async getRecentTxHistories(params: AddressHistoryParams[]): Promise<TxHistoryResponse[]> {
+    try {
+      const config = this.mneeConfig || (await this.getCosignerConfig());
+      if (!config) throw new Error('Config not fetched');
+
+      // Group addressParams by fromScore and limit to batch requests efficiently
+      const groupedParams: Record<string, AddressHistoryParams[]> = {};
+      params.forEach((param) => {
+        const key = `${param.fromScore || 0}:${param.limit || 100}`;
+        if (!groupedParams[key]) {
+          groupedParams[key] = [];
+        }
+        groupedParams[key].push(param);
+      });
+
+      // Process each group in parallel
+      const groupPromises = Object.entries(groupedParams).map(async ([key, addressParams]) => {
+        const [fromScore, limit] = key.split(':').map(Number);
+        const addresses = addressParams.map((p) => p.address);
+
+        const syncsByAddress = await this.getMneeSyncs(addresses, fromScore, limit);
+
+        // Process each address's syncs
+        return syncsByAddress.map(({ address, syncs }) => {
+          const param = addressParams.find((p) => p.address === address);
+          if (!syncs || syncs.length === 0) {
+            return {
+              address,
+              history: [],
+              nextScore: param?.fromScore || 0,
+            };
+          }
+
+          const txHistory: TxHistory[] = [];
+          for (const sync of syncs) {
+            const historyItem = parseSyncToTxHistory(sync, address, config);
+            if (historyItem) {
+              txHistory.push(historyItem);
+            }
+          }
+
+          const nextScore = txHistory.length > 0 ? txHistory[txHistory.length - 1].score : param?.fromScore || 0;
+          const paramLimit = param?.limit;
+
+          if (paramLimit && txHistory.length > paramLimit) {
+            return {
+              address,
+              history: txHistory.slice(0, paramLimit),
+              nextScore,
+            };
+          }
+
+          return {
+            address,
+            history: txHistory,
+            nextScore,
+          };
+        });
+      });
+
+      // Flatten the results
+      const results = await Promise.all(groupPromises);
+      return results.flat();
+    } catch (error) {
+      console.error('Failed to fetch tx histories:', error);
+      return params.map(({ address, fromScore }) => ({
+        address,
+        history: [],
+        nextScore: fromScore || 0,
+      }));
     }
   }
 

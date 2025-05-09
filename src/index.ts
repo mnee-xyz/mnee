@@ -7,17 +7,20 @@ import {
   SendMNEE,
   TransferResponse,
   TxHistoryResponse,
+  AddressHistoryParams,
 } from './mnee.types.js';
 export * from './mnee.types.js';
 
 export interface MneeInterface {
   config(): Promise<MNEEConfig | undefined>;
   balance(address: string): Promise<MNEEBalance>;
+  balances(addresses: string[]): Promise<MNEEBalance[]>;
   validateMneeTx(rawtx: string, request?: SendMNEE[]): Promise<boolean>;
   transfer(request: SendMNEE[], wif: string): Promise<TransferResponse>;
   toAtomicAmount(amount: number): number;
   fromAtomicAmount(amount: number): number;
   recentTxHistory(address: string, fromScore?: number, limit?: number): Promise<TxHistoryResponse>;
+  recentTxHistories(params: AddressHistoryParams[]): Promise<TxHistoryResponse[]>;
   parseTx(txid: string): Promise<ParseTxResponse>;
   parseTxFromRawTx(rawTxHex: string): Promise<ParseTxResponse>;
 }
@@ -87,10 +90,20 @@ export default class Mnee implements MneeInterface {
    * Retrieves the balance for a given address.
    *
    * @param address - The address to retrieve the balance for.
-   * @returns A promise that resolves to an MNEEBalance object containing the balance information.
+   * @returns A promise that resolves to a `MNEEBalance` object containing the balance details.
    */
   async balance(address: string): Promise<MNEEBalance> {
     return this.service.getBalance(address);
+  }
+
+  /**
+   * Retrieves the balances for multiple addresses.
+   *
+   * @param addresses - An array of addresses to retrieve the balances for.
+   * @returns A promise that resolves to an array of `MNEEBalance` objects containing the balance details for each address.
+   */
+  async balances(addresses: string[]): Promise<MNEEBalance[]> {
+    return this.service.getBalances(addresses);
   }
 
   /**
@@ -115,6 +128,17 @@ export default class Mnee implements MneeInterface {
    */
   async recentTxHistory(address: string, fromScore?: number, limit?: number): Promise<TxHistoryResponse> {
     return this.service.getRecentTxHistory(address, fromScore, limit);
+  }
+
+  /**
+   * Retrieves the recent transaction histories for multiple addresses.
+   *
+   * @param params - An array of address parameters, each containing an address, optional fromScore, and optional limit.
+   * @returns A promise that resolves to an array of TxHistoryResponse objects containing the transaction
+   * history for each address with its own pagination state.
+   */
+  async recentTxHistories(params: AddressHistoryParams[]): Promise<TxHistoryResponse[]> {
+    return this.service.getRecentTxHistories(params);
   }
 
   /**

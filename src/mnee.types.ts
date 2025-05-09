@@ -65,6 +65,7 @@ export type SignatureRequest = {
 export type TransactionFormat = 'tx' | 'beef' | 'ef';
 
 export type MNEEBalance = {
+  address: string;
   amount: number;
   decimalAmount: number;
 };
@@ -155,6 +156,7 @@ export type TxHistory = {
 };
 
 export type TxHistoryResponse = {
+  address: string;
   history: TxHistory[];
   nextScore: number;
 };
@@ -171,3 +173,9 @@ export type ParseTxResponse = {
   inputs: TxAddressAmount[];
   outputs: TxAddressAmount[];
 };
+
+export interface AddressHistoryParams {
+  address: string;
+  fromScore?: number;
+  limit?: number;
+}
