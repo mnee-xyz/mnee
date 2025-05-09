@@ -1,5 +1,7 @@
 # MNEE TypeScript SDK
 
+**⚠️ Beta Notice**: This SDK is in beta and scheduled for a security audit. It has undergone extensive testing, but you should treat it as experimental until the audit and full QA are complete.
+
 The MNEE TypeScript SDK provides a simple and efficient way to interact with the MNEE USD. It allows developers to perform operations such as retrieving configuration, checking balances, validating transactions, and transferring MNEE tokens programmatically.
 
 ## Features
@@ -20,7 +22,7 @@ npm install mnee
 
 ## Usage
 
-Here’s how you can get started with the Mnee SDK:
+Here's how you can get started with the Mnee SDK:
 
 ### Initialization
 
