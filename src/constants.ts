@@ -1,4 +1,5 @@
-export const MNEE_API_TOKEN = '92982ec1c0975f31979da515d46bae9f';
+export const PUBLIC_PROD_MNEE_API_TOKEN = '92982ec1c0975f31979da515d46bae9f';
+export const PUBLIC_SANDBOX_MNEE_API_TOKEN = '54f1fd1688ba66a58a67675b82feb93e';
 export const PROD_TOKEN_ID = 'ae59f3b898ec61acbdb6cc7a245fabeded0c094bf046f35206a3aec60ef88127_0';
 export const PROD_APPROVER = '020a177d6a5e6f3a8689acd2e313bd1cf0dcf5a243d1cc67b7218602aee9e04b2f';
 export const PROD_ADDRESS = '1inHbiwj2jrEcZPiSYnfgJ8FmS1Bmk4Dh';
@@ -10,5 +11,5 @@ export const STAGE_TOKEN_ID = '833a7720966a2a435db28d967385e8aa7284b6150ebb39482
 export const STAGE_ADDRESS = '1AZNdbFYBDFTAEgzZMfPzANxyNrpGJZAUY';
 
 export const MNEE_PROXY_API_URL = 'https://proxy-api.mnee.net';
-export const SANDBOX_MNEE_API_URL = 'https://stg-api-cosigner.mnee.net';
+export const SANDBOX_MNEE_API_URL = 'https://sandbox-proxy-api.mnee.net';
 export const GORILLA_POOL_API_URL = 'https://ordinals.1sat.app';

@@ -46,14 +46,25 @@ import {
   QA_TOKEN_ID,
   DEV_TOKEN_ID,
   STAGE_TOKEN_ID,
+  PUBLIC_PROD_MNEE_API_TOKEN,
+  PUBLIC_SANDBOX_MNEE_API_TOKEN,
 } from './constants.js';
 export class MNEEService {
-  private mneeApiKey = '92982ec1c0975f31979da515d46bae9f';
+  private mneeApiKey: string;
   private mneeConfig: MNEEConfig | undefined;
   private mneeApi: string;
   constructor(config: SdkConfig) {
-    if (config?.apiKey) this.mneeApiKey = config.apiKey;
-    this.mneeApi = config.environment === 'production' ? MNEE_PROXY_API_URL : SANDBOX_MNEE_API_URL;
+    if (config.environment !== 'production' && config.environment !== 'sandbox') {
+      throw new Error('Invalid environment. Must be either "production" or "sandbox"');
+    }
+
+    const isProd = config.environment === 'production';
+    if (config?.apiKey) {
+      this.mneeApiKey = config.apiKey;
+    } else {
+      this.mneeApiKey = isProd ? PUBLIC_PROD_MNEE_API_TOKEN : PUBLIC_SANDBOX_MNEE_API_TOKEN;
+    }
+    this.mneeApi = isProd ? MNEE_PROXY_API_URL : SANDBOX_MNEE_API_URL;
     this.getCosignerConfig();
   }
 
