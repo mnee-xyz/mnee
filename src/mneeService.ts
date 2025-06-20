@@ -167,13 +167,13 @@ export class MNEEService {
   }
 
   private async fetchRawTx(txid: string): Promise<Transaction> {
-    const resp = await fetch(`${GORILLA_POOL_API_URL}/v5/tx/${txid}/raw`);
+    const resp = await fetch(`${this.mneeApi}/v1/tx/${txid}?auth_token=${this.mneeApiKey}`);
     if (resp.status === 404) throw new Error('Transaction not found');
     if (resp.status !== 200) {
       throw new Error(`${resp.status} - Failed to fetch rawtx for txid: ${txid}`);
     }
-    const rawTx = [...Buffer.from(await resp.arrayBuffer())];
-    return Transaction.fromBinary(rawTx);
+    const { rawtx } = await resp.json();
+    return Transaction.fromHex(Buffer.from(rawtx, 'base64').toString('hex'));
   }
 
   private async getSignatures(
