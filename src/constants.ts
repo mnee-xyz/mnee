@@ -12,4 +12,3 @@ export const STAGE_ADDRESS = '1AZNdbFYBDFTAEgzZMfPzANxyNrpGJZAUY';
 
 export const MNEE_PROXY_API_URL = 'https://proxy-api.mnee.net';
 export const SANDBOX_MNEE_API_URL = 'https://sandbox-proxy-api.mnee.net';
-export const GORILLA_POOL_API_URL = 'https://ordinals.1sat.app';

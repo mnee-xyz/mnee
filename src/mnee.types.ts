@@ -89,15 +89,6 @@ export type SignatureResponse = {
   csIdx?: number;
 };
 
-export type GorillaPoolErrorMessage = {
-  message: string;
-};
-
-export type GorillaPoolBroadcastResponse = {
-  txid?: string;
-  message?: string;
-};
-
 export type MneeInscription = {
   p: string;
   op: string;

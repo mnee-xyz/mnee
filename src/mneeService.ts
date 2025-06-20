@@ -1,6 +1,4 @@
 import {
-  BroadcastFailure,
-  BroadcastResponse,
   Hash,
   P2PKH,
   PrivateKey,
@@ -36,7 +34,6 @@ import { parseCosignerScripts, parseInscription, parseSyncToTxHistory } from './
 import {
   MNEE_PROXY_API_URL,
   SANDBOX_MNEE_API_URL,
-  GORILLA_POOL_API_URL,
   PROD_TOKEN_ID,
   PROD_ADDRESS,
   DEV_ADDRESS,
@@ -132,37 +129,6 @@ export class MNEEService {
     } catch (error) {
       console.error('Failed to fetch UTXOs:', error);
       return [];
-    }
-  }
-
-  private async broadcast(tx: Transaction): Promise<BroadcastResponse | BroadcastFailure> {
-    const url = `${GORILLA_POOL_API_URL}/v5/tx`;
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/octet-stream' },
-        body: Buffer.from(tx.toBinary()),
-      });
-      const body = await response.json();
-      if (!response.ok) {
-        return {
-          status: 'error',
-          code: response.status.toString(),
-          description: body.error || 'Unknown error',
-        } as BroadcastFailure;
-      }
-      return {
-        status: 'success',
-        txid: body.txid,
-        message: 'Transaction broadcast successfully',
-      } as BroadcastResponse;
-    } catch (error) {
-      console.error('Failed to broadcast:', error);
-      return {
-        status: 'error',
-        code: 'UNKNOWN',
-        description: error instanceof Error ? error.message : 'Unknown error',
-      } as BroadcastFailure;
     }
   }
 
@@ -338,7 +304,6 @@ export class MNEEService {
 
       const decodedBase64AsBinary = Utils.toArray(responseRawtx, 'base64');
       const tx2 = Transaction.fromBinary(decodedBase64AsBinary);
-      await this.broadcast(tx2);
 
       return { txid: tx2.id('hex'), rawtx: Utils.toHex(decodedBase64AsBinary) };
     } catch (error) {
