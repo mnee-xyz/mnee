@@ -4,13 +4,17 @@ import {
   MNEEConfig,
   SdkConfig,
   ParseTxResponse,
+  ParseTxExtendedResponse,
+  ParseOptions,
   SendMNEE,
   TransferResponse,
   TxHistoryResponse,
   AddressHistoryParams,
+  Inscription,
+  ParsedCosigner,
 } from './mnee.types.js';
+import { Script } from '@bsv/sdk';
 export * from './mnee.types.js';
-export { parseInscription, parseCosignerScripts } from './utils/helper.js';
 
 export interface MneeInterface {
   config(): Promise<MNEEConfig | undefined>;
@@ -22,8 +26,10 @@ export interface MneeInterface {
   fromAtomicAmount(amount: number): number;
   recentTxHistory(address: string, fromScore?: number, limit?: number): Promise<TxHistoryResponse>;
   recentTxHistories(params: AddressHistoryParams[]): Promise<TxHistoryResponse[]>;
-  parseTx(txid: string): Promise<ParseTxResponse>;
-  parseTxFromRawTx(rawTxHex: string): Promise<ParseTxResponse>;
+  parseTx(txid: string, options?: ParseOptions): Promise<ParseTxResponse | ParseTxExtendedResponse>;
+  parseTxFromRawTx(rawTxHex: string, options?: ParseOptions): Promise<ParseTxResponse | ParseTxExtendedResponse>;
+  parseInscription(script: Script): Inscription | undefined;
+  parseCosignerScripts(scripts: string[]): ParsedCosigner[];
 }
 
 /**
@@ -146,19 +152,41 @@ export default class Mnee implements MneeInterface {
    * Parses a transaction based on the provided transaction ID.
    *
    * @param txid - The unique identifier of the transaction to be parsed.
-   * @returns A promise that resolves to a `ParseTxResponse` containing the parsed transaction details.
+   * @param options - Optional parsing options. Set includeRaw to true to get extended response with raw transaction data.
+   * @returns A promise that resolves to a `ParseTxResponse` or `ParseTxExtendedResponse` containing the parsed transaction details.
    */
-  async parseTx(txid: string): Promise<ParseTxResponse> {
-    return this.service.parseTx(txid);
+  async parseTx(txid: string, options?: ParseOptions): Promise<ParseTxResponse | ParseTxExtendedResponse> {
+    return this.service.parseTx(txid, options);
   }
 
   /**
    * Parses a transaction from a raw transaction hex string.
    *
    * @param rawTxHex - The raw transaction hex string to be parsed.
-   * @returns A promise that resolves to a `ParseTxResponse` containing the parsed transaction details.
+   * @param options - Optional parsing options. Set includeRaw to true to get extended response with raw transaction data.
+   * @returns A promise that resolves to a `ParseTxResponse` or `ParseTxExtendedResponse` containing the parsed transaction details.
    */
-  async parseTxFromRawTx(rawTxHex: string): Promise<ParseTxResponse> {
-    return this.service.parseTxFromRawTx(rawTxHex);
+  async parseTxFromRawTx(rawTxHex: string, options?: ParseOptions): Promise<ParseTxResponse | ParseTxExtendedResponse> {
+    return this.service.parseTxFromRawTx(rawTxHex, options);
+  }
+
+  /**
+   * Parses an inscription.
+   *
+   * @param script - The script to be parsed.
+   * @returns A `Inscription` object containing the parsed inscription details.
+   */
+  parseInscription(script: Script): Inscription | undefined {
+    return this.service.parseInscription(script);
+  }
+
+  /**
+   * Parses a cosigner script.
+   *
+   * @param scripts - The cosigner script to be parsed.
+   * @returns A `ParsedCosigner` object containing the parsed cosigner details.
+   */
+  parseCosignerScripts(scripts: string[]): ParsedCosigner[] {
+    return this.service.parseCosignerScripts(scripts);
   }
 }

@@ -163,7 +163,35 @@ export type ParseTxResponse = {
   type: TxOperation;
   inputs: TxAddressAmount[];
   outputs: TxAddressAmount[];
+  isValid: boolean;
+  inputTotal: string;
+  outputTotal: string;
 };
+
+export interface ParseOptions {
+  includeRaw?: boolean;
+}
+
+export interface ParseTxExtendedResponse extends ParseTxResponse {
+  raw?: {
+    txHex: string;
+    inputs: Array<{
+      txid: string;
+      vout: number;
+      scriptSig: string;
+      sequence: number;
+      satoshis: number;
+      address?: string;
+      tokenData?: any;
+    }>;
+    outputs: Array<{
+      value: number;
+      scriptPubKey: string;
+      address?: string;
+      tokenData?: any;
+    }>;
+  };
+}
 
 export interface AddressHistoryParams {
   address: string;

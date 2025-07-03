@@ -20,6 +20,8 @@ import {
   MneeSync,
   MNEEUtxo,
   ParseTxResponse,
+  ParseTxExtendedResponse,
+  ParseOptions,
   SendMNEE,
   SignatureRequest,
   SignatureResponse,
@@ -27,6 +29,8 @@ import {
   TxHistoryResponse,
   TxOperation,
   AddressHistoryParams,
+  ParsedCosigner,
+  Inscription,
 } from './mnee.types.js';
 import CosignTemplate from './mneeCosignTemplate.js';
 import * as jsOneSat from 'js-1sat-ord';
@@ -36,15 +40,12 @@ import {
   SANDBOX_MNEE_API_URL,
   PROD_TOKEN_ID,
   PROD_ADDRESS,
-  DEV_ADDRESS,
-  QA_ADDRESS,
-  STAGE_ADDRESS,
   PROD_APPROVER,
-  QA_TOKEN_ID,
-  DEV_TOKEN_ID,
-  STAGE_TOKEN_ID,
   PUBLIC_PROD_MNEE_API_TOKEN,
   PUBLIC_SANDBOX_MNEE_API_TOKEN,
+  SANDBOX_TOKEN_ID,
+  SANDBOX_ADDRESS,
+  SANDBOX_APPROVER,
 } from './constants.js';
 export class MNEEService {
   private mneeApiKey: string;
@@ -370,6 +371,8 @@ export class MNEEService {
 
       if (!request) {
         parsedScripts.forEach((parsed) => {
+          console.log('parsed', parsed);
+          console.log('config.approver', config.approver);
           if (parsed?.cosigner !== '' && parsed?.cosigner !== config.approver) {
             throw new Error('Invalid or missing cosigner');
           }
@@ -554,7 +557,11 @@ export class MNEEService {
     }
   }
 
-  private async parseTransaction(tx: Transaction, config: MNEEConfig): Promise<ParseTxResponse> {
+  private async parseTransaction(
+    tx: Transaction,
+    config: MNEEConfig,
+    options?: ParseOptions,
+  ): Promise<ParseTxResponse | ParseTxExtendedResponse> {
     const txid = tx.id('hex');
     const outScripts = tx.outputs.map((output) => output.lockingScript);
     const sourceTxs = tx.inputs.map((input) => {
@@ -567,11 +574,16 @@ export class MNEEService {
     let outputTotal = 0n;
     let environment: Environment = 'production';
     let type: TxOperation = 'transfer';
+    let inputSatoshis: number[] = [];
+    let inputAddresses: (string | undefined)[] = [];
+    let outputAddresses: (string | undefined)[] = [];
     for (const sourceTx of sourceTxs) {
       if (!sourceTx.txid) continue;
       const fetchedTx = await this.fetchRawTx(sourceTx.txid);
       const output = fetchedTx.outputs[sourceTx.vout];
+      inputSatoshis.push(Number(output.satoshis));
       const parsedCosigner = parseCosignerScripts([output.lockingScript])[0];
+      inputAddresses.push(parsedCosigner?.address);
       if (parsedCosigner?.address === config.mintAddress) {
         type = txid === config.tokenId.split('_')[0] ? 'deploy' : 'mint';
       }
@@ -587,9 +599,7 @@ export class MNEEService {
         const isEmptyCosigner = parsedCosigner.cosigner === '';
         const isMint = inscriptionJson.op === 'deploy+mint';
         const isProdAddress = parsedCosigner.address === PROD_ADDRESS;
-        const isDevAddress = parsedCosigner.address === DEV_ADDRESS;
-        const isQaAddress = parsedCosigner.address === QA_ADDRESS;
-        const isStageAddress = parsedCosigner.address === STAGE_ADDRESS;
+        const isSandboxAddress = parsedCosigner.address === SANDBOX_ADDRESS;
 
         if (!isProdToken || !isProdApprover) {
           if (isEmptyCosigner && isMint && isProdAddress) {
@@ -600,7 +610,7 @@ export class MNEEService {
           }
         }
 
-        if (type === 'transfer' && (isProdAddress || isDevAddress || isQaAddress || isStageAddress)) {
+        if (type === 'transfer' && (isProdAddress || isSandboxAddress)) {
           type = 'mint';
         }
 
@@ -612,6 +622,13 @@ export class MNEEService {
       }
     }
 
+    // First pass: collect all output addresses
+    for (const script of outScripts) {
+      const parsedCosigner = parseCosignerScripts([script])[0];
+      outputAddresses.push(parsedCosigner?.address);
+    }
+
+    // Second pass: process outputs with inscriptions
     for (const script of outScripts) {
       const parsedCosigner = parseCosignerScripts([script])[0];
       const insc = parseInscription(script);
@@ -649,31 +666,82 @@ export class MNEEService {
       }
     }
 
-    if (type !== 'deploy' && inputTotal !== outputTotal) {
-      throw new Error('Inputs and outputs are not equal');
-    }
+    const isValidMnee = await this.validateMneeTx(tx.toHex());
+    const isValid = isValidMnee && (type === 'deploy' || inputTotal === outputTotal);
 
     if (txid === PROD_TOKEN_ID.split('_')[0]) {
       environment = 'production';
-    } else if ([DEV_TOKEN_ID, QA_TOKEN_ID, STAGE_TOKEN_ID].some((id) => txid === id.split('_')[0])) {
+    } else if (txid === SANDBOX_TOKEN_ID.split('_')[0]) {
       environment = 'sandbox';
     }
 
-    return { txid, environment, type, inputs, outputs };
+    const baseResponse: ParseTxResponse = {
+      txid,
+      environment,
+      type,
+      inputs,
+      outputs,
+      isValid,
+      inputTotal: inputTotal.toString(),
+      outputTotal: outputTotal.toString(),
+    };
+
+    // If includeRaw is true, build extended response
+    if (options?.includeRaw) {
+      const extendedResponse: ParseTxExtendedResponse = {
+        ...baseResponse,
+        raw: {
+          txHex: tx.toHex(),
+          inputs: tx.inputs.map((input, index) => ({
+            txid: input.sourceTXID || '',
+            vout: input.sourceOutputIndex,
+            scriptSig: input.unlockingScript?.toHex() || '',
+            sequence: input.sequence || 0xffffffff,
+            address: inputAddresses[index],
+            satoshis: inputSatoshis[index] || 0,
+            tokenData: inputs.find((i) => i.address === inputAddresses[index])
+              ? { amount: inputs.find((i) => i.address === inputAddresses[index])?.amount }
+              : undefined,
+          })),
+          outputs: tx.outputs.map((output, index) => ({
+            value: Number(output.satoshis),
+            scriptPubKey: output.lockingScript.toHex(),
+            address: outputAddresses[index],
+            tokenData: outputs.find((o) => o.address === outputAddresses[index])
+              ? { amount: outputs.find((o) => o.address === outputAddresses[index])?.amount }
+              : undefined,
+          })),
+        },
+      };
+      return extendedResponse;
+    }
+
+    return baseResponse;
   }
 
-  public async parseTx(txid: string): Promise<ParseTxResponse> {
+  public async parseTx(txid: string, options?: ParseOptions): Promise<ParseTxResponse | ParseTxExtendedResponse> {
     const config = this.mneeConfig || (await this.getCosignerConfig());
     if (!config) throw new Error('Config not fetched');
     const tx = await this.fetchRawTx(txid);
     if (!tx) throw new Error('Failed to fetch transaction');
-    return await this.parseTransaction(tx, config);
+    return await this.parseTransaction(tx, config, options);
   }
 
-  public async parseTxFromRawTx(rawTxHex: string): Promise<ParseTxResponse> {
+  public async parseTxFromRawTx(
+    rawTxHex: string,
+    options?: ParseOptions,
+  ): Promise<ParseTxResponse | ParseTxExtendedResponse> {
     const tx = Transaction.fromHex(rawTxHex);
     const config = this.mneeConfig || (await this.getCosignerConfig());
     if (!config) throw new Error('Config not fetched');
-    return await this.parseTransaction(tx, config);
+    return await this.parseTransaction(tx, config, options);
+  }
+
+  public parseInscription(script: Script) {
+    return parseInscription(script);
+  }
+
+  public parseCosignerScripts(scripts: string[]) {
+    return parseCosignerScripts(scripts);
   }
 }
