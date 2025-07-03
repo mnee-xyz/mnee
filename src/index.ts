@@ -10,6 +10,7 @@ import {
   AddressHistoryParams,
 } from './mnee.types.js';
 export * from './mnee.types.js';
+export { parseInscription, parseCosignerScripts } from './utils/helper.js';
 
 export interface MneeInterface {
   config(): Promise<MNEEConfig | undefined>;
