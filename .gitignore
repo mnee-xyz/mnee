@@ -2,3 +2,4 @@
 mnee*.tgz
 node_modules/
 dist
+local-test/
