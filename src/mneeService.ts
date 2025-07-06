@@ -30,7 +30,7 @@ import {
   TxOperation,
   AddressHistoryParams,
   ParsedCosigner,
-  Inscription,
+  TxAddressAmount,
 } from './mnee.types.js';
 import CosignTemplate from './mneeCosignTemplate.js';
 import * as jsOneSat from 'js-1sat-ord';
@@ -39,14 +39,32 @@ import {
   MNEE_PROXY_API_URL,
   SANDBOX_MNEE_API_URL,
   PROD_TOKEN_ID,
-  PROD_ADDRESS,
+  PROD_MINT_ADDRESS,
   PROD_APPROVER,
   PUBLIC_PROD_MNEE_API_TOKEN,
   PUBLIC_SANDBOX_MNEE_API_TOKEN,
   SANDBOX_TOKEN_ID,
-  SANDBOX_ADDRESS,
+  SANDBOX_MINT_ADDRESS,
   SANDBOX_APPROVER,
 } from './constants.js';
+
+// Helper interfaces for parseTransaction refactoring
+interface ProcessedInput {
+  address?: string;
+  amount: number;
+  satoshis: number;
+  inscription?: MneeInscription | null;
+  cosigner?: ParsedCosigner;
+}
+
+interface ProcessedOutput {
+  address?: string;
+  amount: number;
+  satoshis: number;
+  inscription?: MneeInscription | null;
+  cosigner?: ParsedCosigner;
+}
+
 export class MNEEService {
   private mneeApiKey: string;
   private mneeConfig: MNEEConfig | undefined;
@@ -557,166 +575,323 @@ export class MNEEService {
     }
   }
 
-  private async parseTransaction(
+  // ============================================
+  // REFACTORED parseTransaction HELPERS
+  // ============================================
+
+  /**
+   * Parses inscription data from a script
+   * @param script The script to parse
+   * @returns The parsed inscription data or null if invalid
+   */
+  private parseInscriptionData(script: Script): MneeInscription | null {
+    try {
+      const inscription = parseInscription(script);
+      const content = inscription?.file?.content;
+      if (!content) return null;
+
+      const inscriptionData = Utils.toUTF8(content);
+      if (!inscriptionData) return null;
+
+      return JSON.parse(inscriptionData) as MneeInscription;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  private determineEnvironment(txid: string, tokenId: string, cosigner: string, address: string): Environment {
+    // Highest priority: specific transaction IDs
+    if (txid === PROD_TOKEN_ID.split('_')[0]) return 'production'; // genesis (deploy) transaction
+    if (txid === SANDBOX_TOKEN_ID.split('_')[0]) return 'sandbox'; // genesis (deploy) transaction
+
+    // Production if BOTH token and approver match
+    if (tokenId === PROD_TOKEN_ID && cosigner === PROD_APPROVER) {
+      return 'production';
+    }
+
+    // Sandbox if BOTH token and approver match
+    if (tokenId === SANDBOX_TOKEN_ID && cosigner === SANDBOX_APPROVER) {
+      return 'sandbox';
+    }
+
+    // Special case: empty cosigner with production address (mint operations)
+    if (cosigner === '' && address === PROD_MINT_ADDRESS) {
+      return 'production';
+    }
+
+    // Special case: empty cosigner with sandbox address (mint operations)
+    if (cosigner === '' && address === SANDBOX_MINT_ADDRESS) {
+      return 'sandbox';
+    }
+
+    // Default to sandbox for all other cases
+    return 'sandbox';
+  }
+
+  private determineTransactionType(
+    operation: string,
+    address: string,
+    txid: string,
+    mintAddress: string,
+    tokenId: string,
+  ): TxOperation {
+    // Highest priority: burn operation
+    if (operation === 'burn') return 'burn';
+
+    // Deploy+mint operation
+    if (operation === 'deploy+mint' || address === mintAddress) {
+      // If txid matches the token ID prefix, it's a deploy
+      return txid === tokenId.split('_')[0] ? 'deploy' : 'mint';
+    }
+
+    // Known addresses indicate mint
+    if (address === PROD_MINT_ADDRESS || address === SANDBOX_MINT_ADDRESS) {
+      return 'mint';
+    }
+
+    // Default to transfer
+    return 'transfer';
+  }
+
+  private async processTransactionInputs(
     tx: Transaction,
     config: MNEEConfig,
-    options?: ParseOptions,
-  ): Promise<ParseTxResponse | ParseTxExtendedResponse> {
-    const txid = tx.id('hex');
-    const outScripts = tx.outputs.map((output) => output.lockingScript);
-    const sourceTxs = tx.inputs.map((input) => {
-      return { txid: input.sourceTXID, vout: input.sourceOutputIndex };
-    });
+    txid: string,
+  ): Promise<{
+    inputs: ProcessedInput[];
+    total: bigint;
+    environment?: Environment;
+    type?: TxOperation;
+  }> {
+    const inputs: ProcessedInput[] = [];
+    let total = BigInt(0);
+    let environment: Environment | undefined;
+    let type: TxOperation | undefined;
 
-    let inputs = [];
-    let outputs = [];
-    let inputTotal = 0n;
-    let outputTotal = 0n;
-    let environment: Environment = 'production';
-    let type: TxOperation = 'transfer';
-    let inputSatoshis: number[] = [];
-    let inputAddresses: (string | undefined)[] = [];
-    let outputAddresses: (string | undefined)[] = [];
-    for (const sourceTx of sourceTxs) {
-      if (!sourceTx.txid) continue;
-      const fetchedTx = await this.fetchRawTx(sourceTx.txid);
-      const output = fetchedTx.outputs[sourceTx.vout];
-      inputSatoshis.push(Number(output.satoshis));
+    for (let i = 0; i < tx.inputs.length; i++) {
+      const input = tx.inputs[i];
+      if (!input.sourceTXID) continue;
+
+      const sourceTx = await this.fetchRawTx(input.sourceTXID);
+      const sourceOutput = sourceTx.outputs[input.sourceOutputIndex];
+      const parsedCosigner = parseCosignerScripts([sourceOutput.lockingScript])[0];
+      const inscription = this.parseInscriptionData(sourceOutput.lockingScript);
+
+      const processedInput: ProcessedInput = {
+        address: parsedCosigner?.address,
+        amount: inscription ? parseInt(inscription.amt) : 0,
+        satoshis: Number(sourceOutput.satoshis),
+        inscription,
+        cosigner: parsedCosigner,
+      };
+
+      inputs.push(processedInput);
+
+      if (inscription && parsedCosigner) {
+        total += BigInt(inscription.amt);
+
+        // Determine environment if not already set
+        if (!environment) {
+          environment = this.determineEnvironment(
+            txid,
+            inscription.id,
+            parsedCosigner.cosigner || '',
+            parsedCosigner.address || '',
+          );
+        }
+
+        // Determine type if not already set
+        if (!type) {
+          type = this.determineTransactionType(
+            inscription.op,
+            parsedCosigner.address || '',
+            txid,
+            config.mintAddress,
+            config.tokenId,
+          );
+        }
+      }
+    }
+
+    return { inputs, total, environment, type };
+  }
+
+  private processTransactionOutputs(
+    tx: Transaction,
+    config: MNEEConfig,
+    txid: string,
+  ): {
+    outputs: ProcessedOutput[];
+    total: bigint;
+    environment?: Environment;
+    type?: TxOperation;
+  } {
+    const outputs: ProcessedOutput[] = [];
+    let total = BigInt(0);
+    let environment: Environment | undefined;
+    let type: TxOperation | undefined;
+
+    for (let i = 0; i < tx.outputs.length; i++) {
+      const output = tx.outputs[i];
+
       const parsedCosigner = parseCosignerScripts([output.lockingScript])[0];
-      inputAddresses.push(parsedCosigner?.address);
-      if (parsedCosigner?.address === config.mintAddress) {
-        type = txid === config.tokenId.split('_')[0] ? 'deploy' : 'mint';
-      }
-      const insc = parseInscription(output.lockingScript);
-      const content = insc?.file?.content;
-      if (!content) continue;
-      const inscriptionData = Utils.toUTF8(content);
-      if (!inscriptionData) continue;
-      const inscriptionJson: MneeInscription = JSON.parse(inscriptionData);
-      if (inscriptionJson) {
-        const isProdToken = inscriptionJson.id === PROD_TOKEN_ID;
-        const isProdApprover = parsedCosigner.cosigner === PROD_APPROVER;
-        const isEmptyCosigner = parsedCosigner.cosigner === '';
-        const isMint = inscriptionJson.op === 'deploy+mint';
-        const isProdAddress = parsedCosigner.address === PROD_ADDRESS;
-        const isSandboxAddress = parsedCosigner.address === SANDBOX_ADDRESS;
+      const inscription = this.parseInscriptionData(output.lockingScript);
 
-        if (!isProdToken || !isProdApprover) {
-          if (isEmptyCosigner && isMint && isProdAddress) {
-            environment = 'production';
-            type = 'mint';
-          } else {
-            environment = 'sandbox';
-          }
+      const processedOutput: ProcessedOutput = {
+        address: parsedCosigner?.address,
+        amount: inscription ? parseInt(inscription.amt) : 0,
+        satoshis: Number(output.satoshis),
+        inscription,
+        cosigner: parsedCosigner,
+      };
+
+      outputs.push(processedOutput);
+
+      if (inscription && parsedCosigner) {
+        total += BigInt(inscription.amt);
+
+        environment = this.determineEnvironment(
+          txid,
+          inscription.id,
+          parsedCosigner.cosigner || '',
+          parsedCosigner.address || '',
+        );
+
+        const outputType = this.determineTransactionType(
+          inscription.op,
+          parsedCosigner.address || '',
+          txid,
+          config.mintAddress,
+          config.tokenId,
+        );
+
+        if (outputType === 'burn' || outputType === 'deploy') {
+          type = outputType;
+        } else if (!type) {
+          type = outputType;
         }
-
-        if (type === 'transfer' && (isProdAddress || isSandboxAddress)) {
-          type = 'mint';
-        }
-
-        inputTotal += BigInt(inscriptionJson.amt);
-        inputs.push({
-          address: parsedCosigner.address,
-          amount: parseInt(inscriptionJson.amt),
-        });
-      }
-    }
-
-    // First pass: collect all output addresses
-    for (const script of outScripts) {
-      const parsedCosigner = parseCosignerScripts([script])[0];
-      outputAddresses.push(parsedCosigner?.address);
-    }
-
-    // Second pass: process outputs with inscriptions
-    for (const script of outScripts) {
-      const parsedCosigner = parseCosignerScripts([script])[0];
-      const insc = parseInscription(script);
-      const content = insc?.file?.content;
-      if (!content) continue;
-      const inscriptionData = Utils.toUTF8(content);
-      if (!inscriptionData) continue;
-      const inscriptionJson = JSON.parse(inscriptionData);
-      if (inscriptionJson) {
-        if (inscriptionJson.op === 'burn') {
-          type = 'burn';
-        }
-        const isProdToken = inscriptionJson.id === PROD_TOKEN_ID;
-        const isProdApprover = parsedCosigner.cosigner === PROD_APPROVER;
-        const isEmptyCosigner = parsedCosigner.cosigner === '';
-        const isProdAddress = parsedCosigner.address === PROD_ADDRESS;
-        const isDeploy = inscriptionJson.op === 'deploy+mint';
-
-        if (isDeploy) {
-          type = 'deploy';
-        }
-
-        if (!isProdToken || !isProdApprover) {
-          if (isEmptyCosigner && isProdAddress) {
-            environment = 'production';
-          } else {
-            environment = 'sandbox';
-          }
-        }
-        outputTotal += BigInt(inscriptionJson.amt);
-        outputs.push({
-          address: parsedCosigner.address,
-          amount: parseInt(inscriptionJson.amt),
-        });
       }
     }
 
+    return { outputs, total, environment, type };
+  }
+
+  private async validateTransaction(
+    tx: Transaction,
+    type: TxOperation,
+    inputTotal: bigint,
+    outputTotal: bigint,
+  ): Promise<boolean> {
     const isValidMnee = await this.validateMneeTx(tx.toHex());
-    const isValid = isValidMnee && (type === 'deploy' || inputTotal === outputTotal);
+    if (!isValidMnee) return false;
 
-    if (txid === PROD_TOKEN_ID.split('_')[0]) {
-      environment = 'production';
-    } else if (txid === SANDBOX_TOKEN_ID.split('_')[0]) {
-      environment = 'sandbox';
-    }
+    if (type === 'deploy') return true;
+
+    return inputTotal === outputTotal;
+  }
+
+  private buildParseResponse(
+    txid: string,
+    environment: Environment,
+    type: TxOperation,
+    inputData: { inputs: ProcessedInput[]; total: bigint },
+    outputData: { outputs: ProcessedOutput[]; total: bigint },
+    isValid: boolean,
+    tx: Transaction,
+    options?: ParseOptions,
+  ): ParseTxResponse | ParseTxExtendedResponse {
+    const simpleInputs: TxAddressAmount[] = inputData.inputs
+      .filter((input) => input.inscription && input.address)
+      .map((input) => ({
+        address: input.address!,
+        amount: input.amount,
+      }));
+
+    const simpleOutputs: TxAddressAmount[] = outputData.outputs
+      .filter((output) => output.inscription && output.address)
+      .map((output) => ({
+        address: output.address!,
+        amount: output.amount,
+      }));
 
     const baseResponse: ParseTxResponse = {
       txid,
       environment,
       type,
-      inputs,
-      outputs,
+      inputs: simpleInputs,
+      outputs: simpleOutputs,
       isValid,
-      inputTotal: inputTotal.toString(),
-      outputTotal: outputTotal.toString(),
+      inputTotal: inputData.total.toString(),
+      outputTotal: outputData.total.toString(),
     };
 
-    // If includeRaw is true, build extended response
     if (options?.includeRaw) {
       const extendedResponse: ParseTxExtendedResponse = {
         ...baseResponse,
         raw: {
           txHex: tx.toHex(),
-          inputs: tx.inputs.map((input, index) => ({
-            txid: input.sourceTXID || '',
-            vout: input.sourceOutputIndex,
-            scriptSig: input.unlockingScript?.toHex() || '',
-            sequence: input.sequence || 0xffffffff,
-            address: inputAddresses[index],
-            satoshis: inputSatoshis[index] || 0,
-            tokenData: inputs.find((i) => i.address === inputAddresses[index])
-              ? { amount: inputs.find((i) => i.address === inputAddresses[index])?.amount }
-              : undefined,
-          })),
-          outputs: tx.outputs.map((output, index) => ({
-            value: Number(output.satoshis),
-            scriptPubKey: output.lockingScript.toHex(),
-            address: outputAddresses[index],
-            tokenData: outputs.find((o) => o.address === outputAddresses[index])
-              ? { amount: outputs.find((o) => o.address === outputAddresses[index])?.amount }
-              : undefined,
-          })),
+          inputs: tx.inputs.map((input, index) => {
+            const processedInput = inputData.inputs[index];
+            return {
+              txid: input.sourceTXID || '',
+              vout: input.sourceOutputIndex,
+              scriptSig: input.unlockingScript?.toHex() || '',
+              sequence: input.sequence || 0xffffffff,
+              address: processedInput?.address,
+              satoshis: processedInput?.satoshis || 0,
+              tokenData: processedInput?.inscription ? { amount: processedInput.amount } : undefined,
+            };
+          }),
+          outputs: tx.outputs.map((output, index) => {
+            const processedOutput = outputData.outputs[index];
+            return {
+              value: Number(output.satoshis),
+              scriptPubKey: output.lockingScript.toHex(),
+              address: processedOutput?.address,
+              tokenData: processedOutput?.inscription ? { amount: processedOutput.amount } : undefined,
+            };
+          }),
         },
       };
       return extendedResponse;
     }
 
     return baseResponse;
+  }
+
+  private async parseTransaction(
+    tx: Transaction,
+    config: MNEEConfig,
+    options?: ParseOptions,
+  ): Promise<ParseTxResponse | ParseTxExtendedResponse> {
+    const txid = tx.id('hex');
+
+    const inputData = await this.processTransactionInputs(tx, config, txid);
+    const outputData = this.processTransactionOutputs(tx, config, txid);
+
+    const environment = outputData.environment || inputData.environment || 'sandbox';
+
+    let type = outputData.type || inputData.type || 'transfer';
+
+    if (type === 'transfer') {
+      const hasMintInputAddress = inputData.inputs.some(
+        (input) => input.inscription && (input.address === PROD_MINT_ADDRESS || input.address === SANDBOX_MINT_ADDRESS),
+      );
+
+      if (hasMintInputAddress) {
+        type = 'mint';
+      }
+    }
+
+    // If there are no inputs with inscriptions, it can be nothing but a deploy
+    const inputsWithInscriptions = inputData.inputs.filter((input) => input.inscription);
+    if (inputsWithInscriptions.length === 0 && inputData.inputs.length > 0) {
+      type = 'deploy';
+    }
+
+    const isValid = await this.validateTransaction(tx, type, inputData.total, outputData.total);
+
+    return this.buildParseResponse(txid, environment, type, inputData, outputData, isValid, tx, options);
   }
 
   public async parseTx(txid: string, options?: ParseOptions): Promise<ParseTxResponse | ParseTxExtendedResponse> {
