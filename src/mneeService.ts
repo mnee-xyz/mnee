@@ -389,8 +389,6 @@ export class MNEEService {
 
       if (!request) {
         parsedScripts.forEach((parsed) => {
-          console.log('parsed', parsed);
-          console.log('config.approver', config.approver);
           if (parsed?.cosigner !== '' && parsed?.cosigner !== config.approver) {
             throw new Error('Invalid or missing cosigner');
           }
