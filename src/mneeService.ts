@@ -128,11 +128,9 @@ export class MNEEService {
     };
   }
 
-  private async getUtxos(
-    address: string | string[],
-    ops: MNEEOperation[] = ['transfer', 'deploy+mint'],
-  ): Promise<MNEEUtxo[]> {
+  public async getUtxos(address: string | string[]): Promise<MNEEUtxo[]> {
     try {
+      const ops = ['transfer', 'deploy+mint'];
       const arrayAddress = Array.isArray(address) ? address : [address];
       const response = await fetch(`${this.mneeApi}/v1/utxos?auth_token=${this.mneeApiKey}`, {
         method: 'POST',

@@ -13,6 +13,7 @@ import {
   AddressHistoryParams,
   Inscription,
   ParsedCosigner,
+  MNEEUtxo,
 } from './mnee.types.js';
 import { Script } from '@bsv/sdk';
 export * from './mnee.types.js';
@@ -21,6 +22,7 @@ export interface MneeInterface {
   config(): Promise<MNEEConfig | undefined>;
   balance(address: string): Promise<MNEEBalance>;
   balances(addresses: string[]): Promise<MNEEBalance[]>;
+  getUtxos(address: string | string[]): Promise<MNEEUtxo[]>;
   validateMneeTx(rawTxHex: string, request?: SendMNEE[]): Promise<boolean>;
   transfer(request: SendMNEE[], wif: string): Promise<TransferResponse>;
   transferMulti(options: TransferMultiOptions): Promise<TransferResponse>;
@@ -114,6 +116,16 @@ export default class Mnee implements MneeInterface {
    */
   async balances(addresses: string[]): Promise<MNEEBalance[]> {
     return this.service.getBalances(addresses);
+  }
+
+  /**
+   * Retrieves the UTXOs for a given address.
+   *
+   * @param address - The address to retrieve the UTXOs for.
+   * @returns A promise that resolves to an array of `MNEEUtxo` objects containing the UTXO details.
+   */
+  async getUtxos(address: string | string[]): Promise<MNEEUtxo[]> {
+    return this.service.getUtxos(address);
   }
 
   /**
