@@ -32,6 +32,7 @@ import {
   AddressHistoryParams,
   ParsedCosigner,
   TxAddressAmount,
+  TransferResponse,
 } from './mnee.types.js';
 import CosignTemplate from './mneeCosignTemplate.js';
 import * as jsOneSat from 'js-1sat-ord';
@@ -303,6 +304,17 @@ export class MNEEService {
       }
       console.error('Failed to transfer tokens:', errorMessage);
       return { error: errorMessage };
+    }
+  }
+
+  public async submitRawTx(rawtx: string): Promise<TransferResponse> {
+    try {
+      const tx = Transaction.fromHex(rawtx);
+      const response = await this.broadcastTransaction(tx);
+      return response;
+    } catch (error) {
+      console.error('Failed to submit raw transaction:', error);
+      return { error: 'Failed to submit raw transaction' };
     }
   }
 

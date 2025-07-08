@@ -21,9 +21,10 @@ export interface MneeInterface {
   config(): Promise<MNEEConfig | undefined>;
   balance(address: string): Promise<MNEEBalance>;
   balances(addresses: string[]): Promise<MNEEBalance[]>;
-  validateMneeTx(rawtx: string, request?: SendMNEE[]): Promise<boolean>;
+  validateMneeTx(rawTxHex: string, request?: SendMNEE[]): Promise<boolean>;
   transfer(request: SendMNEE[], wif: string): Promise<TransferResponse>;
   transferMulti(options: TransferMultiOptions): Promise<TransferResponse>;
+  submitRawTx(rawTxHex: string): Promise<TransferResponse>;
   toAtomicAmount(amount: number): number;
   fromAtomicAmount(amount: number): number;
   recentTxHistory(address: string, fromScore?: number, limit?: number): Promise<TxHistoryResponse>;
@@ -47,12 +48,12 @@ export default class Mnee implements MneeInterface {
   /**
    * Validates an MNEE transaction.
    *
-   * @param rawtx - The raw transaction to validate.
+   * @param rawTxHex - The raw transaction hex string to validate.
    * @param request - An array of SendMNEE objects representing the transfer details. Use this parameter to validate the transaction against the specified transfer details. If it is not provided, it will only validate that the transaction is well-formed with the cosigner.
    * @returns A promise that resolves to a boolean indicating whether the transaction is valid.
    */
-  async validateMneeTx(rawtx: string, request?: SendMNEE[]): Promise<boolean> {
-    return this.service.validateMneeTx(rawtx, request);
+  async validateMneeTx(rawTxHex: string, request?: SendMNEE[]): Promise<boolean> {
+    return this.service.validateMneeTx(rawTxHex, request);
   }
 
   /**
@@ -134,6 +135,16 @@ export default class Mnee implements MneeInterface {
    */
   async transferMulti(options: TransferMultiOptions): Promise<TransferResponse> {
     return this.service.transferMulti(options);
+  }
+
+  /**
+   * Submits a partially signed raw transaction to the MNEE network. This is useful when you have a raw transaction hex string that you have already signed, but you need to submit it to the MNEE network.
+   *
+   * @param rawTxHex - The raw transaction hex string to submit.
+   * @returns A promise that resolves to a TransferResponse object containing the result of the transfer.
+   */
+  async submitRawTx(rawTxHex: string): Promise<TransferResponse> {
+    return this.service.submitRawTx(rawTxHex);
   }
 
   /**
