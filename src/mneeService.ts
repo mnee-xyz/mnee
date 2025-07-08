@@ -23,6 +23,7 @@ import {
   ParseTxExtendedResponse,
   ParseOptions,
   SendMNEE,
+  TransferMultiOptions,
   SignatureRequest,
   SignatureResponse,
   TxHistory,
@@ -254,7 +255,6 @@ export class MNEEService {
 
       const tx = new Transaction(1, [], [], 0);
       let tokensIn = 0;
-      const signingAddresses: string[] = [];
       let changeAddress = '';
 
       while (tokensIn < totalAtomicTokenAmount + fee) {
@@ -264,7 +264,6 @@ export class MNEEService {
         const sourceTransaction = await this.fetchRawTx(utxo.txid);
         if (!sourceTransaction) return { error: 'Failed to fetch source transaction' };
 
-        signingAddresses.push(utxo.owners[0]);
         changeAddress = changeAddress || utxo.owners[0];
         tx.addInput({
           sourceTXID: utxo.txid,
@@ -285,52 +284,20 @@ export class MNEEService {
         tx.addOutput(await this.createInscription(changeAddress, change, config));
       }
 
-      const sigRequests: SignatureRequest[] = tx.inputs.map((input, index) => {
-        if (!input.sourceTXID) throw new Error('Source TXID is undefined');
-        return {
-          prevTxid: input.sourceTXID,
-          outputIndex: input.sourceOutputIndex,
-          inputIndex: index,
-          address: signingAddresses[index],
-          script: input.sourceTransaction?.outputs[input.sourceOutputIndex].lockingScript.toHex(),
-          satoshis: input.sourceTransaction?.outputs[input.sourceOutputIndex].satoshis || 1,
-          sigHashType:
-            TransactionSignature.SIGHASH_ALL |
-            TransactionSignature.SIGHASH_ANYONECANPAY |
-            TransactionSignature.SIGHASH_FORKID,
-        };
-      });
-
-      const rawtx = tx.toHex();
-      const res = await this.getSignatures({ rawtx, sigRequests }, privateKey);
-      if (!res?.sigResponses) return { error: 'Failed to get signatures' };
-
-      for (const sigResponse of res.sigResponses) {
-        tx.inputs[sigResponse.inputIndex].unlockingScript = new Script()
-          .writeBin(Utils.toArray(sigResponse.sig, 'hex'))
-          .writeBin(Utils.toArray(sigResponse.pubKey, 'hex'));
+      const privateKeys = new Map<number, PrivateKey>();
+      for (let i = 0; i < tx.inputs.length; i++) {
+        privateKeys.set(i, privateKey);
       }
 
-      const base64Tx = Utils.toBase64(tx.toBinary());
-      const response = await fetch(`${this.mneeApi}/v1/transfer?auth_token=${this.mneeApiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rawtx: base64Tx }),
-      });
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      const { rawtx: responseRawtx } = await response.json();
-      if (!responseRawtx) return { error: 'Failed to broadcast transaction' };
+      const signResult = await this.signAllInputs(tx, privateKeys);
+      if (signResult.error) return signResult;
 
-      const decodedBase64AsBinary = Utils.toArray(responseRawtx, 'base64');
-      const tx2 = Transaction.fromBinary(decodedBase64AsBinary);
-
-      return { txid: tx2.id('hex'), rawtx: Utils.toHex(decodedBase64AsBinary) };
+      return await this.broadcastTransaction(tx);
     } catch (error) {
       let errorMessage = 'Transaction submission failed';
       if (error instanceof Error) {
         errorMessage = error.message;
         if (error.message.includes('HTTP error')) {
-          // Add more specific error handling if needed based on response status
           console.error('HTTP error details:', error);
         }
       }
@@ -916,5 +883,344 @@ export class MNEEService {
 
   public parseCosignerScripts(scripts: string[]) {
     return parseCosignerScripts(scripts);
+  }
+
+  private validateUniqueInputs(inputs: TransferMultiOptions['inputs']): { error?: string } {
+    const inputSet = new Set<string>();
+    for (const input of inputs) {
+      const inputKey = `${input.txid}:${input.vout}`;
+      if (inputSet.has(inputKey)) {
+        return { error: `Duplicate input detected: ${inputKey}. Each UTXO can only be spent once.` };
+      }
+      inputSet.add(inputKey);
+    }
+    return {};
+  }
+
+  private async addInputsToTransaction(
+    tx: Transaction,
+    inputs: TransferMultiOptions['inputs'],
+    privateKeys: Map<number, PrivateKey>,
+  ): Promise<{ tokensIn: number; error?: string }> {
+    let tokensIn = 0;
+
+    for (let i = 0; i < inputs.length; i++) {
+      const input = inputs[i];
+      const sourceTransaction = await this.fetchRawTx(input.txid);
+      if (!sourceTransaction) return { tokensIn: 0, error: `Failed to fetch source transaction: ${input.txid}` };
+
+      const output = sourceTransaction.outputs[input.vout];
+      if (!output) return { tokensIn: 0, error: `Output ${input.vout} not found in transaction ${input.txid}` };
+
+      const inscription = this.parseInscriptionData(output.lockingScript);
+      if (!inscription) return { tokensIn: 0, error: `No inscription found in output ${input.txid}:${input.vout}` };
+
+      const tokenAmount = parseInt(inscription.amt);
+      tokensIn += tokenAmount;
+
+      privateKeys.set(i, PrivateKey.fromWif(input.wif));
+
+      tx.addInput({
+        sourceTXID: input.txid,
+        sourceOutputIndex: input.vout,
+        sourceTransaction,
+        unlockingScript: new UnlockingScript(),
+      });
+    }
+
+    return { tokensIn };
+  }
+
+  private calculateTransferFee(
+    tokensIn: number,
+    totalAtomicTokenAmount: number,
+    changeAddress: TransferMultiOptions['changeAddress'],
+    inputAddresses: Set<string>,
+    config: MNEEConfig,
+    recipients: SendMNEE[],
+  ): { fee: number; error?: string } {
+    let fee = 0;
+    let previousFee = -1;
+
+    while (fee !== previousFee) {
+      previousFee = fee;
+
+      const totalChange = tokensIn - totalAtomicTokenAmount - fee;
+
+      // Calculate how much change goes to non-input addresses
+      let changeToNonInputAddresses = 0;
+      if (totalChange > 0) {
+        if (typeof changeAddress === 'string') {
+          // Single change address
+          if (!inputAddresses.has(changeAddress)) {
+            changeToNonInputAddresses = totalChange;
+          }
+        } else if (Array.isArray(changeAddress)) {
+          // Multiple change addresses
+          for (const changeOutput of changeAddress) {
+            const atomicAmount = this.toAtomicAmount(changeOutput.amount);
+            if (!inputAddresses.has(changeOutput.address)) {
+              changeToNonInputAddresses += atomicAmount;
+            }
+          }
+        } else {
+          // Default to first input address - change goes back to input
+          changeToNonInputAddresses = 0;
+        }
+      }
+
+      // Total transfer amount = recipients + change to non-input addresses
+      const totalTransferAmount = totalAtomicTokenAmount + changeToNonInputAddresses;
+
+      // Get fee based on total transfer amount
+      const newFee =
+        recipients.find((req) => req.address === config.burnAddress) !== undefined
+          ? 0
+          : config.fees.find(
+              (f: { min: number; max: number }) => totalTransferAmount >= f.min && totalTransferAmount <= f.max,
+            )?.fee;
+
+      if (newFee === undefined) return { fee: 0, error: 'Fee ranges inadequate' };
+      fee = newFee;
+    }
+
+    return { fee };
+  }
+
+  private async addChangeOutputs(
+    tx: Transaction,
+    change: number,
+    changeAddress: TransferMultiOptions['changeAddress'],
+    privateKeys: Map<number, PrivateKey>,
+    config: MNEEConfig,
+    tokensIn: number,
+    totalAtomicTokenAmount: number,
+    fee: number,
+  ): Promise<{ error?: string }> {
+    if (change <= 0) return {};
+
+    if (typeof changeAddress === 'string') {
+      // Single change address
+      tx.addOutput(await this.createInscription(changeAddress, change, config));
+    } else if (Array.isArray(changeAddress)) {
+      // Multiple change outputs
+      if (changeAddress.length === 0) {
+        return {
+          error:
+            'Change address array cannot be empty. Provide at least one change output or use a single address string.',
+        };
+      }
+
+      const atomicChangeOutputs = changeAddress.map((c) => ({
+        address: c.address,
+        amount: this.toAtomicAmount(c.amount),
+      }));
+
+      const changeSum = atomicChangeOutputs.reduce((sum, c) => sum + c.amount, 0);
+      if (changeSum !== change) {
+        const changeDecimal = this.fromAtomicAmount(change);
+        const changeSumDecimal = this.fromAtomicAmount(changeSum);
+        return {
+          error: `Change amounts must sum to ${changeDecimal} (${change} atomic units). Total inputs: ${this.fromAtomicAmount(
+            tokensIn,
+          )} - total outputs: ${this.fromAtomicAmount(totalAtomicTokenAmount)} - fee: ${this.fromAtomicAmount(
+            fee,
+          )} = ${changeDecimal}. Your change outputs sum to ${changeSumDecimal} (${changeSum} atomic units).`,
+        };
+      }
+
+      for (const changeOutput of changeAddress) {
+        if (changeOutput.amount <= 0) {
+          return { error: `Invalid change amount: ${changeOutput.amount}. Must be positive.` };
+        }
+      }
+
+      for (const changeOutput of atomicChangeOutputs) {
+        tx.addOutput(await this.createInscription(changeOutput.address, changeOutput.amount, config));
+      }
+    } else {
+      // Default to first input's address
+      const defaultChangeAddress = privateKeys.get(0)!.toAddress();
+      tx.addOutput(await this.createInscription(defaultChangeAddress, change, config));
+    }
+
+    return {};
+  }
+
+  private async signAllInputs(tx: Transaction, privateKeys: Map<number, PrivateKey>): Promise<{ error?: string }> {
+    const sigRequests: SignatureRequest[] = tx.inputs.map((input, index) => {
+      if (!input.sourceTXID) throw new Error('Source TXID is undefined');
+      return {
+        prevTxid: input.sourceTXID,
+        outputIndex: input.sourceOutputIndex,
+        inputIndex: index,
+        address: privateKeys.get(index)!.toAddress(),
+        script: input.sourceTransaction?.outputs[input.sourceOutputIndex].lockingScript.toHex(),
+        satoshis: input.sourceTransaction?.outputs[input.sourceOutputIndex].satoshis || 1,
+        sigHashType:
+          TransactionSignature.SIGHASH_ALL |
+          TransactionSignature.SIGHASH_ANYONECANPAY |
+          TransactionSignature.SIGHASH_FORKID,
+      };
+    });
+
+    const rawtx = tx.toHex();
+    const allSigResponses: SignatureResponse[] = [];
+
+    for (const [inputIndex, privateKey] of privateKeys.entries()) {
+      const inputSigRequest = sigRequests[inputIndex];
+      const res = await this.getSignatures({ rawtx, sigRequests: [inputSigRequest] }, privateKey);
+
+      if (!res?.sigResponses) {
+        return { error: `Failed to get signatures for input ${inputIndex}` };
+      }
+
+      allSigResponses.push(...res.sigResponses);
+    }
+
+    for (const sigResponse of allSigResponses) {
+      tx.inputs[sigResponse.inputIndex].unlockingScript = new Script()
+        .writeBin(Utils.toArray(sigResponse.sig, 'hex'))
+        .writeBin(Utils.toArray(sigResponse.pubKey, 'hex'));
+    }
+
+    return {};
+  }
+
+  private validateTokenConservation(tx: Transaction, tokensIn: number): { error?: string } {
+    let totalOut = 0;
+    for (let i = 0; i < tx.outputs.length; i++) {
+      const output = tx.outputs[i];
+      const inscription = this.parseInscriptionData(output.lockingScript);
+      if (inscription) {
+        const amt = parseInt(inscription.amt);
+        totalOut += amt;
+      }
+    }
+
+    if (tokensIn !== totalOut) {
+      return {
+        error: `Token conservation violation! Inputs (${this.fromAtomicAmount(
+          tokensIn,
+        )}) do not equal outputs (${this.fromAtomicAmount(totalOut)}). This would ${
+          tokensIn > totalOut ? 'burn' : 'create'
+        } ${this.fromAtomicAmount(Math.abs(tokensIn - totalOut))} tokens.`,
+      };
+    }
+
+    return {};
+  }
+
+  private async broadcastTransaction(tx: Transaction): Promise<{ txid?: string; rawtx?: string; error?: string }> {
+    try {
+      const base64Tx = Utils.toBase64(tx.toBinary());
+      const response = await fetch(`${this.mneeApi}/v1/transfer?auth_token=${this.mneeApiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rawtx: base64Tx }),
+      });
+
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+      const { rawtx: responseRawtx } = await response.json();
+      if (!responseRawtx) return { error: 'Failed to broadcast transaction' };
+
+      const decodedBase64AsBinary = Utils.toArray(responseRawtx, 'base64');
+      const tx2 = Transaction.fromBinary(decodedBase64AsBinary);
+
+      return { txid: tx2.id('hex'), rawtx: Utils.toHex(decodedBase64AsBinary) };
+    } catch (error) {
+      let errorMessage = 'Transaction broadcast failed';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      return { error: errorMessage };
+    }
+  }
+
+  public async transferMulti(
+    options: TransferMultiOptions,
+  ): Promise<{ txid?: string; rawtx?: string; error?: string }> {
+    try {
+      const config = this.mneeConfig || (await this.getCosignerConfig());
+      if (!config) throw new Error('Config not fetched');
+
+      const totalAmount = options.recipients.reduce((sum, req) => sum + req.amount, 0);
+      if (totalAmount <= 0) return { error: 'Invalid amount' };
+      const totalAtomicTokenAmount = this.toAtomicAmount(totalAmount);
+
+      const validationResult = this.validateUniqueInputs(options.inputs);
+      if (validationResult.error) return validationResult;
+
+      const tx = new Transaction(1, [], [], 0);
+      const privateKeys = new Map<number, PrivateKey>();
+
+      const inputResult = await this.addInputsToTransaction(tx, options.inputs, privateKeys);
+      if (inputResult.error) return { error: inputResult.error };
+      const tokensIn = inputResult.tokensIn;
+
+      const inputAddresses = new Set<string>();
+      for (let i = 0; i < options.inputs.length; i++) {
+        const privKey = PrivateKey.fromWif(options.inputs[i].wif);
+        inputAddresses.add(privKey.toAddress());
+      }
+
+      const feeResult = this.calculateTransferFee(
+        tokensIn,
+        totalAtomicTokenAmount,
+        options.changeAddress,
+        inputAddresses,
+        config,
+        options.recipients,
+      );
+      if (feeResult.error) return { error: feeResult.error };
+      const fee = feeResult.fee;
+
+      if (tokensIn < totalAtomicTokenAmount + fee) {
+        const haveDecimal = this.fromAtomicAmount(tokensIn);
+        const needDecimal = this.fromAtomicAmount(totalAtomicTokenAmount + fee);
+        return {
+          error: `Insufficient tokens. Have: ${haveDecimal}, Need: ${needDecimal} (including fee: ${this.fromAtomicAmount(
+            fee,
+          )})`,
+        };
+      }
+
+      for (const req of options.recipients) {
+        tx.addOutput(await this.createInscription(req.address, this.toAtomicAmount(req.amount), config));
+      }
+
+      if (fee > 0) {
+        tx.addOutput(await this.createInscription(config.feeAddress, fee, config));
+      }
+
+      const change = tokensIn - totalAtomicTokenAmount - fee;
+      const changeResult = await this.addChangeOutputs(
+        tx,
+        change,
+        options.changeAddress,
+        privateKeys,
+        config,
+        tokensIn,
+        totalAtomicTokenAmount,
+        fee,
+      );
+      if (changeResult.error) return changeResult;
+
+      const signResult = await this.signAllInputs(tx, privateKeys);
+      if (signResult.error) return signResult;
+
+      const conservationResult = this.validateTokenConservation(tx, tokensIn);
+      if (conservationResult.error) return conservationResult;
+
+      return await this.broadcastTransaction(tx);
+    } catch (error) {
+      let errorMessage = 'Multi-source transfer failed';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      console.error('Failed to transfer tokens from multiple sources:', errorMessage);
+      return { error: errorMessage };
+    }
   }
 }

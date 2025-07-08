@@ -116,6 +116,21 @@ export interface Inscription {
 
 export type TransferResponse = { txid?: string; rawtx?: string; error?: string };
 
+export interface TransferMultiOptions {
+  inputs: Array<{
+    txid: string;
+    vout: number;
+    wif: string; // WIF for this specific UTXO
+  }>;
+  recipients: SendMNEE[];
+  changeAddress?:
+    | string
+    | Array<{
+        address: string;
+        amount: number;
+      }>; // Optional, can be single address or multiple with amounts
+}
+
 export type MneeSync = {
   txid: string;
   outs: null;

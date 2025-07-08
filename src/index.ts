@@ -8,6 +8,7 @@ import {
   ParseOptions,
   SendMNEE,
   TransferResponse,
+  TransferMultiOptions,
   TxHistoryResponse,
   AddressHistoryParams,
   Inscription,
@@ -22,6 +23,7 @@ export interface MneeInterface {
   balances(addresses: string[]): Promise<MNEEBalance[]>;
   validateMneeTx(rawtx: string, request?: SendMNEE[]): Promise<boolean>;
   transfer(request: SendMNEE[], wif: string): Promise<TransferResponse>;
+  transferMulti(options: TransferMultiOptions): Promise<TransferResponse>;
   toAtomicAmount(amount: number): number;
   fromAtomicAmount(amount: number): number;
   recentTxHistory(address: string, fromScore?: number, limit?: number): Promise<TxHistoryResponse>;
@@ -122,6 +124,16 @@ export default class Mnee implements MneeInterface {
    */
   async transfer(request: SendMNEE[], wif: string): Promise<TransferResponse> {
     return this.service.transfer(request, wif);
+  }
+
+  /**
+   * Transfers MNEE tokens from multiple source UTXOs with different private keys. This is a more advanced method that allows you to control the UTXOs used in the transfer along with associated private keys.
+   *
+   * @param options - The transfer options including inputs, recipients, and optional change address.
+   * @returns A promise that resolves to a TransferResponse object containing the result of the transfer.
+   */
+  async transferMulti(options: TransferMultiOptions): Promise<TransferResponse> {
+    return this.service.transferMulti(options);
   }
 
   /**
