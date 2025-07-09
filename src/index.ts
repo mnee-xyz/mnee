@@ -16,6 +16,7 @@ import {
   MNEEUtxo,
 } from './mnee.types.js';
 import { Script } from '@bsv/sdk';
+import { HDWallet, HDWalletOptions } from './hdWallet.js';
 export * from './mnee.types.js';
 
 export interface MneeInterface {
@@ -35,6 +36,7 @@ export interface MneeInterface {
   parseTxFromRawTx(rawTxHex: string, options?: ParseOptions): Promise<ParseTxResponse | ParseTxExtendedResponse>;
   parseInscription(script: Script): Inscription | undefined;
   parseCosignerScripts(scripts: string[]): ParsedCosigner[];
+  HDWallet(mnemonic: string, options: HDWalletOptions): HDWallet;
 }
 
 /**
@@ -42,6 +44,14 @@ export interface MneeInterface {
  */
 export default class Mnee implements MneeInterface {
   private service: MNEEService;
+
+  /**
+   * Static reference to HDWallet class for accessing static methods
+   * @example
+   * const mnemonic = Mnee.HDWallet.generateMnemonic();
+   * const isValid = Mnee.HDWallet.isValidMnemonic(mnemonic);
+   */
+  static HDWallet = HDWallet;
 
   constructor(config: SdkConfig) {
     this.service = new MNEEService(config);
@@ -223,5 +233,21 @@ export default class Mnee implements MneeInterface {
    */
   parseCosignerScripts(scripts: string[]): ParsedCosigner[] {
     return this.service.parseCosignerScripts(scripts);
+  }
+
+  /**
+   * Creates a new HDWallet instance for managing hierarchical deterministic wallets.
+   * @param mnemonic - The BIP39 mnemonic phrase
+   * @param options - Configuration options for the HD wallet
+   * @returns A new HDWallet instance
+   * @example
+   * const mnee = new Mnee(config);
+   * const hdWallet = mnee.HDWallet(mnemonic, {
+   *   derivationPath: "m/44'/236'/0'",
+   *   cacheSize: 1000
+   * });
+   */
+  HDWallet(mnemonic: string, options: HDWalletOptions): HDWallet {
+    return new HDWallet(mnemonic, options);
   }
 }
