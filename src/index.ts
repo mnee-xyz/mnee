@@ -17,6 +17,7 @@ import {
 } from './mnee.types.js';
 import { Script } from '@bsv/sdk';
 import { HDWallet, HDWalletOptions } from './hdWallet.js';
+import { Batch } from './batch.js';
 export * from './mnee.types.js';
 
 export interface MneeInterface {
@@ -37,6 +38,7 @@ export interface MneeInterface {
   parseInscription(script: Script): Inscription | undefined;
   parseCosignerScripts(scripts: string[]): ParsedCosigner[];
   HDWallet(mnemonic: string, options: HDWalletOptions): HDWallet;
+  batch(): Batch;
 }
 
 /**
@@ -44,6 +46,7 @@ export interface MneeInterface {
  */
 export default class Mnee implements MneeInterface {
   private service: MNEEService;
+  private _batch?: Batch;
 
   /**
    * Static reference to HDWallet class for accessing static methods
@@ -249,5 +252,20 @@ export default class Mnee implements MneeInterface {
    */
   HDWallet(mnemonic: string, options: HDWalletOptions): HDWallet {
     return new HDWallet(mnemonic, options);
+  }
+
+  /**
+   * Returns a Batch instance for performing batch operations
+   * @returns A Batch instance for batch processing
+   * @example
+   * const batch = mnee.batch();
+   * const balances = await batch.getBalances(addresses);
+   * const utxos = await batch.getUtxos(addresses);
+   */
+  batch(): Batch {
+    if (!this._batch) {
+      this._batch = new Batch(this.service);
+    }
+    return this._batch;
   }
 }

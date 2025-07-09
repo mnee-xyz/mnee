@@ -16,7 +16,6 @@ import {
   MNEEConfig,
   MneeInscription,
   SdkConfig,
-  MNEEOperation,
   MneeSync,
   MNEEUtxo,
   ParseTxResponse,
@@ -71,6 +70,7 @@ export class MNEEService {
   private mneeApiKey: string;
   private mneeConfig: MNEEConfig | undefined;
   private mneeApi: string;
+
   constructor(config: SdkConfig) {
     if (config.environment !== 'production' && config.environment !== 'sandbox') {
       throw new Error('Invalid environment. Must be either "production" or "sandbox"');
