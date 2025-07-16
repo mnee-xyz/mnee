@@ -64,8 +64,8 @@ export const parseInscription = (script: Script) => {
   return insc;
 };
 
-export const parseCosignerScripts = (scripts: any): ParsedCosigner[] => {
-  return scripts.map((script: any) => {
+export const parseCosignerScripts = (scripts: Script[]): ParsedCosigner[] => {
+  return scripts.map((script: Script) => {
     const chunks = script.chunks;
     for (let i = 0; i <= chunks.length - 4; i++) {
       if (
@@ -96,7 +96,9 @@ export const parseCosignerScripts = (scripts: any): ParsedCosigner[] => {
         };
       }
     }
-  });
+    // Return undefined for scripts that don't match any pattern
+    return undefined as any;
+  }).filter((result): result is ParsedCosigner => result !== undefined);
 };
 
 export const parseSyncToTxHistory = (sync: MneeSync, address: string, config: MNEEConfig): TxHistory | null => {
@@ -178,4 +180,24 @@ export const parseSyncToTxHistory = (sync: MneeSync, address: string, config: MN
     score: sync.score,
     counterparties,
   };
+};
+
+export const validateAddress = (address: string) => {
+  try {
+    const decoded = Utils.fromBase58Check(address);
+    // 0x00 = mainnet P2PKH (addresses starting with '1')
+    const validPrefixes = [0x00];
+    const prefixByte = decoded.prefix[0];
+    if (typeof prefixByte !== 'number' || !validPrefixes.includes(prefixByte)) {
+      throw new Error(`Invalid address prefix: ${prefixByte}`);
+    }
+    // Ensure the payload is 20 bytes (160 bits) for P2PKH/P2SH
+    if (decoded.data.length !== 20) {
+      throw new Error(`Invalid address payload length: ${decoded.data.length}`);
+    }
+    return true;
+  } catch (error) {
+    console.error(`Invalid Bitcoin address: ${error instanceof Error ? error.message : String(error)}`);
+    return false;
+  }
 };

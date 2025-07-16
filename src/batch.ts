@@ -4,31 +4,29 @@
  */
 
 import { MNEEService } from './mneeService.js';
-import { 
-  MNEEUtxo, 
-  MNEEBalance, 
-  TxHistoryResponse, 
+import {
+  MNEEUtxo,
+  MNEEBalance,
+  TxHistoryResponse,
   AddressHistoryParams,
   ParseTxResponse,
   ParseTxExtendedResponse,
-  ParseOptions
+  ParseOptions,
 } from './mnee.types.js';
 
 export interface BatchOptions {
   /** Maximum items per API call (default: 20) */
   chunkSize?: number;
-  /** Number of concurrent requests (default: 3) */
-  concurrency?: number;
+  /** API requests per second limit (default: 3). If your API key has a higher limit, set this accordingly */
+  requestsPerSecond?: number;
   /** Continue processing if an error occurs (default: false) */
   continueOnError?: boolean;
-  /** Progress callback */
-  onProgress?: (completed: number, total: number, errors: number) => void;
-  /** Delay between chunks in milliseconds (default: 100) */
-  delayBetweenChunks?: number;
   /** Maximum retries per chunk (default: 3) */
   maxRetries?: number;
   /** Retry delay in milliseconds (default: 1000) */
   retryDelay?: number;
+  /** Progress callback */
+  onProgress?: (completed: number, total: number, errors: number) => void;
 }
 
 export interface BatchError {
@@ -61,12 +59,7 @@ export interface BatchParseTxResult {
  * const result = await batch.getBalances(addresses, { onProgress: ... });
  */
 export class Batch {
-  private rateLimiter: RateLimiter;
-  
-  constructor(private service: MNEEService) {
-    // Default rate limiter: max 5 concurrent requests, 100ms minimum delay
-    this.rateLimiter = new RateLimiter(5, 100);
-  }
+  constructor(private service: MNEEService) {}
 
   /**
    * Get UTXOs for multiple addresses
@@ -77,20 +70,17 @@ export class Batch {
    *   }
    * });
    */
-  async getUtxos(
-    addresses: string[],
-    options: BatchOptions = {}
-  ): Promise<BatchResult<BatchUtxoResult>> {
+  async getUtxos(addresses: string[], options: BatchOptions = {}): Promise<BatchResult<BatchUtxoResult>> {
     return this.processBatch(
       addresses,
       async (chunk) => {
         const utxos = await this.service.getUtxos(chunk);
-        return chunk.map(address => ({
+        return chunk.map((address) => ({
           address,
-          utxos: utxos.filter(utxo => utxo.owners.includes(address))
+          utxos: utxos.filter((utxo) => utxo.owners.includes(address)),
         }));
       },
-      options
+      options,
     );
   }
 
@@ -100,15 +90,8 @@ export class Batch {
    * const result = await mnee.batch().getBalances(addresses);
    * const totalBalance = result.results.reduce((sum, b) => sum + b.decimalAmount, 0);
    */
-  async getBalances(
-    addresses: string[],
-    options: BatchOptions = {}
-  ): Promise<BatchResult<MNEEBalance>> {
-    return this.processBatch(
-      addresses,
-      async (chunk) => this.service.getBalances(chunk),
-      options
-    );
+  async getBalances(addresses: string[], options: BatchOptions = {}): Promise<BatchResult<MNEEBalance>> {
+    return this.processBatch(addresses, async (chunk) => this.service.getBalances(chunk), options);
   }
 
   /**
@@ -119,13 +102,13 @@ export class Batch {
    */
   async getTxHistories(
     params: AddressHistoryParams[],
-    options: BatchOptions = {}
+    options: BatchOptions = {},
   ): Promise<BatchResult<TxHistoryResponse>> {
     return this.processBatch(
       params,
       async (chunk) => this.service.getRecentTxHistories(chunk),
       options,
-      (param) => param.address
+      (param) => param.address,
     );
   }
 
@@ -138,121 +121,23 @@ export class Batch {
    */
   async parseTx(
     txids: string[],
-    options: BatchOptions & { parseOptions?: ParseOptions } = {}
+    options: BatchOptions & { parseOptions?: ParseOptions } = {},
   ): Promise<BatchResult<BatchParseTxResult>> {
     const { parseOptions, ...batchOptions } = options;
-    
+
     return this.processBatch(
       txids,
       async (chunk) => {
         const results = await Promise.all(
           chunk.map(async (txid) => ({
             txid,
-            parsed: await this.service.parseTx(txid, parseOptions)
-          }))
+            parsed: await this.service.parseTx(txid, parseOptions),
+          })),
         );
         return results;
       },
-      batchOptions
+      batchOptions,
     );
-  }
-
-  /**
-   * Get all data (UTXOs, balances, and history) for multiple addresses
-   * @example
-   * const data = await mnee.batch().getAll(addresses, { historyLimit: 50 });
-   */
-  async getAll(
-    addresses: string[],
-    options: BatchOptions & { historyLimit?: number } = {}
-  ): Promise<{
-    utxos: BatchResult<BatchUtxoResult>;
-    balances: BatchResult<MNEEBalance>;
-    histories: BatchResult<TxHistoryResponse>;
-  }> {
-    const { historyLimit = 100, ...batchOptions } = options;
-    
-    // Create history params
-    const historyParams: AddressHistoryParams[] = addresses.map(address => ({
-      address,
-      limit: historyLimit
-    }));
-    
-    // Fetch UTXOs and histories in parallel (no need to fetch balances separately)
-    const [utxosResult, histories] = await Promise.all([
-      this.getUtxos(addresses, batchOptions),
-      this.getTxHistories(historyParams, batchOptions)
-    ]);
-    
-    // Calculate balances from UTXOs to avoid redundant API calls
-    const balances = this.calculateBalancesFromUtxos(addresses, utxosResult);
-    
-    return { utxos: utxosResult, balances, histories };
-  }
-
-  /**
-   * Calculate balances from UTXO results
-   */
-  private calculateBalancesFromUtxos(
-    addresses: string[],
-    utxosResult: BatchResult<BatchUtxoResult>
-  ): BatchResult<MNEEBalance> {
-    const balanceResults: MNEEBalance[] = [];
-    const balanceErrors: BatchError[] = [];
-    
-    // Process each address to calculate balance from UTXOs
-    for (const address of addresses) {
-      try {
-        // Find UTXOs for this address
-        const addressUtxos = utxosResult.results.find(r => r.address === address);
-        
-        if (!addressUtxos) {
-          // If no UTXO result found, check if it was in an error
-          const errorItem = utxosResult.errors.find(e => e.items.includes(address));
-          if (errorItem) {
-            balanceErrors.push(errorItem);
-          } else {
-            // No UTXOs found, balance is 0
-            balanceResults.push({
-              address,
-              amount: 0,
-              decimalAmount: 0
-            });
-          }
-          continue;
-        }
-        
-        // Calculate balance from UTXOs (only count 'transfer' operations)
-        const atomicAmount = addressUtxos.utxos.reduce((sum, utxo) => {
-          if (utxo.data?.bsv21?.op === 'transfer') {
-            return sum + Number(utxo.data.bsv21.amt);
-          }
-          return sum;
-        }, 0);
-        
-        // Convert to decimal amount
-        const decimalAmount = this.service.fromAtomicAmount(atomicAmount);
-        
-        balanceResults.push({
-          address,
-          amount: atomicAmount,
-          decimalAmount
-        });
-      } catch (error) {
-        balanceErrors.push({
-          items: [address],
-          error: error as Error,
-          retryCount: 0
-        });
-      }
-    }
-    
-    return {
-      results: balanceResults,
-      errors: balanceErrors,
-      totalProcessed: balanceResults.length + balanceErrors.length,
-      totalErrors: balanceErrors.length
-    };
   }
 
   /**
@@ -262,17 +147,23 @@ export class Batch {
     items: T[],
     processor: (chunk: T[]) => Promise<R[]>,
     options: BatchOptions,
-    getItemId?: (item: T) => string
+    getItemId?: (item: T) => string,
   ): Promise<BatchResult<R>> {
     const {
       chunkSize = 20,
-      concurrency = 3,
       continueOnError = false,
       onProgress,
-      delayBetweenChunks = 100,
       maxRetries = 3,
-      retryDelay = 1000
+      retryDelay = 1000,
+      requestsPerSecond = 3,
     } = options;
+    
+    const validChunkSize = chunkSize > 0 ? chunkSize : 20;
+
+    // Create rate limiter based on requests per second
+    // Use requestsPerSecond as both the max concurrent and to calculate delay
+    const minDelay = Math.ceil(1000 / requestsPerSecond);
+    const rateLimiter = new RateLimiter(requestsPerSecond, minDelay);
 
     if (items.length === 0) {
       return { results: [], errors: [], totalProcessed: 0, totalErrors: 0 };
@@ -282,62 +173,79 @@ export class Batch {
     const errors: BatchError[] = [];
     let processed = 0;
 
-    const chunks = this.chunkArray(items, chunkSize);
+    const chunks = this.chunkArray(items, validChunkSize);
     const totalChunks = chunks.length;
 
-    // Process chunks with concurrency control
-    for (let i = 0; i < chunks.length; i += concurrency) {
-      const batch = chunks.slice(i, i + concurrency);
-      
-      const batchPromises = batch.map(async (chunk) => {
-        try {
-          const chunkResults = await this.processWithRetry(
-            () => processor(chunk),
-            maxRetries,
-            retryDelay
-          );
-          
-          results.push(...chunkResults);
-          processed++;
-          
-          if (onProgress) {
-            onProgress(processed, totalChunks, errors.length);
-          }
-        } catch (error) {
-          const itemIds = getItemId 
-            ? chunk.map(item => getItemId(item))
-            : chunk as unknown as string[];
-            
-          errors.push({
-            items: itemIds,
-            error: error as Error,
-            retryCount: maxRetries
-          });
-          
-          if (!continueOnError) {
-            throw error;
-          }
-          
-          processed++;
-          if (onProgress) {
-            onProgress(processed, totalChunks, errors.length);
+    // Process all chunks - rate limiter handles concurrency and timing
+    const chunkPromises = chunks.map(async (chunk) => {
+      try {
+        const chunkResults = await this.processWithRetry(() => processor(chunk), maxRetries, retryDelay, rateLimiter);
+
+        results.push(...chunkResults);
+        processed++;
+
+        if (onProgress) {
+          onProgress(processed, totalChunks, errors.length);
+        }
+
+        return chunkResults;
+      } catch (error) {
+        if (!continueOnError) {
+          throw error;
+        }
+
+        // When continueOnError is true and chunk processing fails,
+        // try to process items individually to salvage partial results
+        const partialResults: R[] = [];
+        const failedItems: { item: T; error: Error }[] = [];
+
+        for (const item of chunk) {
+          try {
+            // Process single item by wrapping in array
+            const singleResult = await this.processWithRetry(
+              () => processor([item]),
+              maxRetries,
+              retryDelay,
+              rateLimiter,
+            );
+            if (singleResult.length > 0) {
+              partialResults.push(...singleResult);
+            }
+          } catch (itemError) {
+            failedItems.push({ item, error: itemError as Error });
           }
         }
-      });
-      
-      await Promise.all(batchPromises);
-      
-      // Add delay between batches
-      if (i + concurrency < chunks.length && delayBetweenChunks > 0) {
-        await this.delay(delayBetweenChunks);
+
+        // Add partial results
+        results.push(...partialResults);
+
+        // Record errors for failed items
+        if (failedItems.length > 0) {
+          const itemIds = failedItems.map(({ item }) => (getItemId ? getItemId(item) : (item as unknown as string)));
+          errors.push({
+            items: itemIds,
+            error: failedItems[0].error, // Use first error as representative
+            retryCount: maxRetries,
+          });
+        }
+
+        processed++;
+        if (onProgress) {
+          onProgress(processed, totalChunks, errors.length);
+        }
+
+        return partialResults;
       }
-    }
+    });
+
+    // Wait for all chunks to complete
+    await Promise.all(chunkPromises);
 
     return {
       results,
       errors,
       totalProcessed: processed,
-      totalErrors: errors.length
+      totalErrors: errors.length,
     };
   }
 
@@ -347,13 +255,14 @@ export class Batch {
   private async processWithRetry<T>(
     func: () => Promise<T>,
     maxRetries: number,
-    retryDelay: number
+    retryDelay: number,
+    rateLimiter: RateLimiter,
   ): Promise<T> {
     let lastError: Error | undefined;
-    
+
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
-        return await this.rateLimiter.execute(func);
+        return await rateLimiter.execute(func);
       } catch (error) {
         lastError = error as Error;
         if (attempt < maxRetries - 1) {
@@ -361,7 +270,7 @@ export class Batch {
         }
       }
     }
-    
+
     throw lastError || new Error('Max retries exceeded');
   }
 
@@ -370,8 +279,9 @@ export class Batch {
    */
   private chunkArray<T>(array: T[], chunkSize: number): T[][] {
     const chunks: T[][] = [];
-    for (let i = 0; i < array.length; i += chunkSize) {
-      chunks.push(array.slice(i, i + chunkSize));
+    const size = Math.max(1, chunkSize); // Ensure chunk size is at least 1
+    for (let i = 0; i < array.length; i += size) {
+      chunks.push(array.slice(i, i + size));
     }
     return chunks;
   }
@@ -380,61 +290,58 @@ export class Batch {
    * Delay execution
    */
   private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
 
 /**
  * Rate limiter for API calls
  */
-class RateLimiter {
+export class RateLimiter {
   private queue: Array<() => void> = [];
   private running = 0;
-  
-  constructor(
-    private maxConcurrent: number,
-    private minDelay: number
-  ) {}
-  
+
+  constructor(private maxConcurrent: number, private minDelay: number) {}
+
   async execute<T>(fn: () => Promise<T>): Promise<T> {
     await this.waitForSlot();
-    
+
     try {
       this.running++;
       const start = Date.now();
       const result = await fn();
-      
+
       // Ensure minimum delay between calls
       const elapsed = Date.now() - start;
       if (elapsed < this.minDelay) {
         await this.delay(this.minDelay - elapsed);
       }
-      
+
       return result;
     } finally {
       this.running--;
       this.processQueue();
     }
   }
-  
+
   private waitForSlot(): Promise<void> {
     if (this.running < this.maxConcurrent) {
       return Promise.resolve();
     }
-    
-    return new Promise(resolve => {
+
+    return new Promise((resolve) => {
       this.queue.push(resolve);
     });
   }
-  
+
   private processQueue(): void {
     if (this.queue.length > 0 && this.running < this.maxConcurrent) {
       const next = this.queue.shift();
       if (next) next();
     }
   }
-  
+
   private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

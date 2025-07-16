@@ -534,7 +534,7 @@ async function recoverHDWallet(mnemonic: string) {
   const batch = mnee.batch();
   const data = await batch.getAll(addressesToCheck, {
     historyLimit: 10,
-    concurrency: 10,
+    requestsPerSecond: 10,  // Higher rate for wallet scanning
     onProgress: (completed, total) => {
       console.log(`Scanning: ${completed}/${total} chunks`);
     }

@@ -35,7 +35,7 @@ import {
 } from './mnee.types.js';
 import CosignTemplate from './mneeCosignTemplate.js';
 import * as jsOneSat from 'js-1sat-ord';
-import { parseCosignerScripts, parseInscription, parseSyncToTxHistory } from './utils/helper.js';
+import { parseCosignerScripts, parseInscription, parseSyncToTxHistory, validateAddress } from './utils/helper.js';
 import {
   MNEE_PROXY_API_URL,
   SANDBOX_MNEE_API_URL,
@@ -48,6 +48,7 @@ import {
   SANDBOX_MINT_ADDRESS,
   SANDBOX_APPROVER,
 } from './constants.js';
+import { RateLimiter } from './batch.js';
 
 // Helper interfaces for parseTransaction refactoring
 interface ProcessedInput {
@@ -315,6 +316,9 @@ export class MNEEService {
 
   public async submitRawTx(rawtx: string): Promise<TransferResponse> {
     try {
+      if (!rawtx) {
+        return { error: 'Raw transaction is required' };
+      }
       const tx = Transaction.fromHex(rawtx);
       const response = await this.broadcastTransaction(tx);
       return response;
@@ -325,9 +329,17 @@ export class MNEEService {
   }
 
   public async getBalance(address: string): Promise<MNEEBalance> {
+    // Validate address before making any API calls
+    if (!validateAddress(address)) {
+      const error = new Error('Invalid Bitcoin address');
+      console.error('Invalid Bitcoin address:', error.message);
+      throw error;
+    }
+
     try {
       const config = this.mneeConfig || (await this.getCosignerConfig());
       if (!config) throw new Error('Config not fetched');
+
       const utxos = await this.getUtxos(address);
       const balance = utxos.reduce((acc, utxo) => {
         if (utxo.data.bsv21.op === 'transfer') {
@@ -344,9 +356,19 @@ export class MNEEService {
   }
 
   public async getBalances(addresses: string[]): Promise<MNEEBalance[]> {
+    // Validate all addresses before making any API calls
+    addresses.forEach((addr) => {
+      if (!validateAddress(addr)) {
+        const error = new Error(`Invalid Bitcoin address: ${addr}`);
+        console.error('Invalid Bitcoin address:', error.message);
+        throw error;
+      }
+    });
+
     try {
       const config = this.mneeConfig || (await this.getCosignerConfig());
       if (!config) throw new Error('Config not fetched');
+
       const utxos = await this.getUtxos(addresses);
       return addresses.map((addr) => {
         const addressUtxos = utxos.filter((utxo) => utxo.owners.includes(addr));
@@ -364,46 +386,138 @@ export class MNEEService {
     }
   }
 
+  private processMneeValidation(tx: Transaction, config: MNEEConfig, request?: SendMNEE[]) {
+    try {
+      // Deploy transactions are always valid
+      const txid = tx.id('hex');
+      if (txid === config.tokenId.split('_')[0]) {
+        return true;
+      }
+
+      const scripts = tx.outputs.map((output) => output.lockingScript);
+      const parsedScripts = parseCosignerScripts(scripts);
+
+      // Build a map of all outputs with their inscriptions
+      const outputDetails = tx.outputs.map((output, idx) => {
+        const script = output.lockingScript;
+        const parsed = parsedScripts[idx];
+        const inscription = parseInscription(script);
+
+        let inscriptionData = null;
+        if (inscription?.file?.content) {
+          try {
+            const content = Utils.toUTF8(inscription.file.content);
+            if (content) {
+              inscriptionData = JSON.parse(content);
+            }
+          } catch (e) {
+            // Not a valid JSON inscription, skip
+          }
+        }
+
+        return {
+          index: idx,
+          address: parsed?.address,
+          cosigner: parsed?.cosigner,
+          inscription: inscriptionData,
+        };
+      });
+
+      // Check for cosigner presence and validity
+      const hasCosigner = outputDetails.some((o) => o.cosigner === config.approver);
+      const invalidCosigner = outputDetails.find((o) => o.cosigner !== '' && o.cosigner !== config.approver);
+
+      if (invalidCosigner) {
+        throw new Error('Invalid cosigner detected');
+      }
+
+      // Get all valid MNEE inscriptions
+      const mneeInscriptions = outputDetails.filter((output) => {
+        if (!output.inscription) return false;
+
+        const insc = output.inscription as MneeInscription;
+        if (insc.p !== 'bsv-20') return false;
+
+        // Check token ID
+        if (insc.id !== config.tokenId) {
+          throw new Error(`Invalid token ID: ${insc.id}`);
+        }
+
+        // Validate amount
+        const amt = parseInt(insc.amt, 10);
+        if (isNaN(amt) || amt <= 0) {
+          throw new Error(`Invalid MNEE amount: ${insc.amt}`);
+        }
+
+        return true;
+      });
+
+      if (mneeInscriptions.length === 0) {
+        throw new Error('No valid MNEE inscriptions found in transaction');
+      }
+
+      // Check what operations we have
+      const operations = new Set(mneeInscriptions.map((o) => (o.inscription as MneeInscription).op));
+      const hasTransfer = operations.has('transfer');
+      const hasBurn = operations.has('burn');
+
+      // Require cosigner for transfer and burn operations
+      if ((hasTransfer || hasBurn) && !hasCosigner) {
+        throw new Error('Cosigner not found in transaction with transfer/burn operation');
+      }
+
+      // Filter to just transfers for request validation
+      const mneeTransfers = mneeInscriptions.filter((output) => {
+        const insc = output.inscription as MneeInscription;
+        return insc.op === 'transfer';
+      });
+
+      // If request is provided, validate it matches the transaction
+      if (request) {
+        // Ensure we have enough outputs for all requests (including duplicates)
+        const remainingOutputs = [...mneeTransfers];
+        for (const req of request) {
+          const outputIndex = remainingOutputs.findIndex(
+            (output) =>
+              output.address === req.address &&
+              (output.inscription as MneeInscription).amt === this.toAtomicAmount(req.amount).toString(),
+          );
+
+          if (outputIndex === -1) {
+            throw new Error(`No matching output found for ${req.address} with amount ${req.amount}`);
+          }
+
+          // Remove the matched output so it can't be matched again
+          remainingOutputs.splice(outputIndex, 1);
+        }
+      }
+
+      return true;
+    } catch (error) {
+      console.error(error);
+      return false;
+    }
+  }
+
   public async validateMneeTx(rawTx: string, request?: SendMNEE[]) {
     try {
       const config = this.mneeConfig || (await this.getCosignerConfig());
       if (!config) throw new Error('Config not fetched');
       const tx = Transaction.fromHex(rawTx);
-      const scripts = tx.outputs.map((output) => output.lockingScript);
-      const parsedScripts = parseCosignerScripts(scripts);
+      const isValid = this.processMneeValidation(tx, config, request);
 
-      if (!request) {
-        parsedScripts.forEach((parsed) => {
-          if (parsed?.cosigner !== '' && parsed?.cosigner !== config.approver) {
-            throw new Error('Invalid or missing cosigner');
-          }
-        });
-      } else {
-        request.forEach((req, idx) => {
-          const { address, amount } = req;
-          const cosigner = parsedScripts.find((parsed) => parsed?.cosigner === config.approver);
-          if (!cosigner) {
-            throw new Error(`Cosigner not found for address: ${address} at index: ${idx}`);
-          }
+      if (!isValid) return false;
 
-          const addressFromScript = parsedScripts.find((parsed) => parsed?.address === address);
-          if (!addressFromScript) {
-            throw new Error(`Address not found in script for address: ${address} at index: ${idx}`);
-          }
-          const script = tx.outputs[idx].lockingScript;
-          const inscription = parseInscription(script);
-          const content = inscription?.file?.content;
-          if (!content) throw new Error('Invalid inscription content');
-          const inscriptionData = Utils.toUTF8(content);
-          if (!inscriptionData) throw new Error('Invalid inscription content');
-          const inscriptionJson: MneeInscription = JSON.parse(inscriptionData);
-          if (inscriptionJson.p !== 'bsv-20') throw new Error(`Invalid bsv 20 protocol: ${inscriptionJson.p}`);
-          if (inscriptionJson.op !== 'transfer') throw new Error(`Invalid operation: ${inscriptionJson.op}`);
-          if (inscriptionJson.id !== config.tokenId) throw new Error(`Invalid token id: ${inscriptionJson.id}`);
-          if (inscriptionJson.amt !== this.toAtomicAmount(amount).toString()) {
-            throw new Error(`Invalid amount: ${inscriptionJson.amt}`);
-          }
-        });
+      const txid = tx.id('hex');
+      if (txid === config.tokenId.split('_')[0]) {
+        return true;
+      }
+
+      const inputData = await this.processTransactionInputs(tx, config);
+      const outputData = this.processTransactionOutputs(tx, config);
+
+      if (inputData.total !== outputData.total) {
+        return false;
       }
 
       return true;
@@ -639,23 +753,50 @@ export class MNEEService {
   private async processTransactionInputs(
     tx: Transaction,
     config: MNEEConfig,
-    txid: string,
   ): Promise<{
     inputs: ProcessedInput[];
     total: bigint;
     environment?: Environment;
     type?: TxOperation;
   }> {
-    const inputs: ProcessedInput[] = [];
+    const txid = tx.id('hex');
+    const inputs: ProcessedInput[] = new Array(tx.inputs.length);
     let total = BigInt(0);
     let environment: Environment | undefined;
     let type: TxOperation | undefined;
 
-    for (let i = 0; i < tx.inputs.length; i++) {
-      const input = tx.inputs[i];
-      if (!input.sourceTXID) continue;
+    // Create a rate limiter for 3 requests per second (default MNEE API rate limit ok being hardcoded)
+    const rateLimiter = new RateLimiter(3, 334);
 
-      const sourceTx = await this.fetchRawTx(input.sourceTXID);
+    const fetchTasks = tx.inputs.map(async (input, index) => {
+      if (!input.sourceTXID) {
+        return { index, sourceTx: null };
+      }
+
+      try {
+        const sourceTx = await rateLimiter.execute(() => this.fetchRawTx(input.sourceTXID!));
+        return { index, sourceTx };
+      } catch (error) {
+        console.error(`Failed to fetch transaction ${input.sourceTXID}:`, error);
+        return { index, sourceTx: null };
+      }
+    });
+
+    const results = await Promise.all(fetchTasks);
+
+    for (const { index, sourceTx } of results) {
+      const input = tx.inputs[index];
+      if (!sourceTx || !input.sourceTXID) {
+        inputs[index] = {
+          address: undefined,
+          amount: 0,
+          satoshis: 0,
+          inscription: null,
+          cosigner: undefined,
+        };
+        continue;
+      }
+
       const sourceOutput = sourceTx.outputs[input.sourceOutputIndex];
       const parsedCosigner = parseCosignerScripts([sourceOutput.lockingScript])[0];
       const inscription = this.parseInscriptionData(sourceOutput.lockingScript);
@@ -668,7 +809,7 @@ export class MNEEService {
         cosigner: parsedCosigner,
       };
 
-      inputs.push(processedInput);
+      inputs[index] = processedInput;
 
       if (inscription && parsedCosigner) {
         total += BigInt(inscription.amt);
@@ -702,13 +843,13 @@ export class MNEEService {
   private processTransactionOutputs(
     tx: Transaction,
     config: MNEEConfig,
-    txid: string,
   ): {
     outputs: ProcessedOutput[];
     total: bigint;
     environment?: Environment;
     type?: TxOperation;
   } {
+    const txid = tx.id('hex');
     const outputs: ProcessedOutput[] = [];
     let total = BigInt(0);
     let environment: Environment | undefined;
@@ -759,17 +900,16 @@ export class MNEEService {
     return { outputs, total, environment, type };
   }
 
-  private async validateTransaction(
+  private validateTransaction(
+    config: MNEEConfig,
     tx: Transaction,
     type: TxOperation,
     inputTotal: bigint,
     outputTotal: bigint,
-  ): Promise<boolean> {
-    const isValidMnee = await this.validateMneeTx(tx.toHex());
+  ): boolean {
+    const isValidMnee = this.processMneeValidation(tx, config);
     if (!isValidMnee) return false;
-
     if (type === 'deploy') return true;
-
     return inputTotal === outputTotal;
   }
 
@@ -849,8 +989,8 @@ export class MNEEService {
   ): Promise<ParseTxResponse | ParseTxExtendedResponse> {
     const txid = tx.id('hex');
 
-    const inputData = await this.processTransactionInputs(tx, config, txid);
-    const outputData = this.processTransactionOutputs(tx, config, txid);
+    const inputData = await this.processTransactionInputs(tx, config);
+    const outputData = this.processTransactionOutputs(tx, config);
 
     const environment = outputData.environment || inputData.environment || 'sandbox';
 
@@ -872,7 +1012,7 @@ export class MNEEService {
       type = 'deploy';
     }
 
-    const isValid = await this.validateTransaction(tx, type, inputData.total, outputData.total);
+    const isValid = this.validateTransaction(config, tx, type, inputData.total, outputData.total);
 
     return this.buildParseResponse(txid, environment, type, inputData, outputData, isValid, tx, options);
   }
@@ -899,7 +1039,7 @@ export class MNEEService {
     return parseInscription(script);
   }
 
-  public parseCosignerScripts(scripts: string[]) {
+  public parseCosignerScripts(scripts: Script[]) {
     return parseCosignerScripts(scripts);
   }
 

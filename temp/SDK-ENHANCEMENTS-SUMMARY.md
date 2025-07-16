@@ -126,7 +126,7 @@ const batch = mnee.batch();
 // Process large address sets with progress tracking
 const result = await batch.getUtxos(addresses, {
   chunkSize: 20,
-  concurrency: 3,
+  requestsPerSecond: 3,  // Respects API rate limit
   continueOnError: true,
   onProgress: (completed, total, errors) => {
     console.log(`Progress: ${completed}/${total}`);
@@ -203,18 +203,18 @@ The enhancements deliver significant performance improvements for large-scale op
 - **20x faster** address scanning for 1000+ addresses
 - **Reduced API calls** through intelligent batching
 - **Lower memory footprint** with streaming-style processing
-- **Configurable concurrency** matching your API limits
+- **Configurable rate limiting** matching your API limits
 
 ## Best Practices
 
 ### Batch Processing Configuration
 
-Match your concurrency settings to your API rate limits:
+Match your rate limit settings to your API key's limits:
 ```javascript
-// Configure based on your API tier
+// Configure based on your API rate limit
 const batch = mnee.batch();
 const result = await batch.getBalances(addresses, {
-  concurrency: 5,  // Match your API rate limit
+  requestsPerSecond: 5,  // Match your API rate limit
 });
 ```
 

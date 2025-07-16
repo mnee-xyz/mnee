@@ -1,0 +1,103 @@
+{
+  "description": "Known transactions for testing parseInscription and parseCosignerScripts",
+  "sandbox": {
+    "deploy": {
+      "txid": "833a7720966a2a435db28d967385e8aa7284b6150ebb39482cc5228b73e1703f",
+      "hasInscriptions": true,
+      "hasCosigners": true,
+      "expectedInscriptions": 1,
+      "expectedCosigners": 2,
+      "description": "MNEE token deploy transaction"
+    },
+    "mint": {
+      "txid": "9b42a339a97df37c8756a3425d4200ae2a592fd751c50e1d5ce0a1ddcab06b81",
+      "hasInscriptions": true,
+      "hasCosigners": true,
+      "expectedInscriptions": 2,
+      "expectedCosigners": 3,
+      "description": "MNEE token mint transaction"
+    },
+    "transfer": {
+      "txid": "baa78cb903e0bf7af6e5fc5a27de59d587fc5ff4f08ed5e7886ab1a7d2741c5b",
+      "hasInscriptions": true,
+      "hasCosigners": true,
+      "expectedInscriptions": 3,
+      "expectedCosigners": 3,
+      "description": "MNEE token transfer transaction"
+    },
+    "burn": {
+      "txid": "e2421bb58ecb606c04e81a20943ea32eeac6c5c374d77d6dba7d46a2ddbad483",
+      "hasInscriptions": true,
+      "hasCosigners": true,
+      "expectedInscriptions": 1,
+      "expectedCosigners": 1,
+      "description": "MNEE token burn transaction"
+    }
+  },
+  "production": {
+    "deploy": {
+      "txid": "ae59f3b898ec61acbdb6cc7a245fabeded0c094bf046f35206a3aec60ef88127",
+      "hasInscriptions": true,
+      "hasCosigners": true,
+      "expectedInscriptions": 1,
+      "expectedCosigners": 1,
+      "description": "MNEE token deploy transaction"
+    },
+    "mint": {
+      "txid": "f7ca34a9c0319bfb837a56ee7375e8246229f5fefbdaaaf9fdec97493d428bee",
+      "hasInscriptions": true,
+      "hasCosigners": true,
+      "expectedInscriptions": 1,
+      "expectedCosigners": 1,
+      "description": "MNEE token mint transaction"
+    },
+    "transfer": {
+      "txid": "e496b2984a6b780a453559125540ec1e1c99154cdbc1cef2d2f6bea37d6dedd9",
+      "hasInscriptions": true,
+      "hasCosigners": true,
+      "expectedInscriptions": 3,
+      "expectedCosigners": 3,
+      "description": "MNEE token transfer transaction"
+    }
+  },
+  "testScripts": {
+    "withInscriptionAndCosigner": {
+      "hex": "0063036f726451126170706c69636174696f6e2f6273762d3230004c787b2270223a226273762d3230222c226f70223a227472616e73666572222c22616d74223a2235303030303030222c226964223a22383333613737323039363661326134333564623238643936373338356538616137323834623631353065626233393438326363353232386237336531373033665f30227d6876a9149ec30645103c21501c14bf864c54f953ddcda7be88ad2102bed35e894cc41cc9879b4002ad03d33533b615c1b476068c8dd6822a09f93f6cac",
+      "description": "MNEE script with inscription and cosigner",
+      "hasInscription": true,
+      "hasCosigner": true,
+      "expectedCosigner": "02bed35e894cc41cc9879b4002ad03d33533b615c1b476068c8dd6822a09f93f6c",
+      "expectedAddress": "1FUTPrD61CjeiymauPy1n2B4CKj4vw4Dno"
+    },
+    "standardP2PKH": {
+      "hex": "76a91489abcdefabbaabbaabbaabbaabbaabbaabbaabba88ac",
+      "description": "Standard P2PKH script without inscription",
+      "hasInscription": false,
+      "hasCosigner": true,
+      "expectedCosigner": "",
+      "expectedAddress": "1DYwPTpZuLjY2qApmJdHaSAuWRvEF5skCN"
+    },
+    "opReturn": {
+      "hex": "6a0b48656c6c6f20576f726c64",
+      "description": "OP_RETURN script",
+      "hasInscription": false,
+      "hasCosigner": false
+    },
+    "emptyScript": {
+      "hex": "",
+      "description": "Empty script",
+      "hasInscription": false,
+      "hasCosigner": false
+    }
+  },
+  "rawTransactions": {
+    "mneeTransfer": {
+      "hex": "01000000023f70e1738b22c52c4839bb0e15b68472aae88573968db25d432a6a9620773a83000000006b483045022100e87c0cec91384bbe8e795ff25c8dfe78f28d8b2b0f07710d52c0aeba20ef4c7d02206abf13e300646edeb182e5fe060850251ffd523b4edb26baa12cd6bdcd12a96cc12103688c68f5e0632af5a5b6b3901b02c1455a07a4453c6d3949554dbce5b488b500ffffffff3f70e1738b22c52c4839bb0e15b68472aae88573968db25d432a6a9620773a83010000006b483045022100d92b0aa2f064015f3df3d5dd572ab9c81cad742300832f4e258242ad02910bd202201bb249a7656242f39d25917a95ba9fb6299c20a24e614198c29fc82cd6abace0c12103688c68f5e0632af5a5b6b3901b02c1455a07a4453c6d3949554dbce5b488b500ffffffff030100000000000000d20063036f726451126170706c69636174696f6e2f6273762d3230004c787b2270223a226273762d3230222c226f70223a227472616e73666572222c22616d74223a2235303030303030222c226964223a22383333613737323039363661326134333564623238643936373338356538616137323834623631353065626233393438326363353232386237336531373033665f30227d6876a9149ec30645103c21501c14bf864c54f953ddcda7be88ad2102bed35e894cc41cc9879b4002ad03d33533b615c1b476068c8dd6822a09f93f6cac0100000000000000bc0063036f726451126170706c69636174696f6e2f6273762d3230004c857b2270223a226273762d3230222c226f70223a227472616e73666572222c22616d74223a223138343436373434303733373034353030303030222c226964223a22383333613737323039363661326134333564623238643936373338356538616137323834623631353065626233393438326363353232386237336531373033665f30227d6876a91468d87fd6ebf2f69a385dbf118779d430a0235f9b88ac31420f00000000001976a91468d87fd6ebf2f69a385dbf118779d430a0235f9b88ac00000000",
+      "description": "MNEE transfer transaction with multiple outputs",
+      "hasInscriptions": true,
+      "hasCosigners": true,
+      "expectedInscriptions": 2,
+      "expectedCosigners": 3
+    }
+  }
+}

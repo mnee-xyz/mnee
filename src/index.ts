@@ -36,7 +36,7 @@ export interface MneeInterface {
   parseTx(txid: string, options?: ParseOptions): Promise<ParseTxResponse | ParseTxExtendedResponse>;
   parseTxFromRawTx(rawTxHex: string, options?: ParseOptions): Promise<ParseTxResponse | ParseTxExtendedResponse>;
   parseInscription(script: Script): Inscription | undefined;
-  parseCosignerScripts(scripts: string[]): ParsedCosigner[];
+  parseCosignerScripts(scripts: Script[]): ParsedCosigner[];
   HDWallet(mnemonic: string, options: HDWalletOptions): HDWallet;
   batch(): Batch;
 }
@@ -229,12 +229,12 @@ export default class Mnee implements MneeInterface {
   }
 
   /**
-   * Parses a cosigner script.
+   * Parses cosigner scripts to extract cosigner public keys and addresses.
    *
-   * @param scripts - The cosigner script to be parsed.
-   * @returns A `ParsedCosigner` object containing the parsed cosigner details.
+   * @param scripts - An array of Script objects to be parsed.
+   * @returns An array of `ParsedCosigner` objects containing the parsed cosigner details.
    */
-  parseCosignerScripts(scripts: string[]): ParsedCosigner[] {
+  parseCosignerScripts(scripts: Script[]): ParsedCosigner[] {
     return this.service.parseCosignerScripts(scripts);
   }
 
