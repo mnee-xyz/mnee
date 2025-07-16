@@ -226,7 +226,11 @@ export class MNEEService {
     }
   }
 
-  public async transfer(request: SendMNEE[], wif: string): Promise<{ txid?: string; rawtx?: string; error?: string }> {
+  public async transfer(
+    request: SendMNEE[],
+    wif: string,
+    broadcast: boolean = true,
+  ): Promise<{ txid?: string; rawtx?: string; error?: string }> {
     try {
       const config = this.mneeConfig || (await this.getCosignerConfig());
       if (!config) throw new Error('Config not fetched');
@@ -290,6 +294,10 @@ export class MNEEService {
 
       const signResult = await this.signAllInputs(tx, privateKeys);
       if (signResult.error) return signResult;
+
+      if (!broadcast) {
+        return { rawtx: tx.toHex() };
+      }
 
       return await this.broadcastTransaction(tx);
     } catch (error) {
@@ -1150,6 +1158,7 @@ export class MNEEService {
 
   public async transferMulti(
     options: TransferMultiOptions,
+    broadcast: boolean = true,
   ): Promise<{ txid?: string; rawtx?: string; error?: string }> {
     try {
       const config = this.mneeConfig || (await this.getCosignerConfig());
@@ -1222,6 +1231,10 @@ export class MNEEService {
 
       const conservationResult = this.validateTokenConservation(tx, tokensIn);
       if (conservationResult.error) return conservationResult;
+
+      if (!broadcast) {
+        return { rawtx: tx.toHex() };
+      }
 
       return await this.broadcastTransaction(tx);
     } catch (error) {

@@ -26,8 +26,8 @@ export interface MneeInterface {
   balances(addresses: string[]): Promise<MNEEBalance[]>;
   getUtxos(address: string | string[]): Promise<MNEEUtxo[]>;
   validateMneeTx(rawTxHex: string, request?: SendMNEE[]): Promise<boolean>;
-  transfer(request: SendMNEE[], wif: string): Promise<TransferResponse>;
-  transferMulti(options: TransferMultiOptions): Promise<TransferResponse>;
+  transfer(request: SendMNEE[], wif: string, broadcast?: boolean): Promise<TransferResponse>;
+  transferMulti(options: TransferMultiOptions, broadcast?: boolean): Promise<TransferResponse>;
   submitRawTx(rawTxHex: string): Promise<TransferResponse>;
   toAtomicAmount(amount: number): number;
   fromAtomicAmount(amount: number): number;
@@ -148,8 +148,8 @@ export default class Mnee implements MneeInterface {
    * @param {string} wif - The Wallet Import Format key used to authorize the transfer.
    * @returns {Promise<TransferResponse>} A promise that resolves to a TransferResponse object containing the result of the transfer.
    */
-  async transfer(request: SendMNEE[], wif: string): Promise<TransferResponse> {
-    return this.service.transfer(request, wif);
+  async transfer(request: SendMNEE[], wif: string, broadcast?: boolean): Promise<TransferResponse> {
+    return this.service.transfer(request, wif, broadcast);
   }
 
   /**
@@ -158,8 +158,8 @@ export default class Mnee implements MneeInterface {
    * @param options - The transfer options including inputs, recipients, and optional change address.
    * @returns A promise that resolves to a TransferResponse object containing the result of the transfer.
    */
-  async transferMulti(options: TransferMultiOptions): Promise<TransferResponse> {
-    return this.service.transferMulti(options);
+  async transferMulti(options: TransferMultiOptions, broadcast?: boolean): Promise<TransferResponse> {
+    return this.service.transferMulti(options, broadcast);
   }
 
   /**
