@@ -61,9 +61,11 @@ test('MNEEService Transaction Parsing', async (t) => {
           assert.strictEqual(typeof input.amount, 'number', 'Input amount should be a number');
         });
 
-        result.outputs.forEach((output) => {
-          assert.strictEqual(typeof output.address, 'string', 'Output address should be a string');
-          assert.strictEqual(typeof output.amount, 'number', 'Output amount should be a number');
+        result.outputs.forEach((output, i) => {
+          assert.ok(output, `Output ${i} should be an object`);
+          assert.strictEqual(typeof output.address, 'string', `Output ${i} should have a string address`);
+          assert.strictEqual(typeof output.amount, 'number', `Output ${i} should have a number amount`);
+          assert.ok(typeof output.script === 'string' && output.script.length > 0, `Output ${i} should have a non-empty script`);
         });
 
         // For non-deploy transactions, inputs and outputs should balance
