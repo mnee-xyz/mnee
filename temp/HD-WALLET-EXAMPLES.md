@@ -364,7 +364,7 @@ await mnee.transferMulti({
       amount: 25
     }
   ],
-  changeAddress: 'explicitChangeAddress' // Optional
+  changeAddress: 'explicitChangeAddress' // Optional (single address or array)
 });
 ```
 
@@ -447,7 +447,7 @@ await mnee.transferMulti({
 
 ## Complete Working Example
 
-For a comprehensive working example that demonstrates all HD wallet features, see the included `temp/test-hd-wallet.js` file. This test file provides:
+The HD wallet functionality has been thoroughly tested and documented. See the `tests/hdWallet.js` file for comprehensive examples that demonstrate:
 
 - Complete HD wallet setup and configuration
 - Address derivation and funding examples
@@ -463,9 +463,8 @@ To run the test:
 # Ensure you have built the SDK
 npm run build
 
-# Update the FUNDED_WIF and FUNDED_ADDRESS constants in temp/test-hd-wallet.js
-# Run the test
-node temp/test-hd-wallet.js
+# Run the HD wallet test
+node tests/hdWallet.js
 ```
 
 The test file serves as both a comprehensive example and a validation suite for HD wallet functionality.

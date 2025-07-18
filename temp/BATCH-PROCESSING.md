@@ -55,14 +55,16 @@ The batch processing system provides:
    // ✅ Use batch for HD wallet scanning
    const addresses = generateHDAddresses(0, 1000);
    const batch = mnee.batch();
-   const data = await batch.getAll(addresses);
+   
+   const balances = await batch.getBalances(addresses);
+   const utxos = await batch.getUtxos(addresses);
    ```
 
 3. **Data Analysis & Reporting**
    ```javascript
    // ✅ Use batch for analytics
    const batch = mnee.batch();
-   const portfolioData = await batch.getAll(customerAddresses, {
+   const balanceData = await batch.getBalances(customerAddresses, {
      continueOnError: true  // Don't let one error stop analysis
    });
    ```
@@ -117,7 +119,8 @@ The batch processing system provides:
 **Example 1: Checking Your Own Wallet**
 ```javascript
 // ❌ Don't use batch for single address
-const result = await mnee.getBalancesBatch([myAddress]);
+const batch = mnee.batch();
+const result = await batch.getBalances([myAddress]);
 
 // ✅ Use normal method
 const balance = await mnee.balance(myAddress);
@@ -141,7 +144,8 @@ const customerAddresses = [...]; // 500 addresses
 const balances = await mnee.balances(customerAddresses);
 
 // ✅ Use batch method with progress
-const result = await mnee.getBalancesBatch(customerAddresses, {
+const batch = mnee.batch();
+const result = await batch.getBalances(customerAddresses, {
   onProgress: (completed, total) => {
     console.log(`Processed ${completed}/${total} customers`);
   }
@@ -158,7 +162,8 @@ for (let i = 0; i < 1000; i++) {
 }
 
 // ✅ Use batch to scan efficiently
-const result = await mnee.getAllDataBatch(hdAddresses, {
+const batch = mnee.batch();
+const balances = await batch.getBalances(hdAddresses, {
   continueOnError: true,
   onProgress: (completed, total) => {
     updateRecoveryProgress(completed, total);
@@ -200,7 +205,7 @@ Get UTXOs for multiple addresses with efficient batch processing.
 const batch = mnee.batch();
 const result = await batch.getUtxos(addresses, {
   chunkSize: 20,          // Addresses per chunk
-  concurrency: 3,         // Parallel requests
+  requestsPerSecond: 3,   // API rate limit
   continueOnError: true,  // Don't stop on errors
   maxRetries: 3,          // Retry failed chunks
   onProgress: (completed, total, errors) => {
@@ -255,8 +260,8 @@ const params = addresses.map(address => ({
 
 const batch = mnee.batch();
 const result = await batch.getTxHistories(params, {
-  chunkSize: 10,   // Smaller chunks for history queries
-  concurrency: 2   // Lower concurrency for complex queries
+  chunkSize: 10,         // Smaller chunks for history queries
+  requestsPerSecond: 2    // Lower rate for complex queries
 });
 
 // Process histories
@@ -285,32 +290,6 @@ result.results.forEach(({ txid, parsed }) => {
 });
 ```
 
-### batch.getAll
-
-Get all data (UTXOs, balances, and transaction history) efficiently. This method is optimized to avoid redundant API calls.
-
-```typescript
-const batch = mnee.batch();
-const data = await batch.getAll(addresses, {
-  historyLimit: 50,
-  chunkSize: 20,
-  concurrency: 5,
-  onProgress: (completed, total, errors) => {
-    console.log(`Processing: ${completed}/${total} chunks, ${errors} errors`);
-  }
-});
-
-// UTXOs and histories are fetched in parallel
-// Balances are calculated locally from UTXOs (no redundant API calls)
-console.log('UTXOs:', data.utxos.results);
-console.log('Balances:', data.balances.results);
-console.log('Histories:', data.histories.results);
-
-// Check for errors in each operation
-if (data.utxos.errors.length > 0) {
-  console.error('UTXO errors:', data.utxos.errors);
-}
-```
 
 ## Batch Options
 
@@ -321,49 +300,46 @@ interface BatchOptions {
   /** Maximum addresses per API call (default: 20) */
   chunkSize?: number;
   
-  /** Number of concurrent requests (default: 3) */
-  concurrency?: number;
+  /** API requests per second limit (default: 3) */
+  requestsPerSecond?: number;
   
   /** Continue if an error occurs (default: false) */
   continueOnError?: boolean;
-  
-  /** Progress callback */
-  onProgress?: (completed: number, total: number, errors: number) => void;
-  
-  /** Delay between chunks in ms (default: 100) */
-  delayBetweenChunks?: number;
   
   /** Maximum retries per chunk (default: 3) */
   maxRetries?: number;
   
   /** Retry delay in ms (default: 1000) */
   retryDelay?: number;
+  
+  /** Progress callback */
+  onProgress?: (completed: number, total: number, errors: number) => void;
 }
 ```
 
-### Important: Concurrency and API Rate Limits
+### Important: API Rate Limits
 
-**The default concurrency is set to 3, which matches the default rate limit for MNEE API keys.**
+**The SDK now uses a `requestsPerSecond` parameter instead of `concurrency` for clearer rate limit control.**
 
-You should check your API key's rate limit in the MNEE Developer Portal and adjust the concurrency setting accordingly to avoid rate limit errors:
+The default is set to 3 requests per second, which matches the default rate limit for MNEE API keys. You should check your API key's rate limit and adjust accordingly:
 
 ```javascript
-// Default settings (works for most API keys)
+// Default settings (3 req/s - works for most API keys)
 const batch = mnee.batch();
 const result = await batch.getBalances(addresses);
 
-// If your API key has a higher rate limit (e.g., 10 concurrent requests)
+// If your API key has a higher rate limit (e.g., 10 req/s)
 const result = await batch.getBalances(addresses, {
-  concurrency: 10,  // Match your API key's rate limit
+  requestsPerSecond: 3,  // Match your API key's rate limit
 });
 
-// If your API key has a lower rate limit (e.g., 1 concurrent request)
+// Conservative setting for reliability
 const result = await batch.getBalances(addresses, {
-  concurrency: 1,   // Prevent rate limit errors
+  requestsPerSecond: 3,   // Default conservative rate
 });
 ```
 
-Setting concurrency higher than your API rate limit will result in 429 (Too Many Requests) errors.
+Setting requestsPerSecond higher than your API rate limit will result in 429 (Too Many Requests) errors or server timeouts.
 
 ## Performance Optimization
 
@@ -384,9 +360,9 @@ for (let i = 0; i < 1000; i++) {
 
 // Scan all addresses efficiently
 const batch = mnee.batch();
-const data = await batch.getAll(addresses, {
-  chunkSize: 50,        // Larger chunks for known addresses
-  concurrency: 10,      // Higher concurrency for speed
+const balanceResults = await batch.getBalances(addresses, {
+  chunkSize: 50,
+  requestsPerSecond: 10,
   continueOnError: true,
   onProgress: (completed, total) => {
     const percentage = (completed / total * 100).toFixed(1);
@@ -395,7 +371,7 @@ const data = await batch.getAll(addresses, {
 });
 
 // Find funded addresses
-const fundedAddresses = data.balances.results
+const fundedAddresses = balanceResults.results
   .filter(b => b.decimalAmount > 0)
   .map(b => b.address);
 
@@ -414,10 +390,9 @@ const startTime = Date.now();
 
 const batch = mnee.batch();
 const result = await batch.getBalances(addresses, {
-  chunkSize: 100,       // Maximize chunk size
-  concurrency: 20,      // High concurrency
+  chunkSize: 100,
+  requestsPerSecond: 3,
   continueOnError: true,
-  delayBetweenChunks: 50, // Minimal delay
   onProgress: (completed, total, errors) => {
     const elapsed = Date.now() - startTime;
     const rate = completed / (elapsed / 1000);
@@ -460,9 +435,9 @@ if (result.errors.length > 0) {
   
   // Retry failed addresses with different settings
   const retryResult = await batch.getUtxos(failedAddresses, {
-    chunkSize: 5,  // Smaller chunks
-    concurrency: 1, // Sequential processing
-    maxRetries: 10  // More retries
+    chunkSize: 5,
+    requestsPerSecond: 3,
+    maxRetries: 10
   });
 }
 ```
@@ -497,13 +472,13 @@ await batch.getBalances(addresses, {
 ### 4. Monitor Error Patterns
 ```typescript
 const batch = mnee.batch();
-const result = await batch.getAll(addresses, {
+const result = await batch.getUtxos(addresses, {
   continueOnError: true
 });
 
 // Analyze error patterns
 const errorsByType = new Map();
-result.utxos.errors.forEach(error => {
+result.errors.forEach(error => {
   const key = error.error.message;
   errorsByType.set(key, (errorsByType.get(key) || 0) + 1);
 });
@@ -532,16 +507,23 @@ async function recoverHDWallet(mnemonic: string) {
   
   // Check all addresses in parallel
   const batch = mnee.batch();
-  const data = await batch.getAll(addressesToCheck, {
-    historyLimit: 10,
-    requestsPerSecond: 10,  // Higher rate for wallet scanning
-    onProgress: (completed, total) => {
-      console.log(`Scanning: ${completed}/${total} chunks`);
-    }
-  });
+  const [balanceResult, utxoResult] = await Promise.all([
+    batch.getBalances(addressesToCheck, {
+      requestsPerSecond: 3,
+      onProgress: (completed, total) => {
+        console.log(`Balances: ${completed}/${total} chunks`);
+      }
+    }),
+    batch.getUtxos(addressesToCheck, {
+      requestsPerSecond: 3,
+      onProgress: (completed, total) => {
+        console.log(`UTXOs: ${completed}/${total} chunks`);
+      }
+    })
+  ]);
   
   // Find active addresses
-  const activeAddresses = data.utxos.results
+  const activeAddresses = utxoResult.results
     .filter(r => r.utxos.length > 0)
     .map(r => r.address);
   
@@ -549,8 +531,8 @@ async function recoverHDWallet(mnemonic: string) {
   
   return {
     activeAddresses,
-    totalBalance: data.balances.results.reduce((sum, b) => sum + b.decimalAmount, 0),
-    totalUtxos: data.utxos.results.reduce((sum, r) => sum + r.utxos.length, 0)
+    totalBalance: balanceResult.results.reduce((sum, b) => sum + b.decimalAmount, 0),
+    totalUtxos: utxoResult.results.reduce((sum, r) => sum + r.utxos.length, 0)
   };
 }
 ```
