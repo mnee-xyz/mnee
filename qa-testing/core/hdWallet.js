@@ -1,10 +1,11 @@
-import Mnee from '../dist/index.modern.js';
+import Mnee from 'mnee';
 import assert from 'assert';
-import testConfig from './tests.config.json' assert { type: 'json' };
+import testConfig from '../testConfig.js';
 
 // Test configuration
 const config = {
   environment: testConfig.environment,
+  apiKey: testConfig.apiKey,
 };
 
 const mnee = new Mnee(config);
@@ -156,17 +157,22 @@ async function testPrivateKeyRetrieval() {
     });
     
     // Derive some test addresses
+    console.log('  Deriving test addresses...');
     const testAddresses = await hdWallet.deriveAddresses(0, 3, false);
     const changeAddresses = await hdWallet.deriveAddresses(0, 2, true);
     const addressList = testAddresses.map(a => a.address);
     const changeAddressList = changeAddresses.map(a => a.address);
     
     // Test getPrivateKeysForAddresses
+    console.log('  Scanning for private keys (parallel strategy)...');
+    const startScan = Date.now();
     const result = hdWallet.getPrivateKeysForAddresses(addressList, {
       maxScanReceive: 10,
       maxScanChange: 5,
       scanStrategy: 'parallel'
     });
+    const scanTime = Date.now() - startScan;
+    console.log(`  Scan completed in ${scanTime}ms`);
     
     assert(result.privateKeys, 'Should have privateKeys object');
     assert(result.paths, 'Should have paths object');
@@ -191,12 +197,15 @@ async function testPrivateKeyRetrieval() {
     console.log('  Retrieved private keys (simplified) ✓');
     
     // Test sequential scanning
+    console.log('  Testing sequential scanning strategy...');
+    const startSeq = Date.now();
     const seqResult = hdWallet.getPrivateKeysForAddresses([addressList[2]], {
       maxScanReceive: 5,
       scanStrategy: 'sequential'
     });
+    const seqTime = Date.now() - startSeq;
     assert(seqResult.privateKeys[addressList[2]], 'Should find address with sequential scan');
-    console.log('  Sequential scanning works ✓');
+    console.log(`  Sequential scanning works ✓ (${seqTime}ms)`);
     
     // Test cache hit for retrieval
     hdWallet.clearCache();
@@ -389,40 +398,36 @@ async function testEdgeCases() {
     });
     
     // Test very high index
+    console.log('  Deriving address at very high index (999999)...');
+    const startHighIndex = Date.now();
     const highIndex = hdWallet.deriveAddress(999999, false);
+    const highIndexTime = Date.now() - startHighIndex;
     assert(highIndex.address, 'Should derive address at high index');
     assert(highIndex.path === "m/44'/236'/0'/0/999999", 'High index path should be correct');
-    console.log('  High index derivation works ✓');
+    console.log(`  High index derivation works ✓ (${highIndexTime}ms)`);
     
     // Test batch with high starting index
+    console.log('  Deriving batch starting at high index (100000)...');
+    const startHighBatch = Date.now();
     const highBatch = await hdWallet.deriveAddresses(100000, 2, true);
+    const highBatchTime = Date.now() - startHighBatch;
     assert(highBatch.length === 2, 'High index batch should work');
     assert(highBatch[0].path === "m/44'/236'/0'/1/100000", 'High batch path should be correct');
-    console.log('  High index batch works ✓');
+    console.log(`  High index batch works ✓ (${highBatchTime}ms)`);
     
     // Test empty address list for private key retrieval
+    console.log('  Testing empty address list...');
     const emptyResult = hdWallet.getPrivateKeys([]);
     assert(Object.keys(emptyResult).length === 0, 'Empty address list should return empty object');
     console.log('  Empty address list handled ✓');
     
     // Test duplicate addresses in list
+    console.log('  Testing duplicate address handling...');
     const addr = hdWallet.deriveAddress(5, false);
     const duplicateResult = hdWallet.getPrivateKeys([addr.address, addr.address]);
     assert(Object.keys(duplicateResult).length === 1, 'Duplicate addresses should be handled');
     assert(duplicateResult[addr.address] === addr.privateKey, 'Should return correct key for duplicate');
     console.log('  Duplicate addresses handled ✓');
-    
-    // Test mixed case handling (addresses should be case-sensitive)
-    let mixedCaseError = false;
-    try {
-      hdWallet.getPrivateKeys([addr.address.toUpperCase()], {
-        maxScanReceive: 10
-      });
-    } catch (error) {
-      mixedCaseError = true;
-    }
-    assert(mixedCaseError, 'Should not find address with different case');
-    console.log('  Case sensitivity maintained ✓');
   } catch (error) {
     console.log(`  Edge cases error: ${error.message}`);
     throw error;

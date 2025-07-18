@@ -8,38 +8,38 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // All test files in order of priority
 const tests = [
   // Core configuration
-  { file: 'config.js', description: 'Configuration management' },
+  { file: 'core/config.js', description: 'Configuration management' },
   
   // Balance operations
-  { file: 'balance.js', description: 'Single address balance queries' },
-  { file: 'balances.js', description: 'Multiple address balance queries' },
+  { file: 'core/balance.js', description: 'Single address balance queries' },
+  { file: 'core/balances.js', description: 'Multiple address balance queries' },
   
   // UTXO management
-  { file: 'getUtxos.js', description: 'UTXO retrieval' },
+  { file: 'core/getUtxos.js', description: 'UTXO retrieval' },
   
   // Transaction operations
-  { file: 'validateMneeTx.js', description: 'Transaction validation' },
-  { file: 'transfer.js', description: 'Single-source transfers' },
-  { file: 'transferMulti.js', description: 'Multi-source transfers' },
-  { file: 'submitRawTx.js', description: 'Raw transaction submission' },
+  { file: 'core/validateMneeTx.js', description: 'Transaction validation' },
+  { file: 'core/transfer.js', description: 'Single-source transfers' },
+  { file: 'core/transferMulti.js', description: 'Multi-source transfers' },
+  { file: 'core/submitRawTx.js', description: 'Raw transaction submission' },
   
   // Utility functions
-  { file: 'toAtomicAmount.js', description: 'Decimal to atomic conversion' },
-  { file: 'fromAtomicAmount.js', description: 'Atomic to decimal conversion' },
+  { file: 'core/toAtomicAmount.js', description: 'Decimal to atomic conversion' },
+  { file: 'core/fromAtomicAmount.js', description: 'Atomic to decimal conversion' },
   
   // History operations
-  { file: 'recentTxHistory.js', description: 'Single address history' },
-  { file: 'recentTxHistories.js', description: 'Multiple address histories' },
+  { file: 'core/recentTxHistory.js', description: 'Single address history' },
+  { file: 'core/recentTxHistories.js', description: 'Multiple address histories' },
   
   // Parsing operations
-  { file: 'parseTx.js', description: 'Transaction parsing by txid' },
-  { file: 'parseTxFromRawTx.js', description: 'Transaction parsing from raw hex' },
-  { file: 'parseInscription.js', description: 'Inscription detection' },
-  { file: 'parseCosignerScripts.js', description: 'Cosigner script parsing' },
+  { file: 'core/parseTx.js', description: 'Transaction parsing by txid' },
+  { file: 'core/parseTxFromRawTx.js', description: 'Transaction parsing from raw hex' },
+  { file: 'core/parseInscription.js', description: 'Inscription detection' },
+  { file: 'core/parseCosignerScripts.js', description: 'Cosigner script parsing' },
   
   // Advanced features
-  { file: 'hdWallet.js', description: 'HD wallet functionality' },
-  { file: 'batch.js', description: 'Batch operations (includes 9 subtests)' }
+  { file: 'core/hdWallet.js', description: 'HD wallet functionality' },
+  { file: 'core/batch.js', description: 'Batch operations (includes 9 subtests)' }
 ];
 
 // Note: batch.js already runs all 9 batch subtests internally,

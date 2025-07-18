@@ -1,10 +1,11 @@
-import Mnee from '../dist/index.modern.js';
+import Mnee from 'mnee';
 import assert from 'assert';
-import testConfig from './tests.config.json' assert { type: 'json' };
+import testConfig from '../testConfig.js';
 
 // Test configuration
 const config = {
   environment: testConfig.environment,
+  apiKey: testConfig.apiKey,
 };
 
 const mnee = new Mnee(config);
@@ -255,8 +256,7 @@ async function testNegativeAmount() {
 
 // Test 6.9: Transfer with broadcast = true (skip in test environment)
 async function testTransferWithBroadcast() {
-  console.log('  Note: Skipping actual broadcast in sandbox environment');
-  console.log('  Testing broadcast=true behavior without submitting to network');
+  console.log('  Testing transfer with actual broadcast to the network!');
 
   // Test that broadcast=true returns different result structure
   const request = [

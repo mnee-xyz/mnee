@@ -1,16 +1,44 @@
-import Mnee from '../dist/index.modern.js';
+import Mnee from 'mnee';
 import assert from 'assert';
-import testConfig from './tests.config.json' assert { type: 'json' };
+import testConfig from '../testConfig.js';
+import { readFileSync, writeFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // Test configuration
 const config = {
   environment: testConfig.environment,
+  apiKey: testConfig.apiKey,
 };
 
 const mnee = new Mnee(config);
 
 // Test address from config
 const TEST_ADDRESS = testConfig.addresses.testAddress;
+
+// Function to update testConfig.js with new balance
+function updateTestConfig(newBalance) {
+  const configPath = join(__dirname, '..', 'testConfig.js');
+  let configContent = readFileSync(configPath, 'utf8');
+  
+  // Update testAddressBalance (atomic amount)
+  configContent = configContent.replace(
+    /testAddressBalance:\s*\d+/,
+    `testAddressBalance: ${newBalance.amount}`
+  );
+  
+  // Update testAddressDecimalBalance
+  configContent = configContent.replace(
+    /testAddressDecimalBalance:\s*[\d.]+/,
+    `testAddressDecimalBalance: ${newBalance.decimalAmount}`
+  );
+  
+  writeFileSync(configPath, configContent, 'utf8');
+  console.log(`  ✓ Updated testConfig.js with new balance values`);
+}
 
 // Test 2.1: Basic balance retrieval
 async function testBalance() {
@@ -29,6 +57,13 @@ async function testBalance() {
   console.log(`  Address: ${balance.address}`);
   console.log(`  MNEE Balance (atomic): ${balance.amount}`);
   console.log(`  MNEE Balance (decimal): ${balance.decimalAmount}`);
+  
+  // Check if balance differs from config and update if needed
+  if (balance.amount !== testConfig.balances.testAddressBalance || 
+      balance.decimalAmount !== testConfig.balances.testAddressDecimalBalance) {
+    console.log(`  ⚠️  Balance changed from config (was ${testConfig.balances.testAddressBalance} atomic, ${testConfig.balances.testAddressDecimalBalance} decimal)`);
+    updateTestConfig(balance);
+  }
 }
 
 // Test 2.2: Balance for non-existent address

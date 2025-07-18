@@ -1,10 +1,11 @@
-import Mnee from '../dist/index.modern.js';
+import Mnee from 'mnee';
 import assert from 'assert';
-import testConfig from './tests.config.json' assert { type: 'json' };
+import testConfig from '../testConfig.js';
 
 // Test configuration
 const config = {
   environment: testConfig.environment,
+  apiKey: testConfig.apiKey,
 };
 
 const mnee = new Mnee(config);
@@ -23,8 +24,8 @@ async function testBasicTransferMulti() {
     return;
   }
 
-  // Use the first UTXO
-  const utxo = utxos[0];
+  // find a utxo that has enough balance
+  const utxo = utxos.find(u => u.data.bsv21.amt >= 1500);
   
   const options = {
     inputs: [

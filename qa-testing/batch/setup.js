@@ -1,11 +1,12 @@
 // Shared setup for batch tests
-import Mnee from '../../dist/index.modern.js';
+import Mnee from 'mnee';
 import assert from 'assert';
-import testConfig from '../tests.config.json' assert { type: 'json' };
+import testConfig from '../testConfig.js';
 
 // Test configuration
 export const config = {
   environment: testConfig.environment,
+  apiKey: testConfig.apiKey,
 };
 
 export const mnee = new Mnee(config);

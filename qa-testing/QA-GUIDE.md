@@ -18,6 +18,14 @@ The MNEE SDK is a JavaScript/TypeScript SDK for interacting with MNEE tokens on 
 - Batch operations for processing multiple addresses
 - Automatic rate limiting for API calls
 
+## TypeScript Support
+
+- **Minimum TypeScript Version**: 4.5+ (for TypeScript users)
+- **JavaScript Support**: Full support - TypeScript is not required
+- **Type Definitions**: Included automatically via `dist/index.d.ts`
+- **Strict Mode**: The SDK is built with TypeScript strict mode enabled
+- **Build Version**: SDK is built with TypeScript 5.4.5 but maintains compatibility with 4.5+
+
 ## Testing Timeline
 
 **Target Completion: 1-2 weeks maximum**
@@ -26,13 +34,17 @@ This SDK is a critical dependency for the MNEE ecosystem and needs to be release
 
 ## Pre-existing Test Coverage
 
-We have already implemented comprehensive test coverage for all 18 main SDK methods. The tests are located in `/tests/` and can be run individually or as a suite.
+We have already implemented comprehensive test coverage for all 18 main SDK methods. The tests have been organized into a standalone test project that consumes the mnee package as a real dependency.
 
 ### Test Organization
 
 ```
-tests/
-├── Individual Method Tests (18 files)
+qa-testing/
+├── package.json - Standalone test project with mnee as dependency
+├── node_modules/ - Contains installed mnee package from versions/qa-mnee-0.0.1.tgz
+├── testConfig.js - Test configuration
+│
+├── core/ - Core SDK method tests (18 files)
 │   ├── config.js - Configuration management
 │   ├── balance.js - Single address balance queries
 │   ├── balances.js - Multiple address balance queries
@@ -53,6 +65,7 @@ tests/
 │   └── batch.js - Batch operations (comprehensive)
 │
 ├── batch/ - Modular batch tests
+│   ├── setup.js - Shared test setup
 │   ├── 01-instance-creation.js
 │   ├── 02-get-balances.js
 │   ├── 03-get-utxos.js
@@ -63,29 +76,37 @@ tests/
 │   ├── 08-hd-wallet-integration.js
 │   └── 09-edge-cases.js
 │
+├── versions/ - Package versions for testing
+│   └── qa-mnee-0.0.1.tgz - The mnee package to test
+│
 ├── Supporting Files
-│   ├── tests.config.json - Test configuration
 │   ├── knownTestTransactions.json - Known test data
-│   └── test-todos.md - Test planning document
 │
 └── run-all.js - Run entire test suite with cooldowns
 ```
+
+### Important: Test Isolation
+
+The test suite is now completely isolated from the main project:
+- Tests import mnee as `import Mnee from 'mnee'` (not from dist/)
+- The mnee package is installed from the local .tgz file
+- Tests run in their own npm project with proper dependencies
 
 ## Running Existing Tests
 
 ### Prerequisites
 
-1. Install dependencies: `npm install`
-2. Build the SDK: `npm run build`
-3. Configure test environment in `tests/tests.config.json`
+1. Navigate to the test directory: `cd qa-testing`
+2. Install dependencies: `npm install`
+3. Test configuration is already set up in `testConfig.js`
 
 ### Running Tests
 
 #### Run All Tests (Recommended)
 
 ```bash
-# Run the complete test suite with 5-second cooldowns between tests
-node tests/run-all.js
+# From the qa-testing directory
+node run-all.js
 ```
 
 This will:
@@ -99,9 +120,9 @@ This will:
 #### Run Individual Tests
 
 ```bash
-# Run specific test files
-node tests/balance.js
-node tests/transfer.js
+# From the qa-testing directory
+node core/balance.js
+node core/transfer.js
 # ... etc
 ```
 
@@ -114,7 +135,7 @@ node tests/transfer.js
 - **Single Address**: `balance()` - Get balance for one address
 - **Multiple Addresses**: `balances()` - Get balances for multiple addresses
 - **UTXO Retrieval**: `getUtxos()` - Get unspent outputs for spending
-- **Test Files**: `tests/balance.js`, `tests/balances.js`, `tests/getUtxos.js`
+- **Test Files**: `core/balance.js`, `core/balances.js`, `core/getUtxos.js`
 - **Focus**: Accuracy of balance calculations and UTXO state
 
 #### Token Transfers
@@ -122,7 +143,7 @@ node tests/transfer.js
 - **Simple Transfer**: `transfer()` - Send tokens from single address
 - **Complex Transfer**: `transferMulti()` - Send from multiple addresses with UTXO control
 - **Raw Submission**: `submitRawTx()` - Submit pre-signed transactions
-- **Test Files**: `tests/transfer.js`, `tests/transferMulti.js`, `tests/submitRawTx.js`
+- **Test Files**: `core/transfer.js`, `core/transferMulti.js`, `core/submitRawTx.js`
 - **Critical**: Ensure transactions are valid and broadcast successfully
 
 ### 2. Transaction Analysis & Validation
@@ -130,7 +151,7 @@ node tests/transfer.js
 - **Validation**: `validateMneeTx()` - Verify transaction correctness
 - **Parsing by ID**: `parseTx()` - Parse transaction from txid
 - **Parsing Raw**: `parseTxFromRawTx()` - Parse from raw hex
-- **Test Files**: `tests/validateMneeTx.js`, `tests/parseTx.js`, `tests/parseTxFromRawTx.js`
+- **Test Files**: `core/validateMneeTx.js`, `core/parseTx.js`, `core/parseTxFromRawTx.js`
 - **Focus**: Accurate parsing and validation of all transaction types
 
 ### 3. HD Wallet Support
@@ -138,7 +159,7 @@ node tests/transfer.js
 - **Wallet Creation**: `HDWallet()` - BIP32/BIP44 hierarchical wallets
 - **Key Derivation**: Address generation and private key management
 - **Multi-address Operations**: Integration with `transferMulti()`
-- **Test File**: `tests/hdWallet.js`
+- **Test File**: `core/hdWallet.js`
 - **Focus**: Standard compliance and key security
 
 ### 4. History & Data Retrieval
@@ -146,7 +167,7 @@ node tests/transfer.js
 - **Single History**: `recentTxHistory()` - Get transactions for one address
 - **Bulk History**: `recentTxHistories()` - Get transactions for multiple addresses
 - **Script Parsing**: `parseInscription()`, `parseCosignerScripts()`
-- **Test Files**: `tests/recentTxHistory.js`, `tests/recentTxHistories.js`
+- **Test Files**: `core/recentTxHistory.js`, `core/recentTxHistories.js`
 - **Verification**: Compare with blockchain explorer data
 
 ### 5. Helper Utilities
@@ -290,11 +311,11 @@ node tests/transfer.js
 
 ### Test Addresses
 
-See `tests/batch/setup.js` for pre-configured test addresses with known balances.
+See `batch/setup.js` for pre-configured test addresses with known balances.
 
 ### API Keys
 
-Configure in `tests/tests.config.json`:
+Configure in `testConfig.js`:
 
 - Default: 3 requests/second
 
@@ -336,11 +357,12 @@ When reporting issues, please include:
 For rapid validation, QA can run:
 
 ```bash
-# Build SDK and run complete test suite
-npm run build && node tests/run-all.js
+# From the qa-testing directory
+npm install  # Install mnee package if not already done
+node run-all.js  # Run complete test suite
 ```
 
-This builds the SDK and runs all tests with proper cooldown periods to prevent overwhelming the API server. The test suite includes:
+This runs all tests with proper cooldown periods to prevent overwhelming the API server. The test suite includes:
 
 - Configuration and setup validation
 - All core token operations

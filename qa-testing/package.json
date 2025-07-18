@@ -1,0 +1,21 @@
+{
+  "name": "mnee-tests",
+  "version": "1.0.0",
+  "description": "Test suite for mnee package",
+  "type": "module",
+  "scripts": {
+    "test:balance": "node balance.js",
+    "test:balances": "node balances.js",
+    "test:batch": "node batch.js",
+    "test:config": "node config.js",
+    "test:transfer": "node transfer.js",
+    "test:transferMulti": "node transferMulti.js",
+    "test:all": "npm run test:balance && npm run test:balances && npm run test:batch && npm run test:config"
+  },
+  "dependencies": {
+    "mnee": "file:./versions/qa-mnee-0.0.1.tgz"
+  },
+  "engines": {
+    "node": ">=16.14.0"
+  }
+}

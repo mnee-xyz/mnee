@@ -1,12 +1,13 @@
-import Mnee from '../dist/index.modern.js';
+import Mnee from 'mnee';
 import assert from 'assert';
-import testConfig from './tests.config.json' assert { type: 'json' };
-import knownTxs from './knownTestTransactions.json' assert { type: 'json' };
+import testConfig from '../testConfig.js';
+import knownTxs from '../knownTestTransactions.js'
 import { Script } from '@bsv/sdk';
 
 // Test configuration
 const config = {
   environment: testConfig.environment,
+  apiKey: testConfig.apiKey,
 };
 
 const mnee = new Mnee(config);
