@@ -4,15 +4,15 @@
   "description": "A simple package for interacting with the MNEE USD",
   "type": "module",
   "source": "src/index.ts",
-  "main": "dist/mnee.modern.js",
+  "main": "dist/mnee.js",
+  "module": "dist/mnee.module.js",
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/mnee.modern.js",
-      "require": "./dist/mnee.modern.js"
+      "import": "./dist/mnee.module.js",
+      "require": "./dist/mnee.js"
     }
   },
-  "module": "dist/mnee.modern.js",
   "unpkg": "./dist/index.umd.js",
   "scripts": {
     "clean": "rm -rf dist",
