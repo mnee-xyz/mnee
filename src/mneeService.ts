@@ -645,6 +645,7 @@ export class MNEEService {
         outputs.push({
           address: parsedCosigner.address,
           amount: parseInt(inscriptionJson.amt),
+          script: script.toHex(),
         });
       }
     }

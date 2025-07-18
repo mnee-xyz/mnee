@@ -4,31 +4,22 @@
   "description": "A simple package for interacting with the MNEE USD",
   "type": "module",
   "source": "src/index.ts",
-  "main": "dist/index.js",
+  "main": "dist/mnee.js",
+  "module": "dist/mnee.module.js",
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "require": {
-        "types": "./dist/index.d.ts",
-        "default": "./dist/index.cjs"
-      },
-      "import": {
-        "types": "./dist/index.d.ts",
-        "default": "./dist/index.modern.js"
-      },
-      "default": {
-        "types": "./dist/index.d.ts",
-        "default": "./dist/index.modern.js"
-      }
+      "import": "./dist/mnee.module.js",
+      "require": "./dist/mnee.js"
     }
   },
-  "module": "./dist/index.module.js",
   "unpkg": "./dist/index.umd.js",
   "scripts": {
     "clean": "rm -rf dist",
     "build": "npm run clean && microbundle --globals @bsv/sdk=bsv && npm pack",
-    "start": "node dist/index.modern.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "build:test": "npm run clean && microbundle --globals @bsv/sdk=bsv",
+    "start": "node dist/mnee.modern.js",
+    "test": "npm run build:test && node --import tsx test/transaction.test.ts",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -40,6 +31,7 @@
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^22.14.0",
+    "dotenv": "^17.2.0",
     "microbundle": "^0.15.1",
     "ts-node": "^10.9.2",
     "tsx": "^4.19.3",

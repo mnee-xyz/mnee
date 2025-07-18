@@ -155,6 +155,7 @@ export type TxHistoryResponse = {
 export type TxAddressAmount = {
   address: string;
   amount: number;
+  script?: string;
 };
 
 export type ParseTxResponse = {
