@@ -1,5 +1,22 @@
 # MNEE SDK QA Testing Guide
 
+## Quick Start for QA Team
+
+```bash
+# Clone and setup
+git clone [repo-url]
+cd mnee
+git checkout qa-testing
+cd qa-testing
+
+# Build and install
+npm run build
+npm install
+
+# Run all tests
+node run-all.js
+```
+
 ## Project Overview
 
 The MNEE SDK is a JavaScript/TypeScript SDK for interacting with MNEE tokens on the BSV blockchain. It provides comprehensive functionality for:
@@ -77,7 +94,8 @@ qa-testing/
 │   └── 09-edge-cases.js
 │
 ├── versions/ - Package versions for testing
-│   └── qa-mnee-0.0.1.tgz - The mnee package to test
+│   ├── .qa-version - Current QA version number
+│   └── qa-mnee-*.tgz - Built packages (gitignored, build locally)
 │
 ├── Supporting Files
 │   ├── knownTestTransactions.json - Known test data
@@ -97,8 +115,39 @@ The test suite is now completely isolated from the main project:
 ### Prerequisites
 
 1. Navigate to the test directory: `cd qa-testing`
-2. Install dependencies: `npm install`
-3. Test configuration is already set up in `testConfig.js`
+2. Build the mnee package locally: `npm run build`
+3. Install dependencies: `npm install`
+4. Test configuration is already set up in `testConfig.js`
+
+### Building and Version Management
+
+The test suite uses its own versioning system independent of the main package:
+
+```bash
+# From the qa-testing directory
+
+# Build the current SDK and create a QA version
+npm run build
+
+# Bump the QA version (e.g., 0.0.1 → 0.0.2)
+npm run bump
+
+# Install the latest QA version
+npm run install:latest
+```
+
+**Version Management:**
+- QA versions start at 0.0.1 and increment independently from the SDK version
+- Version number is stored in `versions/.qa-version`
+- Built packages are stored as `versions/qa-mnee-X.X.X.tgz`
+- All `.tgz` files are gitignored - each developer builds locally
+
+**Workflow for Testing Changes:**
+1. Make changes to the SDK in the parent directory
+2. In qa-testing, run `npm run bump` to increment version
+3. Run `npm run build` to build and package the SDK
+4. Run `npm run install:latest` to install the new version
+5. Run tests to verify changes
 
 ### Running Tests
 
@@ -315,9 +364,11 @@ See `batch/setup.js` for pre-configured test addresses with known balances.
 
 ### API Keys
 
-Configure in `testConfig.js`:
+API key is configured in `testConfig.js`:
 
-- Default: 3 requests/second
+- The `apiKey` field is automatically passed to all Mnee instances in tests
+- Default rate limit: 3 requests/second
+- All test files use the same API key for consistency
 
 ## Regression Testing Checklist
 

@@ -4,6 +4,9 @@
   "description": "Test suite for mnee package",
   "type": "module",
   "scripts": {
+    "build": "cd .. && npm run build && node -e \"const fs=require('fs'); const qaVer=fs.readFileSync('qa-testing/versions/.qa-version','utf8').trim(); const pkgVer=JSON.parse(fs.readFileSync('package.json','utf8')).version; const src='mnee-'+pkgVer+'.tgz'; const dst='qa-testing/versions/qa-mnee-'+qaVer+'.tgz'; fs.copyFileSync(src,dst); console.log('Created: '+dst);\"",
+    "bump": "node -e \"const fs=require('fs'); const v=fs.readFileSync('versions/.qa-version','utf8').trim().split('.'); v[2]++; fs.writeFileSync('versions/.qa-version',v.join('.')); console.log('QA version bumped to: '+v.join('.'));\"",
+    "install:latest": "npm install ./versions/qa-mnee-$(cat versions/.qa-version).tgz",
     "test:balance": "node balance.js",
     "test:balances": "node balances.js",
     "test:batch": "node batch.js",
@@ -13,7 +16,7 @@
     "test:all": "npm run test:balance && npm run test:balances && npm run test:batch && npm run test:config"
   },
   "dependencies": {
-    "mnee": "file:./versions/qa-mnee-0.0.1.tgz"
+    "mnee": "file:versions/qa-mnee-0.0.1.tgz"
   },
   "engines": {
     "node": ">=16.14.0"

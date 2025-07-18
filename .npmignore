@@ -1,0 +1,25 @@
+# Development and testing
+qa-testing/
+temp/
+tests/
+test/
+
+# Source files (only include dist)
+src/
+*.ts
+!dist/*.d.ts
+
+# Build artifacts
+*.tgz
+tsconfig.json
+
+# Git and editor files
+.git/
+.gitignore
+.vscode/
+.idea/
+
+
+# Documentation source
+*.md
+!README.md
