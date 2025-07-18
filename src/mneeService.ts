@@ -36,6 +36,7 @@ import {
 import CosignTemplate from './mneeCosignTemplate.js';
 import * as jsOneSat from 'js-1sat-ord';
 import { parseCosignerScripts, parseInscription, parseSyncToTxHistory, validateAddress } from './utils/helper.js';
+import { isNetworkError, logNetworkError } from './utils/networkError.js';
 import {
   MNEE_PROXY_API_URL,
   SANDBOX_MNEE_API_URL,
@@ -95,7 +96,9 @@ export class MNEEService {
       this.mneeConfig = data;
       return data;
     } catch (error) {
-      console.error('Failed to fetch config:', error);
+      if (isNetworkError(error)) {
+        logNetworkError(error, 'fetch config');
+      }
       return undefined;
     }
   }
@@ -147,19 +150,28 @@ export class MNEEService {
       }
       return data;
     } catch (error) {
-      console.error('Failed to fetch UTXOs:', error);
+      if (isNetworkError(error)) {
+        logNetworkError(error, 'fetch UTXOs');
+      }
       return [];
     }
   }
 
-  private async fetchRawTx(txid: string): Promise<Transaction> {
-    const resp = await fetch(`${this.mneeApi}/v1/tx/${txid}?auth_token=${this.mneeApiKey}`);
-    if (resp.status === 404) throw new Error('Transaction not found');
-    if (resp.status !== 200) {
-      throw new Error(`${resp.status} - Failed to fetch rawtx for txid: ${txid}`);
+  private async fetchRawTx(txid: string): Promise<Transaction | undefined> {
+    try {
+      const resp = await fetch(`${this.mneeApi}/v1/tx/${txid}?auth_token=${this.mneeApiKey}`);
+      if (resp.status === 404) throw new Error('Transaction not found');
+      if (resp.status !== 200) {
+        throw new Error(`${resp.status} - Failed to fetch rawtx for txid: ${txid}`);
+      }
+      const { rawtx } = await resp.json();
+      return Transaction.fromHex(Buffer.from(rawtx, 'base64').toString('hex'));
+    } catch (error) {
+      if (isNetworkError(error)) {
+          logNetworkError(error, 'fetch transaction');
+      }
+      return undefined;
     }
-    const { rawtx } = await resp.json();
-    return Transaction.fromHex(Buffer.from(rawtx, 'base64').toString('hex'));
   }
 
   private async getSignatures(
@@ -217,7 +229,9 @@ export class MNEEService {
       });
       return Promise.resolve({ sigResponses });
     } catch (err: any) {
-      console.error('getSignatures error', err);
+      if (isNetworkError(err)) {
+        logNetworkError(err, 'get signatures');
+      }
       return {
         error: {
           message: err.message ?? 'unknown',
@@ -302,14 +316,13 @@ export class MNEEService {
 
       return await this.broadcastTransaction(tx);
     } catch (error) {
+      if (isNetworkError(error)) {
+        logNetworkError(error, 'transfer tokens');
+      }
       let errorMessage = 'Transaction submission failed';
       if (error instanceof Error) {
         errorMessage = error.message;
-        if (error.message.includes('HTTP error')) {
-          console.error('HTTP error details:', error);
-        }
       }
-      console.error('Failed to transfer tokens:', errorMessage);
       return { error: errorMessage };
     }
   }
@@ -323,7 +336,9 @@ export class MNEEService {
       const response = await this.broadcastTransaction(tx);
       return response;
     } catch (error) {
-      console.error('Failed to submit raw transaction:', error);
+      if (isNetworkError(error)) {
+        logNetworkError(error, 'submit raw transaction');
+      }
       return { error: 'Failed to submit raw transaction' };
     }
   }
@@ -350,7 +365,9 @@ export class MNEEService {
       const decimalAmount = this.fromAtomicAmount(balance);
       return { address, amount: balance, decimalAmount };
     } catch (error) {
-      console.error('Failed to fetch balance:', error);
+      if (isNetworkError(error)) {
+        logNetworkError(error, 'fetch balance');
+      }
       return { address, amount: 0, decimalAmount: 0 };
     }
   }
@@ -381,7 +398,9 @@ export class MNEEService {
         return { address: addr, amount: balance, decimalAmount: this.fromAtomicAmount(balance) };
       });
     } catch (error) {
-      console.error('Failed to fetch balances:', error);
+      if (isNetworkError(error)) {
+        logNetworkError(error, 'fetch balances');
+      }
       return addresses.map((addr) => ({ address: addr, amount: 0, decimalAmount: 0 }));
     }
   }
@@ -494,7 +513,9 @@ export class MNEEService {
 
       return true;
     } catch (error) {
-      console.error(error);
+      if (isNetworkError(error)) {
+        logNetworkError(error, 'validate Mnee transaction');
+      }
       return false;
     }
   }
@@ -522,7 +543,9 @@ export class MNEEService {
 
       return true;
     } catch (error) {
-      console.error(error);
+      if (isNetworkError(error)) {
+        logNetworkError(error, 'validate Mnee transaction');
+      }
       return false;
     }
   }
@@ -553,7 +576,9 @@ export class MNEEService {
 
       return syncsByAddress;
     } catch (error) {
-      console.error('Failed to fetch syncs:', error);
+      if (isNetworkError(error)) {
+        logNetworkError(error, 'fetch syncs');
+      }
       return Array.isArray(addresses)
         ? addresses.map((address) => ({ address, syncs: [] }))
         : [{ address: addresses, syncs: [] }];
@@ -594,7 +619,9 @@ export class MNEEService {
         nextScore,
       };
     } catch (error) {
-      console.error('Failed to fetch tx history:', error);
+      if (isNetworkError(error)) {
+        logNetworkError(error, 'fetch transaction history');
+      }
       return { address, history: [], nextScore: fromScore || 0 };
     }
   }
@@ -663,7 +690,9 @@ export class MNEEService {
       const results = await Promise.all(groupPromises);
       return results.flat();
     } catch (error) {
-      console.error('Failed to fetch tx histories:', error);
+      if (isNetworkError(error)) {
+        logNetworkError(error, 'fetch transaction histories');
+      }
       return params.map(({ address, fromScore }) => ({
         address,
         history: [],
@@ -673,7 +702,7 @@ export class MNEEService {
   }
 
   // ============================================
-  // REFACTORED parseTransaction HELPERS
+  // parseTransaction HELPERS
   // ============================================
 
   /**
@@ -692,6 +721,9 @@ export class MNEEService {
 
       return JSON.parse(inscriptionData) as MneeInscription;
     } catch (error) {
+      if (isNetworkError(error)) {
+        logNetworkError(error, 'parse inscription data');
+      }
       return null;
     }
   }
@@ -777,7 +809,9 @@ export class MNEEService {
         const sourceTx = await rateLimiter.execute(() => this.fetchRawTx(input.sourceTXID!));
         return { index, sourceTx };
       } catch (error) {
-        console.error(`Failed to fetch transaction ${input.sourceTXID}:`, error);
+        if (isNetworkError(error)) {
+          logNetworkError(error, 'fetch source transaction');
+        }
         return { index, sourceTx: null };
       }
     });
@@ -1288,6 +1322,9 @@ export class MNEEService {
 
       return { txid: tx2.id('hex'), rawtx: Utils.toHex(decodedBase64AsBinary) };
     } catch (error) {
+      if (isNetworkError(error)) {
+        logNetworkError(error, 'broadcast transaction');
+      }
       let errorMessage = 'Transaction broadcast failed';
       if (error instanceof Error) {
         errorMessage = error.message;
@@ -1378,11 +1415,13 @@ export class MNEEService {
 
       return await this.broadcastTransaction(tx);
     } catch (error) {
+      if (isNetworkError(error)) {
+        logNetworkError(error, 'multi-source transfer');
+      }
       let errorMessage = 'Multi-source transfer failed';
       if (error instanceof Error) {
         errorMessage = error.message;
       }
-      console.error('Failed to transfer tokens from multiple sources:', errorMessage);
       return { error: errorMessage };
     }
   }
