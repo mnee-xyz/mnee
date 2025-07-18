@@ -16,6 +16,7 @@ const EMPTY_ADDRESS = testConfig.addresses.emptyAddress;
 // Test 4.1: Get UTXOs for single address
 async function testGetUtxosSingle() {
   const utxos = await mnee.getUtxos(TEST_ADDRESS);
+  const testAddressBalance = testConfig.balances.testAddressBalance;
 
   // Assertions
   assert(Array.isArray(utxos), 'UTXOs should be an array');
@@ -46,7 +47,7 @@ async function testGetUtxosSingle() {
     return sum;
   }, 0);
 
-  assert(totalAmount === 1000000, 'Total UTXO amount should match balance');
+  assert(totalAmount === testAddressBalance, 'Total UTXO amount should match balance');
 
   console.log(`  Found ${utxos.length} UTXOs for address`);
   console.log(`  Total MNEE amount: ${totalAmount} (${mnee.fromAtomicAmount(totalAmount)} MNEE)`);

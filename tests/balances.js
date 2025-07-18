@@ -12,10 +12,16 @@ const mnee = new Mnee(config);
 // Test addresses from config
 const TEST_ADDRESS = testConfig.addresses.testAddress;
 const EMPTY_ADDRESS = testConfig.addresses.emptyAddress;
+const TEST_ADDRESS_TWO = '1ERN5r4A8Ur6T4XQgaxQLmWtRAmusga5xZ';
+const TEST_ADDRESS_THREE = '159zQuZRmHUrZArYTFgogQxndrAeSsbTtJ';
+const testAddressBalance = testConfig.balances.testAddressBalance;
+const testAddressDecimalBalance = testConfig.balances.testAddressDecimalBalance;
+const testAddressTwoBalance = testConfig.balances.testAddressTwoBalance;
+const testAddressTwoDecimalBalance = testConfig.balances.testAddressTwoDecimalBalance;
 
 // Test 3.1: Basic balances retrieval for multiple addresses
 async function testBalances() {
-  const addresses = [TEST_ADDRESS, EMPTY_ADDRESS, '1ERN5r4A8Ur6T4XQgaxQLmWtRAmusga5xZ'];
+  const addresses = [TEST_ADDRESS, EMPTY_ADDRESS, TEST_ADDRESS_TWO];
   const balances = await mnee.balances(addresses);
 
   // Assertions
@@ -25,8 +31,8 @@ async function testBalances() {
   // Check first address (with balance)
   const firstBalance = balances[0];
   assert(firstBalance.address === TEST_ADDRESS, 'First balance address should match');
-  assert(firstBalance.amount === 1000000, 'First address should have expected balance');
-  assert(firstBalance.decimalAmount === 10, 'First address decimal amount should match');
+  assert(firstBalance.amount === testAddressBalance, 'First address should have expected balance');
+  assert(firstBalance.decimalAmount === testAddressDecimalBalance, 'First address decimal amount should match');
 
   // Check second address (empty)
   const secondBalance = balances[1];
@@ -36,9 +42,9 @@ async function testBalances() {
 
   // Check third address (with balance)
   const thirdBalance = balances[2];
-  assert(thirdBalance.address === '1ERN5r4A8Ur6T4XQgaxQLmWtRAmusga5xZ', 'Third balance address should match');
-  assert(thirdBalance.amount === 2765725, 'Third address should have expected balance');
-  assert(thirdBalance.decimalAmount === 27.65725, 'Third address decimal amount should match');
+  assert(thirdBalance.address === TEST_ADDRESS_TWO, 'Third balance address should match');
+  assert(thirdBalance.amount === testAddressTwoBalance, 'Third address should have expected balance');
+  assert(thirdBalance.decimalAmount === testAddressTwoDecimalBalance, 'Third address decimal amount should match');
 
   // Display results
   console.log(`  Retrieved balances for ${balances.length} addresses:`);
@@ -63,8 +69,8 @@ async function testLargeBatch() {
   const addresses = [
     TEST_ADDRESS,
     EMPTY_ADDRESS,
-    '1ERN5r4A8Ur6T4XQgaxQLmWtRAmusga5xZ', // Random valid address
-    '159zQuZRmHUrZArYTFgogQxndrAeSsbTtJ', // Another random valid address
+    TEST_ADDRESS_TWO, // Random valid address
+    TEST_ADDRESS_THREE, // Another random valid address
     TEST_ADDRESS, // Duplicate to test handling
   ];
 
@@ -77,7 +83,7 @@ async function testLargeBatch() {
   const testAddressBalances = balances.filter((b) => b.address === TEST_ADDRESS);
   assert(testAddressBalances.length === 2, 'Should handle duplicate addresses');
   assert(
-    testAddressBalances.every((b) => b.amount === 1000000),
+    testAddressBalances.every((b) => b.amount === testAddressBalance),
     'Duplicate addresses should have same balance',
   );
 
