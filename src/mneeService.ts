@@ -48,6 +48,7 @@ import {
   SANDBOX_TOKEN_ID,
   SANDBOX_MINT_ADDRESS,
   SANDBOX_APPROVER,
+  MIN_TRANSFER_AMOUNT,
 } from './constants.js';
 import { RateLimiter } from './batch.js';
 
@@ -168,7 +169,7 @@ export class MNEEService {
       return Transaction.fromHex(Buffer.from(rawtx, 'base64').toString('hex'));
     } catch (error) {
       if (isNetworkError(error)) {
-          logNetworkError(error, 'fetch transaction');
+        logNetworkError(error, 'fetch transaction');
       }
       return undefined;
     }
@@ -249,6 +250,12 @@ export class MNEEService {
     try {
       const config = this.mneeConfig || (await this.getCosignerConfig());
       if (!config) throw new Error('Config not fetched');
+
+      for (const req of request) {
+        if (req.amount < MIN_TRANSFER_AMOUNT) {
+          return { error: `Invalid amount for ${req.address}: minimum transfer amount is ${MIN_TRANSFER_AMOUNT} MNEE` };
+        }
+      }
 
       const totalAmount = request.reduce((sum, req) => sum + req.amount, 0);
       if (totalAmount <= 0) return { error: 'Invalid amount' };
@@ -1340,6 +1347,20 @@ export class MNEEService {
     try {
       const config = this.mneeConfig || (await this.getCosignerConfig());
       if (!config) throw new Error('Config not fetched');
+
+      for (const req of options.recipients) {
+        if (req.amount < MIN_TRANSFER_AMOUNT) {
+          return { error: `Invalid amount for ${req.address}: minimum transfer amount is ${MIN_TRANSFER_AMOUNT} MNEE` };
+        }
+      }
+
+      if (options.changeAddress && Array.isArray(options.changeAddress)) {
+        for (const change of options.changeAddress) {
+          if (change.amount < MIN_TRANSFER_AMOUNT) {
+            return { error: `Invalid amount for ${change.address}: minimum transfer amount is ${MIN_TRANSFER_AMOUNT} MNEE` };
+          }
+        }
+      }
 
       const totalAmount = options.recipients.reduce((sum, req) => sum + req.amount, 0);
       if (totalAmount <= 0) return { error: 'Invalid amount' };

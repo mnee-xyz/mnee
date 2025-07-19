@@ -1,3 +1,5 @@
+export const MIN_TRANSFER_AMOUNT = 0.00001;
+
 // PROD
 export const MNEE_PROXY_API_URL = 'https://proxy-api.mnee.net';
 export const PUBLIC_PROD_MNEE_API_TOKEN = '92982ec1c0975f31979da515d46bae9f';
