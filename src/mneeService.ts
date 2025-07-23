@@ -82,18 +82,26 @@ export class MNEEService {
     }
 
     const isProd = config.environment === 'production';
+    if (config?.apiKey === '') {
+      throw stacklessError('MNEE API key cannot be an empty string');
+    }
     if (config?.apiKey) {
       this.mneeApiKey = config.apiKey;
     } else {
       this.mneeApiKey = isProd ? PUBLIC_PROD_MNEE_API_TOKEN : PUBLIC_SANDBOX_MNEE_API_TOKEN;
     }
     this.mneeApi = isProd ? MNEE_PROXY_API_URL : SANDBOX_MNEE_API_URL;
-    this.getCosignerConfig();
+    this.getCosignerConfig().catch(() => {});
   }
 
-  public async getCosignerConfig(): Promise<MNEEConfig | undefined> {
+  public async getCosignerConfig(): Promise<MNEEConfig> {
     try {
       const response = await fetch(`${this.mneeApi}/v1/config?auth_token=${this.mneeApiKey}`, { method: 'GET' });
+
+      if (response.status === 401 || response.status === 403) {
+        throw stacklessError('Invalid API key');
+      }
+
       if (!response.ok) throw stacklessError(`HTTP error! status: ${response.status}`);
       const data: MNEEConfig = await response.json();
       this.mneeConfig = data;
@@ -102,7 +110,7 @@ export class MNEEService {
       if (isNetworkError(error)) {
         logNetworkError(error, 'fetch config');
       }
-      return undefined;
+      throw error;
     }
   }
 
@@ -139,6 +147,11 @@ export class MNEEService {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(arrayAddress),
       });
+
+      if (response.status === 401 || response.status === 403) {
+        throw stacklessError('Invalid API key');
+      }
+
       if (!response.ok) throw stacklessError(`HTTP error! status: ${response.status}`);
       const data: MNEEUtxo[] = await response.json();
       if (ops.length) {
@@ -150,8 +163,9 @@ export class MNEEService {
     } catch (error) {
       if (isNetworkError(error)) {
         logNetworkError(error, 'fetch UTXOs');
+        return [];
       }
-      return [];
+      throw error;
     }
   }
 
@@ -159,6 +173,9 @@ export class MNEEService {
     try {
       const resp = await fetch(`${this.mneeApi}/v1/tx/${txid}?auth_token=${this.mneeApiKey}`);
       if (resp.status === 404) throw stacklessError('Transaction not found');
+      if (resp.status === 401 || resp.status === 403) {
+        throw stacklessError('Invalid API key');
+      }
       if (resp.status !== 200) {
         throw stacklessError(`${resp.status} - Failed to fetch rawtx for txid: ${txid}`);
       }
@@ -370,8 +387,9 @@ export class MNEEService {
     } catch (error) {
       if (isNetworkError(error)) {
         logNetworkError(error, 'fetch balance');
+        return { address, amount: 0, decimalAmount: 0 };
       }
-      return { address, amount: 0, decimalAmount: 0 };
+      throw error;
     }
   }
 
@@ -402,8 +420,9 @@ export class MNEEService {
     } catch (error) {
       if (isNetworkError(error)) {
         logNetworkError(error, 'fetch balances');
+        return addresses.map((addr) => ({ address: addr, amount: 0, decimalAmount: 0 }));
       }
-      return addresses.map((addr) => ({ address: addr, amount: 0, decimalAmount: 0 }));
+      throw error;
     }
   }
 
@@ -567,6 +586,9 @@ export class MNEEService {
           body: JSON.stringify(addressArray),
         },
       );
+      if (response.status === 401 || response.status === 403) {
+        throw stacklessError('Invalid API key');
+      }
       if (!response.ok) throw stacklessError(`HTTP error! status: ${response.status}`);
       const data: MneeSync[] = await response.json();
 
@@ -1321,6 +1343,10 @@ export class MNEEService {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rawtx: base64Tx }),
       });
+
+      if (response.status === 401 || response.status === 403) {
+        throw stacklessError('Invalid API key');
+      }
 
       if (!response.ok) throw stacklessError(`HTTP error! status: ${response.status}`);
 

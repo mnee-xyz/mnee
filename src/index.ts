@@ -21,7 +21,7 @@ import { Batch } from './batch.js';
 export * from './mnee.types.js';
 
 export interface MneeInterface {
-  config(): Promise<MNEEConfig | undefined>;
+  config(): Promise<MNEEConfig>;
   balance(address: string): Promise<MNEEBalance>;
   balances(addresses: string[]): Promise<MNEEBalance[]>;
   getUtxos(address: string | string[]): Promise<MNEEUtxo[]>;
@@ -104,10 +104,9 @@ export default class Mnee implements MneeInterface {
   /**
    * Retrieves the configuration for the MNEE service.
    *
-   * @returns {Promise<MNEEConfig | undefined>} A promise that resolves to the MNEE configuration object,
-   * or undefined if the configuration could not be retrieved.
+   * @returns {Promise<MNEEConfig>} A promise that resolves to the MNEE configuration object.
    */
-  async config(): Promise<MNEEConfig | undefined> {
+  async config(): Promise<MNEEConfig> {
     return this.service.getCosignerConfig();
   }
 
