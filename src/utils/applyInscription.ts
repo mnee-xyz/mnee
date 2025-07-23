@@ -1,4 +1,5 @@
 import { LockingScript } from '@bsv/sdk';
+import { stacklessError } from './stacklessError';
 
 /**
  * MAP (Magic Attribute Protocol) metadata object with stringified values for writing to the blockchain
@@ -43,11 +44,11 @@ export const applyInscription = (
     const fsBuffer = Buffer.from(inscription.dataB64, 'base64');
     const fileHex = fsBuffer.toString('hex').trim();
     if (!fileHex) {
-      throw new Error('Invalid file data');
+      throw stacklessError('Invalid file data');
     }
     const fileMediaType = toHex(inscription.contentType);
     if (!fileMediaType) {
-      throw new Error('Invalid media type');
+      throw stacklessError('Invalid media type');
     }
     ordAsm = `OP_0 OP_IF ${ordHex} OP_1 ${fileMediaType} OP_0 ${fileHex} OP_ENDIF`;
   }
@@ -58,7 +59,7 @@ export const applyInscription = (
 
   // MAP.app and MAP.type keys are required
   if (metaData && (!metaData.app || !metaData.type)) {
-    throw new Error('MAP.app and MAP.type are required fields');
+    throw stacklessError('MAP.app and MAP.type are required fields');
   }
 
   if (metaData?.app && metaData?.type) {

@@ -1,5 +1,6 @@
 import { HD, Mnemonic } from '@bsv/sdk';
 import * as bip39 from 'bip39';
+import { stacklessError } from './utils/stacklessError';
 
 /**
  * Note: We're using the HD class from @bsv/sdk despite it being marked as deprecated.
@@ -30,7 +31,7 @@ export class HDWallet {
 
   constructor(mnemonic: string, options: HDWalletOptions) {
     if (!bip39.validateMnemonic(mnemonic)) {
-      throw new Error('Invalid mnemonic phrase');
+      throw stacklessError('Invalid mnemonic phrase');
     }
 
     const seed = Mnemonic.fromString(mnemonic).toSeed();
@@ -78,7 +79,7 @@ export class HDWallet {
     const privateKey = derivedKey.privKey;
 
     if (!privateKey) {
-      throw new Error(`Failed to derive private key for path: ${fullPath}`);
+      throw stacklessError(`Failed to derive private key for path: ${fullPath}`);
     }
 
     const addressInfo: AddressInfo = {
@@ -212,7 +213,7 @@ export class HDWallet {
     // Check if we found all requested addresses
     if (addressSet.size > 0) {
       const notFound = Array.from(addressSet);
-      throw new Error(
+      throw stacklessError(
         `Could not find private keys for ${notFound.length} address(es): ${notFound.join(', ')}. ` +
           `Scanned up to index ${maxScanReceive} for receive addresses and ${maxScanChange} for change addresses.`,
       );

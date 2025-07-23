@@ -11,6 +11,7 @@ import {
   UnlockingScript,
   Utils,
 } from "@bsv/sdk";
+import { stacklessError } from "./utils/stacklessError";
 
 /**
  * P2PKH (Pay To Public Key Hash) class implementing ScriptTemplate.
@@ -33,7 +34,7 @@ export default class CosignTemplate implements ScriptTemplate {
     if (typeof userPKHash === "string") {
       const hash = Utils.fromBase58Check(userPKHash);
       if (hash.prefix[0] !== 0x00 && hash.prefix[0] !== 0x6f)
-        throw new Error("only P2PKH is supported");
+        throw stacklessError("only P2PKH is supported");
       pkhash = hash.data as number[];
     } else {
       pkhash = userPKHash;
@@ -102,14 +103,14 @@ export default class CosignTemplate implements ScriptTemplate {
           ? input.sourceTXID
           : input.sourceTransaction?.id("hex");
         if (!sourceTXID) {
-          throw new Error(
+          throw stacklessError(
             "The input sourceTXID or sourceTransaction is required for transaction signing."
           );
         }
         sourceSatoshis ||=
           input.sourceTransaction?.outputs[input.sourceOutputIndex].satoshis;
         if (!sourceSatoshis) {
-          throw new Error(
+          throw stacklessError(
             "The sourceSatoshis or input sourceTransaction is required for transaction signing."
           );
         }
@@ -117,7 +118,7 @@ export default class CosignTemplate implements ScriptTemplate {
           input.sourceTransaction?.outputs[input.sourceOutputIndex]
             .lockingScript;
         if (!lockingScript) {
-          throw new Error(
+          throw stacklessError(
             "The lockingScript or input sourceTransaction is required for transaction signing."
           );
         }
@@ -208,14 +209,14 @@ export default class CosignTemplate implements ScriptTemplate {
           ? input.sourceTXID
           : input.sourceTransaction?.id("hex");
         if (!sourceTXID) {
-          throw new Error(
+          throw stacklessError(
             "The input sourceTXID or sourceTransaction is required for transaction signing."
           );
         }
         sourceSatoshis ||=
           input.sourceTransaction?.outputs[input.sourceOutputIndex].satoshis;
         if (!sourceSatoshis) {
-          throw new Error(
+          throw stacklessError(
             "The sourceSatoshis or input sourceTransaction is required for transaction signing."
           );
         }
@@ -223,7 +224,7 @@ export default class CosignTemplate implements ScriptTemplate {
           input.sourceTransaction?.outputs[input.sourceOutputIndex]
             .lockingScript;
         if (!lockingScript) {
-          throw new Error(
+          throw stacklessError(
             "The lockingScript or input sourceTransaction is required for transaction signing."
           );
         }

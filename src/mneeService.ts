@@ -367,7 +367,7 @@ export class MNEEService {
   public async getBalance(address: string): Promise<MNEEBalance> {
     // Validate address before making any API calls
     if (!validateAddress(address)) {
-      const error = stacklessError('Invalid Bitcoin address');
+      const error = stacklessError(`Invalid Bitcoin address: ${address}`);
       throw error;
     }
 
@@ -1096,7 +1096,7 @@ export class MNEEService {
     }
     const tx = Transaction.fromHex(rawTxHex);
     const config = this.mneeConfig || (await this.getCosignerConfig());
-    if (!config) throw new Error('Config not fetched');
+    if (!config) throw stacklessError('Config not fetched');
     return await this.parseTransaction(tx, config, options);
   }
 

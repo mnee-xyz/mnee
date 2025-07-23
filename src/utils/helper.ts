@@ -9,6 +9,7 @@ import {
   TxStatus,
   TxType,
 } from '../mnee.types';
+import { stacklessError } from './stacklessError';
 
 export const parseInscription = (script: Script) => {
   let fromPos: number | undefined;
@@ -189,15 +190,14 @@ export const validateAddress = (address: string) => {
     const validPrefixes = [0x00];
     const prefixByte = decoded.prefix[0];
     if (typeof prefixByte !== 'number' || !validPrefixes.includes(prefixByte)) {
-      throw new Error(`Invalid address prefix: ${prefixByte}`);
+      throw stacklessError(`Invalid address prefix: ${prefixByte}`);
     }
     // Ensure the payload is 20 bytes (160 bits) for P2PKH/P2SH
     if (decoded.data.length !== 20) {
-      throw new Error(`Invalid address payload length: ${decoded.data.length}`);
+      throw stacklessError(`Invalid address payload length: ${decoded.data.length}`);
     }
     return true;
   } catch (error) {
-    console.error(`Invalid Bitcoin address: ${error instanceof Error ? error.message : String(error)}`);
     return false;
   }
 };
