@@ -143,17 +143,28 @@ async function testParseInvalidTxid() {
 
 // Test 13.4: Parse malformed transaction ID
 async function testParseMalformedTxid() {
-  const malformedTxid = 'not-a-valid-txid';
+  const testCases = [
+    { txid: 'not-a-valid-txid', description: 'Malformed txid' },
+    { txid: 'invalidtxid1234567890', description: 'Invalid format' },
+    { txid: '', description: 'Empty string' },
+    { txid: null, description: 'Null value' },
+    { txid: undefined, description: 'Undefined value' }
+  ];
   
-  let errorOccurred = false;
-  try {
-    await mnee.parseTx(malformedTxid);
-  } catch (error) {
-    errorOccurred = true;
-    console.log(`  Malformed txid error: "${error.message}"`);
+  for (const testCase of testCases) {
+    let errorOccurred = false;
+    let errorMessage = '';
+    
+    try {
+      await mnee.parseTx(testCase.txid);
+    } catch (error) {
+      errorOccurred = true;
+      errorMessage = error.message;
+    }
+    
+    console.log(`  ${testCase.description}: ${errorOccurred ? `Error - "${errorMessage}"` : 'No error (unexpected)'}`);
+    assert(errorOccurred, `${testCase.description} should cause an error`);
   }
-  
-  assert(errorOccurred, 'Malformed txid should cause an error');
 }
 
 // Test 13.5: Parse transfer transaction

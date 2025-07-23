@@ -37,6 +37,7 @@ import CosignTemplate from './mneeCosignTemplate.js';
 import { applyInscription } from './utils/applyInscription.js';
 import { parseCosignerScripts, parseInscription, parseSyncToTxHistory, validateAddress } from './utils/helper.js';
 import { isNetworkError, logNetworkError } from './utils/networkError.js';
+import { stacklessError } from './utils/stacklessError.js';
 import {
   MNEE_PROXY_API_URL,
   SANDBOX_MNEE_API_URL,
@@ -77,7 +78,7 @@ export class MNEEService {
 
   constructor(config: SdkConfig) {
     if (config.environment !== 'production' && config.environment !== 'sandbox') {
-      throw new Error('Invalid environment. Must be either "production" or "sandbox"');
+      throw stacklessError('Invalid environment. Must be either "production" or "sandbox"');
     }
 
     const isProd = config.environment === 'production';
@@ -93,7 +94,7 @@ export class MNEEService {
   public async getCosignerConfig(): Promise<MNEEConfig | undefined> {
     try {
       const response = await fetch(`${this.mneeApi}/v1/config?auth_token=${this.mneeApiKey}`, { method: 'GET' });
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      if (!response.ok) throw stacklessError(`HTTP error! status: ${response.status}`);
       const data: MNEEConfig = await response.json();
       this.mneeConfig = data;
       return data;
@@ -121,13 +122,10 @@ export class MNEEService {
       amt: amount.toString(),
     };
     return {
-      lockingScript: applyInscription(
-        new CosignTemplate().lock(recipient, PublicKey.fromString(config.approver)),
-        {
-          dataB64: Buffer.from(JSON.stringify(inscriptionData)).toString('base64'),
-          contentType: 'application/bsv-20',
-        },
-      ),
+      lockingScript: applyInscription(new CosignTemplate().lock(recipient, PublicKey.fromString(config.approver)), {
+        dataB64: Buffer.from(JSON.stringify(inscriptionData)).toString('base64'),
+        contentType: 'application/bsv-20',
+      }),
       satoshis: 1,
     };
   }
@@ -141,7 +139,7 @@ export class MNEEService {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(arrayAddress),
       });
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      if (!response.ok) throw stacklessError(`HTTP error! status: ${response.status}`);
       const data: MNEEUtxo[] = await response.json();
       if (ops.length) {
         return data.filter((utxo) =>
@@ -160,9 +158,9 @@ export class MNEEService {
   private async fetchRawTx(txid: string): Promise<Transaction | undefined> {
     try {
       const resp = await fetch(`${this.mneeApi}/v1/tx/${txid}?auth_token=${this.mneeApiKey}`);
-      if (resp.status === 404) throw new Error('Transaction not found');
+      if (resp.status === 404) throw stacklessError('Transaction not found');
       if (resp.status !== 200) {
-        throw new Error(`${resp.status} - Failed to fetch rawtx for txid: ${txid}`);
+        throw stacklessError(`${resp.status} - Failed to fetch rawtx for txid: ${txid}`);
       }
       const { rawtx } = await resp.json();
       return Transaction.fromHex(Buffer.from(rawtx, 'base64').toString('hex'));
@@ -248,7 +246,7 @@ export class MNEEService {
   ): Promise<{ txid?: string; rawtx?: string; error?: string }> {
     try {
       const config = this.mneeConfig || (await this.getCosignerConfig());
-      if (!config) throw new Error('Config not fetched');
+      if (!config) throw stacklessError('Config not fetched');
 
       for (const req of request) {
         if (req.amount < MIN_TRANSFER_AMOUNT) {
@@ -352,14 +350,13 @@ export class MNEEService {
   public async getBalance(address: string): Promise<MNEEBalance> {
     // Validate address before making any API calls
     if (!validateAddress(address)) {
-      const error = new Error('Invalid Bitcoin address');
-      console.error('Invalid Bitcoin address:', error.message);
+      const error = stacklessError('Invalid Bitcoin address');
       throw error;
     }
 
     try {
       const config = this.mneeConfig || (await this.getCosignerConfig());
-      if (!config) throw new Error('Config not fetched');
+      if (!config) throw stacklessError('Config not fetched');
 
       const utxos = await this.getUtxos(address);
       const balance = utxos.reduce((acc, utxo) => {
@@ -382,15 +379,14 @@ export class MNEEService {
     // Validate all addresses before making any API calls
     addresses.forEach((addr) => {
       if (!validateAddress(addr)) {
-        const error = new Error(`Invalid Bitcoin address: ${addr}`);
-        console.error('Invalid Bitcoin address:', error.message);
+        const error = stacklessError(`Invalid Bitcoin address: ${addr}`);
         throw error;
       }
     });
 
     try {
       const config = this.mneeConfig || (await this.getCosignerConfig());
-      if (!config) throw new Error('Config not fetched');
+      if (!config) throw stacklessError('Config not fetched');
 
       const utxos = await this.getUtxos(addresses);
       return addresses.map((addr) => {
@@ -453,7 +449,7 @@ export class MNEEService {
       const invalidCosigner = outputDetails.find((o) => o.cosigner !== '' && o.cosigner !== config.approver);
 
       if (invalidCosigner) {
-        throw new Error('Invalid cosigner detected');
+        throw stacklessError('Invalid cosigner detected');
       }
 
       // Get all valid MNEE inscriptions
@@ -465,20 +461,20 @@ export class MNEEService {
 
         // Check token ID
         if (insc.id !== config.tokenId) {
-          throw new Error(`Invalid token ID: ${insc.id}`);
+          throw stacklessError(`Invalid token ID: ${insc.id}`);
         }
 
         // Validate amount
         const amt = parseInt(insc.amt, 10);
         if (isNaN(amt) || amt <= 0) {
-          throw new Error(`Invalid MNEE amount: ${insc.amt}`);
+          throw stacklessError(`Invalid MNEE amount: ${insc.amt}`);
         }
 
         return true;
       });
 
       if (mneeInscriptions.length === 0) {
-        throw new Error('No valid MNEE inscriptions found in transaction');
+        throw stacklessError('No valid MNEE inscriptions found in transaction');
       }
 
       // Check what operations we have
@@ -488,7 +484,7 @@ export class MNEEService {
 
       // Require cosigner for transfer and burn operations
       if ((hasTransfer || hasBurn) && !hasCosigner) {
-        throw new Error('Cosigner not found in transaction with transfer/burn operation');
+        throw stacklessError('Cosigner not found in transaction with transfer/burn operation');
       }
 
       // Filter to just transfers for request validation
@@ -509,7 +505,7 @@ export class MNEEService {
           );
 
           if (outputIndex === -1) {
-            throw new Error(`No matching output found for ${req.address} with amount ${req.amount}`);
+            throw stacklessError(`No matching output found for ${req.address} with amount ${req.amount}`);
           }
 
           // Remove the matched output so it can't be matched again
@@ -529,7 +525,7 @@ export class MNEEService {
   public async validateMneeTx(rawTx: string, request?: SendMNEE[]) {
     try {
       const config = this.mneeConfig || (await this.getCosignerConfig());
-      if (!config) throw new Error('Config not fetched');
+      if (!config) throw stacklessError('Config not fetched');
       const tx = Transaction.fromHex(rawTx);
       const isValid = this.processMneeValidation(tx, config, request);
 
@@ -571,7 +567,7 @@ export class MNEEService {
           body: JSON.stringify(addressArray),
         },
       );
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      if (!response.ok) throw stacklessError(`HTTP error! status: ${response.status}`);
       const data: MneeSync[] = await response.json();
 
       // Group syncs by address
@@ -594,7 +590,7 @@ export class MNEEService {
   public async getRecentTxHistory(address: string, fromScore?: number, limit?: number): Promise<TxHistoryResponse> {
     try {
       const config = this.mneeConfig || (await this.getCosignerConfig());
-      if (!config) throw new Error('Config not fetched');
+      if (!config) throw stacklessError('Config not fetched');
 
       const syncsByAddress = await this.getMneeSyncs(address, fromScore, limit);
       const { syncs } = syncsByAddress[0]; // We're only requesting one address
@@ -635,7 +631,7 @@ export class MNEEService {
   public async getRecentTxHistories(params: AddressHistoryParams[]): Promise<TxHistoryResponse[]> {
     try {
       const config = this.mneeConfig || (await this.getCosignerConfig());
-      if (!config) throw new Error('Config not fetched');
+      if (!config) throw stacklessError('Config not fetched');
 
       // Group addressParams by fromScore and limit to batch requests efficiently
       const groupedParams: Record<string, AddressHistoryParams[]> = {};
@@ -1058,10 +1054,15 @@ export class MNEEService {
   }
 
   public async parseTx(txid: string, options?: ParseOptions): Promise<ParseTxResponse | ParseTxExtendedResponse> {
+    const hexRegex = /^[a-fA-F0-9]{64}$/;
+    if (!txid || typeof txid !== 'string' || txid.trim() === '' || !hexRegex.test(txid)) {
+      throw stacklessError('A valid transaction ID is required');
+    }
+
     const config = this.mneeConfig || (await this.getCosignerConfig());
-    if (!config) throw new Error('Config not fetched');
+    if (!config) throw stacklessError('Config not fetched');
     const tx = await this.fetchRawTx(txid);
-    if (!tx) throw new Error('Failed to fetch transaction');
+    if (!tx) throw stacklessError('Failed to fetch transaction');
     return await this.parseTransaction(tx, config, options);
   }
 
@@ -1069,6 +1070,9 @@ export class MNEEService {
     rawTxHex: string,
     options?: ParseOptions,
   ): Promise<ParseTxResponse | ParseTxExtendedResponse> {
+    if (!rawTxHex || typeof rawTxHex !== 'string' || rawTxHex.trim() === '') {
+      throw stacklessError('A valid raw transaction is required');
+    }
     const tx = Transaction.fromHex(rawTxHex);
     const config = this.mneeConfig || (await this.getCosignerConfig());
     if (!config) throw new Error('Config not fetched');
@@ -1247,7 +1251,7 @@ export class MNEEService {
 
   private async signAllInputs(tx: Transaction, privateKeys: Map<number, PrivateKey>): Promise<{ error?: string }> {
     const sigRequests: SignatureRequest[] = tx.inputs.map((input, index) => {
-      if (!input.sourceTXID) throw new Error('Source TXID is undefined');
+      if (!input.sourceTXID) throw stacklessError('Source TXID is undefined');
       return {
         prevTxid: input.sourceTXID,
         outputIndex: input.sourceOutputIndex,
@@ -1318,7 +1322,7 @@ export class MNEEService {
         body: JSON.stringify({ rawtx: base64Tx }),
       });
 
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      if (!response.ok) throw stacklessError(`HTTP error! status: ${response.status}`);
 
       const { rawtx: responseRawtx } = await response.json();
       if (!responseRawtx) return { error: 'Failed to broadcast transaction' };
@@ -1345,7 +1349,7 @@ export class MNEEService {
   ): Promise<{ txid?: string; rawtx?: string; error?: string }> {
     try {
       const config = this.mneeConfig || (await this.getCosignerConfig());
-      if (!config) throw new Error('Config not fetched');
+      if (!config) throw stacklessError('Config not fetched');
 
       for (const req of options.recipients) {
         if (req.amount < MIN_TRANSFER_AMOUNT) {
@@ -1356,7 +1360,9 @@ export class MNEEService {
       if (options.changeAddress && Array.isArray(options.changeAddress)) {
         for (const change of options.changeAddress) {
           if (change.amount < MIN_TRANSFER_AMOUNT) {
-            return { error: `Invalid amount for ${change.address}: minimum transfer amount is ${MIN_TRANSFER_AMOUNT} MNEE` };
+            return {
+              error: `Invalid amount for ${change.address}: minimum transfer amount is ${MIN_TRANSFER_AMOUNT} MNEE`,
+            };
           }
         }
       }
