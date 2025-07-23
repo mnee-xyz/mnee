@@ -387,7 +387,6 @@ export class MNEEService {
     } catch (error) {
       if (isNetworkError(error)) {
         logNetworkError(error, 'fetch balance');
-        return { address, amount: 0, decimalAmount: 0 };
       }
       throw error;
     }
