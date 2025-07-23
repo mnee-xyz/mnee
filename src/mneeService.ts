@@ -49,6 +49,7 @@ import {
   SANDBOX_MINT_ADDRESS,
   SANDBOX_APPROVER,
   MIN_TRANSFER_AMOUNT,
+  MNEE_DECIMALS,
 } from './constants.js';
 import { RateLimiter } from './batch.js';
 
@@ -105,13 +106,11 @@ export class MNEEService {
   }
 
   public toAtomicAmount(amount: number): number {
-    if (!this.mneeConfig) throw new Error('Config not fetched');
-    return Math.round(amount * 10 ** this.mneeConfig.decimals);
+    return Math.round(amount * 10 ** MNEE_DECIMALS);
   }
 
   public fromAtomicAmount(amount: number): number {
-    if (!this.mneeConfig) throw new Error('Config not fetched');
-    return amount / 10 ** this.mneeConfig.decimals;
+    return amount / 10 ** MNEE_DECIMALS;
   }
 
   private async createInscription(recipient: string, amount: number, config: MNEEConfig) {
