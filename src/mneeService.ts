@@ -29,7 +29,7 @@ import {
   AddressHistoryParams,
 } from './mnee.types.js';
 import CosignTemplate from './mneeCosignTemplate.js';
-import * as jsOneSat from 'js-1sat-ord';
+import { applyInscription } from './utils/applyInscription.js';
 import { parseCosignerScripts, parseInscription, parseSyncToTxHistory } from './utils/helper.js';
 import {
   MNEE_PROXY_API_URL,
@@ -96,7 +96,7 @@ export class MNEEService {
       amt: amount.toString(),
     };
     return {
-      lockingScript: jsOneSat.applyInscription(
+      lockingScript: applyInscription(
         new CosignTemplate().lock(recipient, PublicKey.fromString(config.approver)),
         {
           dataB64: Buffer.from(JSON.stringify(inscriptionData)).toString('base64'),
