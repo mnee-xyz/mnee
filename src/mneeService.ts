@@ -393,6 +393,9 @@ export class MNEEService {
   }
 
   public async getBalances(addresses: string[]): Promise<MNEEBalance[]> {
+    if (!Array.isArray(addresses)) {
+      throw stacklessError('Addresses must be an array');
+    }
     const validAddresses = addresses.filter((addr) => validateAddress(addr));
     if (validAddresses.length === 0) {
       throw stacklessError('You must pass at least 1 valid address');
