@@ -393,20 +393,21 @@ export class MNEEService {
   }
 
   public async getBalances(addresses: string[]): Promise<MNEEBalance[]> {
-    // Validate all addresses before making any API calls
-    addresses.forEach((addr) => {
-      if (!validateAddress(addr)) {
-        const error = stacklessError(`Invalid Bitcoin address: ${addr}`);
-        throw error;
-      }
-    });
-
+    const validAddresses = addresses.filter((addr) => validateAddress(addr));
+    if (validAddresses.length === 0) {
+      throw stacklessError('You must pass at least 1 valid address');
+    }
+    const totalInvalidAddresses = addresses.length - validAddresses.length;
+    if (totalInvalidAddresses > 0) {
+      console.warn(`\x1b[33m${totalInvalidAddresses} invalid bitcoin addresses will be ignored\x1b[0m`);
+    }
     try {
       const config = this.mneeConfig || (await this.getCosignerConfig());
       if (!config) throw stacklessError('Config not fetched');
 
-      const utxos = await this.getUtxos(addresses);
-      return addresses.map((addr) => {
+      const utxos = await this.getUtxos(validAddresses);
+
+      return validAddresses.map((addr) => {
         const addressUtxos = utxos.filter((utxo) => utxo.owners.includes(addr));
         const balance = addressUtxos.reduce((acc, utxo) => {
           if (utxo.data.bsv21.op === 'transfer') {

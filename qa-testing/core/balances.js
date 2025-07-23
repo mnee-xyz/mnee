@@ -56,12 +56,14 @@ async function testBalances() {
 
 // Test 3.2: Empty array handling
 async function testEmptyArray() {
-  const balances = await mnee.balances([]);
-
-  assert(Array.isArray(balances), 'Should return empty array');
-  assert(balances.length === 0, 'Should return empty array for empty input');
-
-  console.log('  Empty array handled correctly');
+  try {
+    await mnee.balances([]);
+    assert.fail('Should have thrown error for empty array');
+  } catch (error) {
+    assert(error !== undefined, 'Should throw error for empty array');
+    assert(error.message === 'You must pass at least 1 valid address', 'Error message should indicate at least 1 valid address required');
+    console.log(`  Empty array error properly caught: "${error.message}"`);
+  }
 }
 
 // Test 3.3: Large batch of addresses
@@ -91,39 +93,36 @@ async function testLargeBatch() {
   console.log(`  Large batch processed: ${balances.length} addresses`);
 }
 
-// Test 3.4: Invalid address in array
+// Test 3.4: Invalid address in array - should filter out invalid and return valid ones
 async function testInvalidAddressInArray() {
   const addresses = [TEST_ADDRESS, testConfig.addresses.invalidAddress, EMPTY_ADDRESS];
 
-  try {
-    await mnee.balances(addresses);
-    assert.fail('Should have thrown error for invalid address in array');
-  } catch (error) {
-    // The SDK now properly validates all addresses before making API calls
-    assert(error !== undefined, 'Should throw error for invalid address');
-    // Check if it's the assert.fail error
-    if (error.message === 'Should have thrown error for invalid address in array') {
-      throw error;
-    }
-    // Otherwise it's the expected validation error
-    console.log(`  Error properly thrown for invalid address in array: "${error.message}"`);
-  }
+  // Should return balances only for valid addresses
+  const balances = await mnee.balances(addresses);
+  
+  assert(Array.isArray(balances), 'Balances should be an array');
+  assert(balances.length === 2, 'Should return balances only for valid addresses (2 out of 3)');
+  
+  // Check that we got the correct addresses
+  const returnedAddresses = balances.map(b => b.address);
+  assert(returnedAddresses.includes(TEST_ADDRESS), 'Should include TEST_ADDRESS');
+  assert(returnedAddresses.includes(EMPTY_ADDRESS), 'Should include EMPTY_ADDRESS');
+  assert(!returnedAddresses.includes(testConfig.addresses.invalidAddress), 'Should not include invalid address');
+  
+  console.log(`  Filtered out invalid address, returned ${balances.length} valid addresses`);
 }
 
-// Test 3.5: Multiple invalid addresses
+// Test 3.5: Multiple invalid addresses - should throw error when no valid addresses
 async function testMultipleInvalidAddresses() {
   const addresses = ['invalid1', 'invalid2', '12345'];
 
   try {
     await mnee.balances(addresses);
-    assert.fail('Should have thrown error for invalid addresses');
+    assert.fail('Should have thrown error for all invalid addresses');
   } catch (error) {
-    assert(error !== undefined, 'Should throw error for invalid addresses');
-    // Check if it's the assert.fail error
-    if (error.message === 'Should have thrown error for invalid addresses') {
-      throw error;
-    }
-    console.log(`  Error properly thrown for multiple invalid addresses: "${error.message}"`);
+    assert(error !== undefined, 'Should throw error when no valid addresses');
+    assert(error.message === 'You must pass at least 1 valid address', 'Error message should indicate at least 1 valid address required');
+    console.log(`  Error properly thrown when all addresses are invalid: "${error.message}"`);
   }
 }
 
@@ -131,17 +130,58 @@ async function testMultipleInvalidAddresses() {
 async function testFirstInvalidAddress() {
   const addresses = [testConfig.addresses.invalidAddress, TEST_ADDRESS, EMPTY_ADDRESS];
 
-  try {
-    await mnee.balances(addresses);
-    assert.fail('Should have thrown error when first address is invalid');
-  } catch (error) {
-    assert(error !== undefined, 'Should throw error for invalid address');
-    // Check if it's the assert.fail error
-    if (error.message === 'Should have thrown error when first address is invalid') {
-      throw error;
-    }
-    console.log(`  Error properly thrown when first address is invalid: "${error.message}"`);
-  }
+  // Should still return balances for valid addresses even when first is invalid
+  const balances = await mnee.balances(addresses);
+  
+  assert(Array.isArray(balances), 'Balances should be an array');
+  assert(balances.length === 2, 'Should return balances only for valid addresses (2 out of 3)');
+  
+  // Check that we got the correct addresses
+  const returnedAddresses = balances.map(b => b.address);
+  assert(returnedAddresses.includes(TEST_ADDRESS), 'Should include TEST_ADDRESS');
+  assert(returnedAddresses.includes(EMPTY_ADDRESS), 'Should include EMPTY_ADDRESS');
+  assert(!returnedAddresses.includes(testConfig.addresses.invalidAddress), 'Should not include invalid address');
+  
+  console.log(`  First address was invalid but still returned ${balances.length} valid addresses`);
+}
+
+// Test 3.7: Mixed valid and invalid addresses - should return balances for valid addresses only
+async function testMixedValidInvalidAddresses() {
+  const addresses = [
+    TEST_ADDRESS,                      // Valid address with balance
+    '1HNuPi9Y7nMV6x8crJ6DnD1wJtkLym8EFE', // Valid address
+    'another-invalid',                 // Invalid address
+    EMPTY_ADDRESS,                     // Valid empty address
+    '',                               // Invalid (empty string)
+    'invalid-address-123'             // Invalid address
+  ];
+
+  console.log('  Test addresses:');
+  addresses.forEach((addr, idx) => {
+    console.log(`    [${idx}] ${addr || '(empty string)'}`);
+  });
+
+  const balances = await mnee.balances(addresses);
+  
+  // Should only return balances for valid addresses
+  assert(Array.isArray(balances), 'Balances should be an array');
+  assert(balances.length === 3, 'Should return balances only for valid addresses (3 out of 6)');
+  
+  // Check that we got the correct addresses
+  const returnedAddresses = balances.map(b => b.address);
+  assert(returnedAddresses.includes(TEST_ADDRESS), 'Should include TEST_ADDRESS');
+  assert(returnedAddresses.includes(EMPTY_ADDRESS), 'Should include EMPTY_ADDRESS');
+  assert(returnedAddresses.includes('1HNuPi9Y7nMV6x8crJ6DnD1wJtkLym8EFE'), 'Should include the other valid address');
+  
+  // Invalid addresses should not be in the results
+  assert(!returnedAddresses.includes('another-invalid'), 'Should not include invalid addresses');
+  assert(!returnedAddresses.includes(''), 'Should not include empty string');
+  assert(!returnedAddresses.includes('invalid-address-123'), 'Should not include invalid addresses');
+
+  console.log(`  Retrieved balances for ${balances.length} valid addresses (out of ${addresses.length} total):`);
+  balances.forEach((balance) => {
+    console.log(`    ${balance.address}: ${balance.decimalAmount} MNEE`);
+  });
 }
 
 // Run tests
@@ -172,6 +212,10 @@ async function runTests() {
     console.log('Test 3.6: First address invalid');
     await testFirstInvalidAddress();
     console.log('✅ Test 3.6 passed\n');
+
+    console.log('Test 3.7: Mixed valid and invalid addresses');
+    await testMixedValidInvalidAddresses();
+    console.log('✅ Test 3.7 passed\n');
 
     console.log('All tests passed! ✅');
   } catch (error) {
