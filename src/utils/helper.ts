@@ -1,15 +1,17 @@
-import { Hash, OP, Script, Transaction, Utils } from '@bsv/sdk';
+import { Hash, OP, Script, Transaction, Utils, PrivateKey } from '@bsv/sdk';
 import {
   Inscription,
   MNEEConfig,
   MneeInscription,
   MneeSync,
   ParsedCosigner,
+  TransferMultiOptions,
   TxHistory,
   TxStatus,
   TxType,
 } from '../mnee.types';
 import { stacklessError } from './stacklessError';
+import { MIN_TRANSFER_AMOUNT } from '../constants';
 
 export const parseInscription = (script: Script) => {
   let fromPos: number | undefined;
@@ -66,40 +68,42 @@ export const parseInscription = (script: Script) => {
 };
 
 export const parseCosignerScripts = (scripts: Script[]): ParsedCosigner[] => {
-  return scripts.map((script: Script) => {
-    const chunks = script.chunks;
-    for (let i = 0; i <= chunks.length - 4; i++) {
-      if (
-        chunks.length > i + 6 &&
-        chunks[0 + i].op === OP.OP_DUP &&
-        chunks[1 + i].op === OP.OP_HASH160 &&
-        chunks[2 + i].data?.length === 20 &&
-        chunks[3 + i].op === OP.OP_EQUALVERIFY &&
-        chunks[4 + i].op === OP.OP_CHECKSIGVERIFY &&
-        chunks[5 + i].data?.length === 33 &&
-        chunks[6 + i].op === OP.OP_CHECKSIG
-      ) {
-        return {
-          cosigner: Utils.toHex(chunks[5 + i].data || []),
-          address: Utils.toBase58Check(chunks[2 + i].data || [], [0]),
-        };
-      } else if (
-        // P2PKH
-        chunks[0 + i].op === OP.OP_DUP &&
-        chunks[1 + i].op === OP.OP_HASH160 &&
-        chunks[2 + i].data?.length === 20 &&
-        chunks[3 + i].op === OP.OP_EQUALVERIFY &&
-        chunks[4 + i].op === OP.OP_CHECKSIG
-      ) {
-        return {
-          cosigner: '',
-          address: Utils.toBase58Check(chunks[2 + i].data || [], [0]),
-        };
+  return scripts
+    .map((script: Script) => {
+      const chunks = script.chunks;
+      for (let i = 0; i <= chunks.length - 4; i++) {
+        if (
+          chunks.length > i + 6 &&
+          chunks[0 + i].op === OP.OP_DUP &&
+          chunks[1 + i].op === OP.OP_HASH160 &&
+          chunks[2 + i].data?.length === 20 &&
+          chunks[3 + i].op === OP.OP_EQUALVERIFY &&
+          chunks[4 + i].op === OP.OP_CHECKSIGVERIFY &&
+          chunks[5 + i].data?.length === 33 &&
+          chunks[6 + i].op === OP.OP_CHECKSIG
+        ) {
+          return {
+            cosigner: Utils.toHex(chunks[5 + i].data || []),
+            address: Utils.toBase58Check(chunks[2 + i].data || [], [0]),
+          };
+        } else if (
+          // P2PKH
+          chunks[0 + i].op === OP.OP_DUP &&
+          chunks[1 + i].op === OP.OP_HASH160 &&
+          chunks[2 + i].data?.length === 20 &&
+          chunks[3 + i].op === OP.OP_EQUALVERIFY &&
+          chunks[4 + i].op === OP.OP_CHECKSIG
+        ) {
+          return {
+            cosigner: '',
+            address: Utils.toBase58Check(chunks[2 + i].data || [], [0]),
+          };
+        }
       }
-    }
-    // Return undefined for scripts that don't match any pattern
-    return undefined as any;
-  }).filter((result): result is ParsedCosigner => result !== undefined);
+      // Return undefined for scripts that don't match any pattern
+      return undefined as any;
+    })
+    .filter((result): result is ParsedCosigner => result !== undefined);
 };
 
 export const parseSyncToTxHistory = (sync: MneeSync, address: string, config: MNEEConfig): TxHistory | null => {
@@ -200,4 +204,83 @@ export const validateAddress = (address: string) => {
   } catch (error) {
     return false;
   }
+};
+
+export const validateWIF = (wif: string): { isValid: boolean; error?: string; privateKey?: PrivateKey } => {
+  try {
+    const privateKey = PrivateKey.fromWif(wif);
+    return { isValid: true, privateKey };
+  } catch (wifError) {
+    if (wifError instanceof Error) {
+      const errorMsg = wifError.message.toLowerCase();
+      if (errorMsg.includes('invalid base58 character')) {
+        return { isValid: false, error: 'Invalid WIF key: contains invalid characters' };
+      } else if (errorMsg.includes('invalid checksum')) {
+        return { isValid: false, error: 'Invalid WIF key: checksum verification failed' };
+      } else if (errorMsg.includes('expected base58 string')) {
+        return { isValid: false, error: 'Invalid WIF key: must be a valid base58 encoded string' };
+      }
+    }
+    return { isValid: false, error: 'Invalid WIF key provided' };
+  }
+};
+
+export const validateTransferMultiOptions = (options: TransferMultiOptions): { isValid: boolean; error?: string } => {
+  for (const recipient of options.recipients) {
+    if (!recipient.address || !recipient.amount) {
+      return {
+        isValid: false,
+        error: `Invalid recipient: ${JSON.stringify(recipient)}. Missing required fields: address, amount`,
+      };
+    }
+
+    if (typeof recipient.amount !== 'number' || isNaN(recipient.amount) || !isFinite(recipient.amount)) {
+      return { isValid: false, error: `Invalid amount for ${recipient.address}: amount must be a valid number` };
+    }
+
+    if (recipient.amount < MIN_TRANSFER_AMOUNT) {
+      return {
+        isValid: false,
+        error: `Invalid amount for ${recipient.address}: minimum transfer amount is ${MIN_TRANSFER_AMOUNT} MNEE`,
+      };
+    }
+
+    if (!validateAddress(recipient.address)) {
+      return { isValid: false, error: `Invalid recipient address: ${recipient.address}` };
+    }
+  }
+
+  for (const input of options.inputs) {
+    if (!input.txid || !input.vout || !input.wif) {
+      return {
+        isValid: false,
+        error: `Invalid input: ${JSON.stringify(input)}. Missing required fields: txid, vout, wif`,
+      };
+    }
+    const wifValidation = validateWIF(input.wif);
+    if (!wifValidation.isValid) {
+      return { isValid: false, error: `Invalid WIF key: ${input.wif} for input ${input.txid}:${input.vout}` };
+    }
+    const privateKey = wifValidation.privateKey!;
+    const address = privateKey.toAddress();
+    if (!validateAddress(address)) {
+      return { isValid: false, error: `Invalid input address: ${address}` };
+    }
+  }
+
+  if (options.changeAddress && Array.isArray(options.changeAddress)) {
+    for (const change of options.changeAddress) {
+      if (change.amount < MIN_TRANSFER_AMOUNT) {
+        return {
+          isValid: false,
+          error: `Invalid amount for ${change.address}: minimum transfer amount is ${MIN_TRANSFER_AMOUNT} MNEE`,
+        };
+      }
+      if (!validateAddress(change.address)) {
+        return { isValid: false, error: `Invalid change address: ${change.address}` };
+      }
+    }
+  }
+
+  return { isValid: true };
 };

@@ -254,7 +254,191 @@ async function testNegativeAmount() {
   assert(errorOccurred, 'Negative amount should cause an error');
 }
 
-// Test 6.9: Transfer with broadcast = true (skip in test environment)
+// Test 6.9: Transfer with specific invalid WIF formats
+async function testSpecificInvalidWifFormats() {
+  const invalidWifs = [
+    { wif: 'L1z7N5Qkpkz93odzExb8DNyee2CRQAXsqWX3WQb2hpsbGsWAPeb', desc: 'Missing last character' },
+    { wif: 'L1z7N5Qkpkz93odzExb8DNyee2CRQAXsqWX3WQb2hpsbGsWAPebX', desc: 'Invalid checksum' },
+    { wif: '123456', desc: 'Too short' },
+    { wif: null, desc: 'Null value' },
+    { wif: undefined, desc: 'Undefined value' },
+    { wif: 123, desc: 'Number instead of string' },
+    { wif: true, desc: 'Boolean instead of string' },
+    { wif: {}, desc: 'Object instead of string' },
+    { wif: [], desc: 'Array instead of string' }
+  ];
+
+  console.log('  Testing various invalid WIF formats:');
+  
+  const request = [
+    {
+      address: testConfig.addresses.emptyAddress,
+      amount: 0.01,
+    },
+  ];
+
+  for (const { wif, desc } of invalidWifs) {
+    try {
+      const result = await mnee.transfer(request, wif, false);
+      
+      if (result.error) {
+        console.log(`    ${desc}: "${result.error}"`);
+      } else {
+        console.log(`    ${desc}: No error returned (FAIL)`);
+      }
+    } catch (error) {
+      console.log(`    ${desc}: Exception - "${error.message}"`);
+    }
+  }
+}
+
+// Test 6.10: Transfer with specific invalid addresses
+async function testSpecificInvalidAddresses() {
+  const invalidAddresses = [
+    { address: '1BoatSLRHtKNngkdXEeobR76b53LETtpyX', desc: 'Invalid checksum' },
+    { address: '3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy', desc: 'P2SH address (prefix 3)' },
+    { address: 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4', desc: 'Bech32 address' },
+    { address: 'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx', desc: 'Testnet Bech32' },
+    { address: '12345', desc: 'Too short' },
+    { address: null, desc: 'Null value' },
+    { address: undefined, desc: 'Undefined value' },
+    { address: 123, desc: 'Number instead of string' },
+    { address: true, desc: 'Boolean instead of string' },
+    { address: {}, desc: 'Object instead of string' },
+    { address: [], desc: 'Array instead of string' }
+  ];
+
+  console.log('  Testing various invalid address formats:');
+  
+  for (const { address, desc } of invalidAddresses) {
+    const request = [
+      {
+        address: address,
+        amount: 0.01,
+      },
+    ];
+
+    try {
+      const result = await mnee.transfer(request, TEST_WIF, false);
+      
+      if (result.error) {
+        console.log(`    ${desc}: "${result.error}"`);
+      } else {
+        console.log(`    ${desc}: No error returned (FAIL)`);
+      }
+    } catch (error) {
+      console.log(`    ${desc}: Exception - "${error.message}"`);
+    }
+  }
+}
+
+// Test 6.11: Transfer with specific invalid amounts
+async function testSpecificInvalidAmounts() {
+  const invalidAmounts = [
+    { amount: -0.01, desc: 'Small negative' },
+    { amount: -1000000, desc: 'Large negative' },
+    { amount: 0.000001, desc: 'Below minimum (0.00001)' },
+    { amount: 0.0000001, desc: 'Way below minimum' },
+    { amount: '0.01', desc: 'String number' },
+    { amount: 'abc', desc: 'Non-numeric string' },
+    { amount: null, desc: 'Null value' },
+    { amount: undefined, desc: 'Undefined value' },
+    { amount: NaN, desc: 'NaN value' },
+    { amount: Infinity, desc: 'Infinity value' },
+    { amount: -Infinity, desc: 'Negative Infinity' },
+    { amount: true, desc: 'Boolean true' },
+    { amount: false, desc: 'Boolean false' },
+    { amount: {}, desc: 'Object' },
+    { amount: [], desc: 'Array' }
+  ];
+
+  console.log('  Testing various invalid amount values:');
+  
+  for (const { amount, desc } of invalidAmounts) {
+    const request = [
+      {
+        address: testConfig.addresses.emptyAddress,
+        amount: amount,
+      },
+    ];
+
+    try {
+      const result = await mnee.transfer(request, TEST_WIF, false);
+      
+      if (result.error) {
+        console.log(`    ${desc}: "${result.error}"`);
+      } else {
+        console.log(`    ${desc}: No error returned (FAIL)`);
+      }
+    } catch (error) {
+      console.log(`    ${desc}: Exception - "${error.message}"`);
+    }
+  }
+}
+
+// Test 6.12: Transfer with malformed request objects
+async function testMalformedRequests() {
+  console.log('  Testing malformed request objects:');
+  
+  // Missing address field
+  let request = [
+    {
+      amount: 0.01,
+    },
+  ];
+
+  try {
+    const result = await mnee.transfer(request, TEST_WIF, false);
+    console.log(`    Missing address field: "${result.error || 'No error (FAIL)'}"`);
+  } catch (error) {
+    console.log(`    Missing address field: Exception - "${error.message}"`);
+  }
+
+  // Missing amount field
+  request = [
+    {
+      address: testConfig.addresses.emptyAddress,
+    },
+  ];
+
+  try {
+    const result = await mnee.transfer(request, TEST_WIF, false);
+    console.log(`    Missing amount field: "${result.error || 'No error (FAIL)'}"`);
+  } catch (error) {
+    console.log(`    Missing amount field: Exception - "${error.message}"`);
+  }
+
+  // Completely empty object
+  request = [{}];
+
+  try {
+    const result = await mnee.transfer(request, TEST_WIF, false);
+    console.log(`    Empty object: "${result.error || 'No error (FAIL)'}"`);
+  } catch (error) {
+    console.log(`    Empty object: Exception - "${error.message}"`);
+  }
+
+  // Non-array request
+  const invalidRequests = [
+    { req: null, desc: 'Null request' },
+    { req: undefined, desc: 'Undefined request' },
+    { req: 'string', desc: 'String instead of array' },
+    { req: 123, desc: 'Number instead of array' },
+    { req: {address: testConfig.addresses.emptyAddress, amount: 0.01}, desc: 'Object instead of array' },
+    { req: true, desc: 'Boolean instead of array' }
+  ];
+
+  for (const { req, desc } of invalidRequests) {
+    try {
+      const result = await mnee.transfer(req, TEST_WIF, false);
+      console.log(`    ${desc}: "${result.error || 'No error (FAIL)'}"`);
+    } catch (error) {
+      console.log(`    ${desc}: Exception - "${error.message}"`);
+    }
+  }
+}
+
+// Test 6.13: Transfer with broadcast = true (skip in test environment)
 async function testTransferWithBroadcast() {
   console.log('  Testing transfer with actual broadcast to the network!');
 
@@ -349,9 +533,25 @@ async function runTests() {
     await testNegativeAmount();
     console.log('✅ Test 6.8 passed\n');
 
-    console.log('Test 6.9: Transfer with broadcast');
-    await testTransferWithBroadcast();
+    console.log('Test 6.9: Transfer with specific invalid WIF formats');
+    await testSpecificInvalidWifFormats();
     console.log('✅ Test 6.9 passed\n');
+
+    console.log('Test 6.10: Transfer with specific invalid addresses');
+    await testSpecificInvalidAddresses();
+    console.log('✅ Test 6.10 passed\n');
+
+    console.log('Test 6.11: Transfer with specific invalid amounts');
+    await testSpecificInvalidAmounts();
+    console.log('✅ Test 6.11 passed\n');
+
+    console.log('Test 6.12: Transfer with malformed request objects');
+    await testMalformedRequests();
+    console.log('✅ Test 6.12 passed\n');
+
+    console.log('Test 6.13: Transfer with broadcast');
+    await testTransferWithBroadcast();
+    console.log('✅ Test 6.13 passed\n');
 
     console.log('All tests passed! ✅');
   } catch (error) {

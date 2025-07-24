@@ -321,6 +321,342 @@ async function testEmptyInputs() {
   assert(errorOccurred, 'Empty inputs should cause an error');
 }
 
+// Test 7.8: TransferMulti with invalid WIF in input
+async function testInvalidWifInInput() {
+  const invalidWifs = [
+    { wif: 'invalid-wif', desc: 'Invalid characters' },
+    { wif: 'L1z7N5Qkpkz93odzExb8DNyee2CRQAXsqWX3WQb2hpsbGsWAPeb', desc: 'Missing last character' },
+    { wif: '', desc: 'Empty string' },
+    { wif: null, desc: 'Null value' },
+    { wif: 123, desc: 'Number instead of string' }
+  ];
+
+  console.log('  Testing various invalid WIF formats:');
+  
+  for (const { wif, desc } of invalidWifs) {
+    const options = {
+      inputs: [
+        {
+          txid: '0000000000000000000000000000000000000000000000000000000000000000',
+          vout: 0,
+          wif: wif,
+        },
+      ],
+      recipients: [
+        {
+          address: testConfig.addresses.emptyAddress,
+          amount: 0.01,
+        },
+      ],
+    };
+
+    try {
+      const result = await mnee.transferMulti(options, false);
+      
+      if (result.error) {
+        console.log(`    ${desc}: "${result.error}"`);
+      } else {
+        console.log(`    ${desc}: No error returned (FAIL)`);
+      }
+    } catch (error) {
+      console.log(`    ${desc}: Exception - "${error.message}"`);
+    }
+  }
+}
+
+// Test 7.9: TransferMulti with invalid recipient addresses
+async function testInvalidRecipientAddresses() {
+  const invalidAddresses = [
+    { address: 'invalid-address', desc: 'Invalid format' },
+    { address: '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNx', desc: 'Wrong checksum' },
+    { address: '', desc: 'Empty string' },
+    { address: null, desc: 'Null value' },
+    { address: 123, desc: 'Number instead of string' }
+  ];
+
+  console.log('  Testing various invalid recipient addresses:');
+  
+  const utxos = await mnee.getUtxos(TEST_ADDRESS);
+  if (utxos.length === 0) {
+    console.log('    ⚠️  No UTXOs available, using dummy data');
+  }
+  
+  for (const { address, desc } of invalidAddresses) {
+    const options = {
+      inputs: [
+        {
+          txid: utxos[0]?.txid || '0000000000000000000000000000000000000000000000000000000000000000',
+          vout: utxos[0]?.vout || 0,
+          wif: TEST_WIF,
+        },
+      ],
+      recipients: [
+        {
+          address: address,
+          amount: 0.01,
+        },
+      ],
+    };
+
+    try {
+      const result = await mnee.transferMulti(options, false);
+      
+      if (result.error) {
+        console.log(`    ${desc}: "${result.error}"`);
+      } else {
+        console.log(`    ${desc}: No error returned (FAIL)`);
+      }
+    } catch (error) {
+      console.log(`    ${desc}: Exception - "${error.message}"`);
+    }
+  }
+}
+
+// Test 7.10: TransferMulti with invalid amounts
+async function testInvalidAmounts() {
+  const invalidAmounts = [
+    { amount: -100, desc: 'Negative amount' },
+    { amount: 0, desc: 'Zero amount' },
+    { amount: 0.000001, desc: 'Below minimum (0.00001)' },
+    { amount: '100', desc: 'String instead of number' },
+    { amount: null, desc: 'Null value' },
+    { amount: undefined, desc: 'Undefined value' },
+    { amount: NaN, desc: 'NaN value' },
+    { amount: Infinity, desc: 'Infinity value' }
+  ];
+
+  console.log('  Testing various invalid amounts:');
+  
+  const utxos = await mnee.getUtxos(TEST_ADDRESS);
+  if (utxos.length === 0) {
+    console.log('    ⚠️  No UTXOs available, using dummy data');
+  }
+  
+  for (const { amount, desc } of invalidAmounts) {
+    const options = {
+      inputs: [
+        {
+          txid: utxos[0]?.txid || '0000000000000000000000000000000000000000000000000000000000000000',
+          vout: utxos[0]?.vout || 0,
+          wif: TEST_WIF,
+        },
+      ],
+      recipients: [
+        {
+          address: testConfig.addresses.emptyAddress,
+          amount: amount,
+        },
+      ],
+    };
+
+    try {
+      const result = await mnee.transferMulti(options, false);
+      
+      if (result.error) {
+        console.log(`    ${desc}: "${result.error}"`);
+      } else {
+        console.log(`    ${desc}: No error returned (FAIL)`);
+      }
+    } catch (error) {
+      console.log(`    ${desc}: Exception - "${error.message}"`);
+    }
+  }
+}
+
+// Test 7.11: TransferMulti with missing required fields
+async function testMissingRequiredFields() {
+  console.log('  Testing missing required fields:');
+  
+  // Missing txid in input
+  let options = {
+    inputs: [
+      {
+        vout: 0,
+        wif: TEST_WIF,
+      },
+    ],
+    recipients: [
+      {
+        address: testConfig.addresses.emptyAddress,
+        amount: 0.01,
+      },
+    ],
+  };
+
+  try {
+    const result = await mnee.transferMulti(options, false);
+    console.log(`    Missing txid: "${result.error || 'No error (FAIL)'}"`);
+  } catch (error) {
+    console.log(`    Missing txid: Exception - "${error.message}"`);
+  }
+
+  // Missing vout in input
+  options = {
+    inputs: [
+      {
+        txid: '0000000000000000000000000000000000000000000000000000000000000000',
+        wif: TEST_WIF,
+      },
+    ],
+    recipients: [
+      {
+        address: testConfig.addresses.emptyAddress,
+        amount: 0.01,
+      },
+    ],
+  };
+
+  try {
+    const result = await mnee.transferMulti(options, false);
+    console.log(`    Missing vout: "${result.error || 'No error (FAIL)'}"`);
+  } catch (error) {
+    console.log(`    Missing vout: Exception - "${error.message}"`);
+  }
+
+  // Missing address in recipient
+  options = {
+    inputs: [
+      {
+        txid: '0000000000000000000000000000000000000000000000000000000000000000',
+        vout: 0,
+        wif: TEST_WIF,
+      },
+    ],
+    recipients: [
+      {
+        amount: 0.01,
+      },
+    ],
+  };
+
+  try {
+    const result = await mnee.transferMulti(options, false);
+    console.log(`    Missing recipient address: "${result.error || 'No error (FAIL)'}"`);
+  } catch (error) {
+    console.log(`    Missing recipient address: Exception - "${error.message}"`);
+  }
+
+  // Missing amount in recipient
+  options = {
+    inputs: [
+      {
+        txid: '0000000000000000000000000000000000000000000000000000000000000000',
+        vout: 0,
+        wif: TEST_WIF,
+      },
+    ],
+    recipients: [
+      {
+        address: testConfig.addresses.emptyAddress,
+      },
+    ],
+  };
+
+  try {
+    const result = await mnee.transferMulti(options, false);
+    console.log(`    Missing recipient amount: "${result.error || 'No error (FAIL)'}"`);
+  } catch (error) {
+    console.log(`    Missing recipient amount: Exception - "${error.message}"`);
+  }
+}
+
+// Test 7.12: TransferMulti with invalid change address
+async function testInvalidChangeAddress() {
+  const utxos = await mnee.getUtxos(TEST_ADDRESS);
+  
+  if (utxos.length === 0) {
+    console.log('  ⚠️  No UTXOs available, skipping test');
+    return;
+  }
+
+  console.log('  Testing invalid change addresses:');
+
+  // Single invalid change address
+  let options = {
+    inputs: [
+      {
+        txid: utxos[0].txid,
+        vout: utxos[0].vout,
+        wif: TEST_WIF,
+      },
+    ],
+    recipients: [
+      {
+        address: testConfig.addresses.emptyAddress,
+        amount: 0.01,
+      },
+    ],
+    changeAddress: 'invalid-change-address',
+  };
+
+  try {
+    const result = await mnee.transferMulti(options, false);
+    console.log(`    Invalid single change address: "${result.error || 'No error (FAIL)'}"`);
+  } catch (error) {
+    console.log(`    Invalid single change address: Exception - "${error.message}"`);
+  }
+
+  // Invalid change address in array
+  options = {
+    inputs: [
+      {
+        txid: utxos[0].txid,
+        vout: utxos[0].vout,
+        wif: TEST_WIF,
+      },
+    ],
+    recipients: [
+      {
+        address: testConfig.addresses.emptyAddress,
+        amount: 0.01,
+      },
+    ],
+    changeAddress: [
+      {
+        address: 'invalid-change-address',
+        amount: 0.5,
+      },
+    ],
+  };
+
+  try {
+    const result = await mnee.transferMulti(options, false);
+    console.log(`    Invalid change address in array: "${result.error || 'No error (FAIL)'}"`);
+  } catch (error) {
+    console.log(`    Invalid change address in array: Exception - "${error.message}"`);
+  }
+
+  // Change amount below minimum
+  options = {
+    inputs: [
+      {
+        txid: utxos[0].txid,
+        vout: utxos[0].vout,
+        wif: TEST_WIF,
+      },
+    ],
+    recipients: [
+      {
+        address: testConfig.addresses.emptyAddress,
+        amount: 0.01,
+      },
+    ],
+    changeAddress: [
+      {
+        address: TEST_ADDRESS,
+        amount: 0.000001, // Below minimum
+      },
+    ],
+  };
+
+  try {
+    const result = await mnee.transferMulti(options, false);
+    console.log(`    Change amount below minimum: "${result.error || 'No error (FAIL)'}"`);
+  } catch (error) {
+    console.log(`    Change amount below minimum: Exception - "${error.message}"`);
+  }
+}
+
 // Run tests
 async function runTests() {
   console.log('Running transferMulti tests...\n');
@@ -366,6 +702,26 @@ async function runTests() {
     console.log('Test 7.7: TransferMulti with empty inputs');
     await testEmptyInputs();
     console.log('✅ Test 7.7 passed\n');
+
+    console.log('Test 7.8: TransferMulti with invalid WIF in input');
+    await testInvalidWifInInput();
+    console.log('✅ Test 7.8 passed\n');
+
+    console.log('Test 7.9: TransferMulti with invalid recipient addresses');
+    await testInvalidRecipientAddresses();
+    console.log('✅ Test 7.9 passed\n');
+
+    console.log('Test 7.10: TransferMulti with invalid amounts');
+    await testInvalidAmounts();
+    console.log('✅ Test 7.10 passed\n');
+
+    console.log('Test 7.11: TransferMulti with missing required fields');
+    await testMissingRequiredFields();
+    console.log('✅ Test 7.11 passed\n');
+
+    console.log('Test 7.12: TransferMulti with invalid change address');
+    await testInvalidChangeAddress();
+    console.log('✅ Test 7.12 passed\n');
 
     console.log('All tests passed! ✅');
   } catch (error) {

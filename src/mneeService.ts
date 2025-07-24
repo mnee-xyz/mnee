@@ -35,7 +35,14 @@ import {
 } from './mnee.types.js';
 import CosignTemplate from './mneeCosignTemplate.js';
 import { applyInscription } from './utils/applyInscription.js';
-import { parseCosignerScripts, parseInscription, parseSyncToTxHistory, validateAddress } from './utils/helper.js';
+import {
+  parseCosignerScripts,
+  parseInscription,
+  parseSyncToTxHistory,
+  validateAddress,
+  validateTransferMultiOptions,
+  validateWIF,
+} from './utils/helper.js';
 import { isNetworkError, logNetworkError } from './utils/networkError.js';
 import { stacklessError } from './utils/stacklessError.js';
 import {
@@ -265,17 +272,29 @@ export class MNEEService {
       const config = this.mneeConfig || (await this.getCosignerConfig());
       if (!config) throw stacklessError('Config not fetched');
 
+      const wifValidation = validateWIF(wif);
+      if (!wifValidation.isValid) {
+        return { error: wifValidation.error };
+      }
+      const privateKey = wifValidation.privateKey!;
+
+      let totalAmount = 0;
       for (const req of request) {
+        if (!validateAddress(req.address)) {
+          return { error: `Invalid recipient address: ${req.address}` };
+        }
+        if (typeof req.amount !== 'number' || isNaN(req.amount) || !isFinite(req.amount)) {
+          return { error: `Invalid amount for ${req.address}: amount must be a valid number` };
+        }
         if (req.amount < MIN_TRANSFER_AMOUNT) {
           return { error: `Invalid amount for ${req.address}: minimum transfer amount is ${MIN_TRANSFER_AMOUNT} MNEE` };
         }
+        totalAmount += req.amount;
       }
 
-      const totalAmount = request.reduce((sum, req) => sum + req.amount, 0);
-      if (totalAmount <= 0) return { error: 'Invalid amount' };
+      if (totalAmount <= 0) return { error: 'Invalid amount: total must be greater than 0' };
       const totalAtomicTokenAmount = this.toAtomicAmount(totalAmount);
 
-      const privateKey = PrivateKey.fromWif(wif);
       const address = privateKey.toAddress();
       const utxos = await this.getUtxos(address);
       const totalUtxoAmount = utxos.reduce((sum, utxo) => sum + (utxo.data.bsv21.amt || 0), 0);
@@ -1380,21 +1399,8 @@ export class MNEEService {
       const config = this.mneeConfig || (await this.getCosignerConfig());
       if (!config) throw stacklessError('Config not fetched');
 
-      for (const req of options.recipients) {
-        if (req.amount < MIN_TRANSFER_AMOUNT) {
-          return { error: `Invalid amount for ${req.address}: minimum transfer amount is ${MIN_TRANSFER_AMOUNT} MNEE` };
-        }
-      }
-
-      if (options.changeAddress && Array.isArray(options.changeAddress)) {
-        for (const change of options.changeAddress) {
-          if (change.amount < MIN_TRANSFER_AMOUNT) {
-            return {
-              error: `Invalid amount for ${change.address}: minimum transfer amount is ${MIN_TRANSFER_AMOUNT} MNEE`,
-            };
-          }
-        }
-      }
+      const { isValid, error } = validateTransferMultiOptions(options);
+      if (!isValid) return { error };
 
       const totalAmount = options.recipients.reduce((sum, req) => sum + req.amount, 0);
       if (totalAmount <= 0) return { error: 'Invalid amount' };
