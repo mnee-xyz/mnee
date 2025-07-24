@@ -41,7 +41,7 @@ import {
   parseSyncToTxHistory,
   validateAddress,
   validateTransferMultiOptions,
-  validateWIF,
+  validateTransferOptions,
 } from './utils/helper.js';
 import { isNetworkError, logNetworkError } from './utils/networkError.js';
 import { stacklessError } from './utils/stacklessError.js';
@@ -56,7 +56,6 @@ import {
   SANDBOX_TOKEN_ID,
   SANDBOX_MINT_ADDRESS,
   SANDBOX_APPROVER,
-  MIN_TRANSFER_AMOUNT,
   MNEE_DECIMALS,
 } from './constants.js';
 import { RateLimiter } from './batch.js';
@@ -267,39 +266,23 @@ export class MNEEService {
     request: SendMNEE[],
     wif: string,
     broadcast: boolean = true,
-  ): Promise<{ txid?: string; rawtx?: string; error?: string }> {
+  ): Promise<TransferResponse> {
     try {
       const config = this.mneeConfig || (await this.getCosignerConfig());
       if (!config) throw stacklessError('Config not fetched');
 
-      const wifValidation = validateWIF(wif);
-      if (!wifValidation.isValid) {
-        return { error: wifValidation.error };
-      }
-      const privateKey = wifValidation.privateKey!;
+      const { isValid, totalAmount, privateKey, error } = validateTransferOptions(request, wif);
+      if (!isValid) throw stacklessError(error || 'Invalid transfer options');
+      if (!privateKey) throw stacklessError('Private key not found');
+      if (!totalAmount) throw stacklessError('Invalid amount');
 
-      let totalAmount = 0;
-      for (const req of request) {
-        if (!validateAddress(req.address)) {
-          return { error: `Invalid recipient address: ${req.address}` };
-        }
-        if (typeof req.amount !== 'number' || isNaN(req.amount) || !isFinite(req.amount)) {
-          return { error: `Invalid amount for ${req.address}: amount must be a valid number` };
-        }
-        if (req.amount < MIN_TRANSFER_AMOUNT) {
-          return { error: `Invalid amount for ${req.address}: minimum transfer amount is ${MIN_TRANSFER_AMOUNT} MNEE` };
-        }
-        totalAmount += req.amount;
-      }
-
-      if (totalAmount <= 0) return { error: 'Invalid amount: total must be greater than 0' };
       const totalAtomicTokenAmount = this.toAtomicAmount(totalAmount);
 
       const address = privateKey.toAddress();
       const utxos = await this.getUtxos(address);
       const totalUtxoAmount = utxos.reduce((sum, utxo) => sum + (utxo.data.bsv21.amt || 0), 0);
       if (totalUtxoAmount < totalAtomicTokenAmount) {
-        return { error: 'Insufficient MNEE balance' };
+        throw stacklessError('Insufficient MNEE balance');
       }
 
       const fee =
@@ -309,7 +292,7 @@ export class MNEEService {
               (fee: { min: number; max: number }) =>
                 totalAtomicTokenAmount >= fee.min && totalAtomicTokenAmount <= fee.max,
             )?.fee;
-      if (fee === undefined) return { error: 'Fee ranges inadequate' };
+      if (fee === undefined) throw stacklessError('Fee ranges inadequate');
 
       const tx = new Transaction(1, [], [], 0);
       let tokensIn = 0;
@@ -317,10 +300,10 @@ export class MNEEService {
 
       while (tokensIn < totalAtomicTokenAmount + fee) {
         const utxo = utxos.shift();
-        if (!utxo) return { error: 'Insufficient MNEE balance' };
+        if (!utxo) throw stacklessError('Insufficient MNEE balance');
 
         const sourceTransaction = await this.fetchRawTx(utxo.txid);
-        if (!sourceTransaction) return { error: 'Failed to fetch source transaction' };
+        if (!sourceTransaction) throw stacklessError('Failed to fetch source transaction');
 
         changeAddress = changeAddress || utxo.owners[0];
         tx.addInput({
@@ -348,38 +331,39 @@ export class MNEEService {
       }
 
       const signResult = await this.signAllInputs(tx, privateKeys);
-      if (signResult.error) return signResult;
+      if (signResult.error) throw stacklessError(signResult.error);
 
       if (!broadcast) {
         return { rawtx: tx.toHex() };
       }
 
-      return await this.broadcastTransaction(tx);
+      const {rawtx, txid, error: broadcastError} = await this.broadcastTransaction(tx);
+      if (broadcastError) throw stacklessError(broadcastError);
+      if (!rawtx || !txid) throw stacklessError('Failed to broadcast transaction');
+      return { rawtx, txid };
     } catch (error) {
       if (isNetworkError(error)) {
         logNetworkError(error, 'transfer tokens');
       }
-      let errorMessage = 'Transaction submission failed';
-      if (error instanceof Error) {
-        errorMessage = error.message;
-      }
-      return { error: errorMessage };
+      throw error;
     }
   }
 
   public async submitRawTx(rawtx: string): Promise<TransferResponse> {
     try {
       if (!rawtx) {
-        return { error: 'Raw transaction is required' };
+        throw stacklessError('Raw transaction is required');
       }
       const tx = Transaction.fromHex(rawtx);
       const response = await this.broadcastTransaction(tx);
-      return response;
+      if (response.error) throw stacklessError(response.error);
+      if (!response.rawtx || !response.txid) throw stacklessError('Failed to submit raw transaction');
+      return { rawtx: response.rawtx, txid: response.txid };
     } catch (error) {
       if (isNetworkError(error)) {
         logNetworkError(error, 'submit raw transaction');
       }
-      return { error: 'Failed to submit raw transaction' };
+      throw error;
     }
   }
 
@@ -1373,7 +1357,7 @@ export class MNEEService {
       if (!response.ok) throw stacklessError(`HTTP error! status: ${response.status}`);
 
       const { rawtx: responseRawtx } = await response.json();
-      if (!responseRawtx) return { error: 'Failed to broadcast transaction' };
+      if (!responseRawtx) throw stacklessError('Failed to broadcast transaction');
 
       const decodedBase64AsBinary = Utils.toArray(responseRawtx, 'base64');
       const tx2 = Transaction.fromBinary(decodedBase64AsBinary);
@@ -1387,33 +1371,33 @@ export class MNEEService {
       if (error instanceof Error) {
         errorMessage = error.message;
       }
-      return { error: errorMessage };
+      throw stacklessError(errorMessage);
     }
   }
 
   public async transferMulti(
     options: TransferMultiOptions,
     broadcast: boolean = true,
-  ): Promise<{ txid?: string; rawtx?: string; error?: string }> {
+  ): Promise<TransferResponse> {
     try {
       const config = this.mneeConfig || (await this.getCosignerConfig());
       if (!config) throw stacklessError('Config not fetched');
 
       const { isValid, error } = validateTransferMultiOptions(options);
-      if (!isValid) return { error };
+      if (!isValid) throw stacklessError(error || 'Invalid transfer options');
 
       const totalAmount = options.recipients.reduce((sum, req) => sum + req.amount, 0);
-      if (totalAmount <= 0) return { error: 'Invalid amount' };
+      if (totalAmount <= 0) throw stacklessError('Invalid amount');
       const totalAtomicTokenAmount = this.toAtomicAmount(totalAmount);
 
       const validationResult = this.validateUniqueInputs(options.inputs);
-      if (validationResult.error) return validationResult;
+      if (validationResult.error) throw stacklessError(validationResult.error);
 
       const tx = new Transaction(1, [], [], 0);
       const privateKeys = new Map<number, PrivateKey>();
 
       const inputResult = await this.addInputsToTransaction(tx, options.inputs, privateKeys);
-      if (inputResult.error) return { error: inputResult.error };
+      if (inputResult.error) throw stacklessError(inputResult.error);
       const tokensIn = inputResult.tokensIn;
 
       const inputAddresses = new Set<string>();
@@ -1430,17 +1414,17 @@ export class MNEEService {
         config,
         options.recipients,
       );
-      if (feeResult.error) return { error: feeResult.error };
+      if (feeResult.error) throw stacklessError(feeResult.error);
       const fee = feeResult.fee;
 
       if (tokensIn < totalAtomicTokenAmount + fee) {
         const haveDecimal = this.fromAtomicAmount(tokensIn);
         const needDecimal = this.fromAtomicAmount(totalAtomicTokenAmount + fee);
-        return {
-          error: `Insufficient tokens. Have: ${haveDecimal}, Need: ${needDecimal} (including fee: ${this.fromAtomicAmount(
+        throw stacklessError(
+          `Insufficient tokens. Have: ${haveDecimal}, Need: ${needDecimal} (including fee: ${this.fromAtomicAmount(
             fee,
-          )})`,
-        };
+          )})`
+        );
       }
 
       for (const req of options.recipients) {
@@ -1462,28 +1446,28 @@ export class MNEEService {
         totalAtomicTokenAmount,
         fee,
       );
-      if (changeResult.error) return changeResult;
+      if (changeResult.error) throw stacklessError(changeResult.error);
 
       const signResult = await this.signAllInputs(tx, privateKeys);
-      if (signResult.error) return signResult;
+      if (signResult.error) throw stacklessError(signResult.error);
 
       const conservationResult = this.validateTokenConservation(tx, tokensIn);
-      if (conservationResult.error) return conservationResult;
+      if (conservationResult.error) throw stacklessError(conservationResult.error);
 
       if (!broadcast) {
         return { rawtx: tx.toHex() };
       }
 
-      return await this.broadcastTransaction(tx);
+      const {rawtx, txid, error: broadcastError} = await this.broadcastTransaction(tx);
+      if (broadcastError) throw stacklessError(broadcastError);
+      if (!rawtx || !txid) throw stacklessError('Failed to broadcast transaction');
+
+      return { rawtx, txid };
     } catch (error) {
       if (isNetworkError(error)) {
         logNetworkError(error, 'multi-source transfer');
       }
-      let errorMessage = 'Multi-source transfer failed';
-      if (error instanceof Error) {
-        errorMessage = error.message;
-      }
-      return { error: errorMessage };
+      throw error;
     }
   }
 }

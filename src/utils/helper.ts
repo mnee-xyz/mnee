@@ -5,6 +5,7 @@ import {
   MneeInscription,
   MneeSync,
   ParsedCosigner,
+  SendMNEE,
   TransferMultiOptions,
   TxHistory,
   TxStatus,
@@ -283,4 +284,34 @@ export const validateTransferMultiOptions = (options: TransferMultiOptions): { i
   }
 
   return { isValid: true };
+};
+
+export const validateTransferOptions = (options: SendMNEE[], wif: string): { isValid: boolean; totalAmount?: number; privateKey?: PrivateKey; error?: string } => {
+  const { isValid, error, privateKey } = validateWIF(wif);
+  if (!isValid) {
+    return { isValid: false, error: error || 'Invalid WIF key provided' };
+  }
+
+  // This should never happen, but just in case
+  if (!privateKey) {
+    return { isValid: false, error: 'Private key not found' };
+  }
+
+  let totalAmount = 0;
+  for (const req of options) {
+    if (!validateAddress(req.address)) {
+      return { isValid: false, error: `Invalid recipient address: ${req.address}` };
+    }
+    if (typeof req.amount !== 'number' || isNaN(req.amount) || !isFinite(req.amount)) {
+      return { isValid: false, error: `Invalid amount for ${req.address}: amount must be a valid number` };
+    }
+    if (req.amount < MIN_TRANSFER_AMOUNT) {
+      return { isValid: false, error: `Invalid amount for ${req.address}: minimum transfer amount is ${MIN_TRANSFER_AMOUNT} MNEE` };
+    }
+    totalAmount += req.amount;
+  }
+
+  if (totalAmount <= 0) return { isValid: false, error: 'Invalid amount: total must be greater than 0' };
+
+  return { isValid: true, totalAmount, privateKey };
 };

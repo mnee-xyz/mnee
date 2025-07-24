@@ -139,16 +139,13 @@ async function testInvalidWif() {
   let errorOccurred = false;
   try {
     const result = await mnee.transfer(request, 'invalid-wif-key', false);
-
-    // Should have an error
-    assert(result.error, 'Should have error for invalid WIF');
-    assert(!result.rawtx, 'Should not have rawtx with invalid WIF');
-    assert(!result.txid, 'Should not have txid with invalid WIF');
-    errorOccurred = true;
-    console.log(`  Invalid WIF error: "${result.error}"`);
+    
+    // With the new behavior, this should never execute as transfer will throw
+    assert.fail('Transfer should throw error for invalid WIF');
   } catch (error) {
     errorOccurred = true;
     console.log(`  Transfer threw error for invalid WIF: "${error.message}"`);
+    assert(error.message.includes('Invalid WIF key'), 'Error message should indicate invalid WIF');
   }
 
   assert(errorOccurred, 'Invalid WIF should cause an error');

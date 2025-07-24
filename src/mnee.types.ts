@@ -114,7 +114,7 @@ export interface Inscription {
   parent?: string;
 }
 
-export type TransferResponse = { txid?: string; rawtx?: string; error?: string };
+export type TransferResponse = {rawtx: string, txid?: string; };
 
 export interface TransferMultiOptions {
   inputs: Array<{
