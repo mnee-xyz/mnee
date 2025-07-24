@@ -114,7 +114,7 @@ export interface Inscription {
   parent?: string;
 }
 
-export type TransferResponse = {rawtx: string, txid?: string; };
+export type TransferResponse = { rawtx: string; txid?: string };
 
 export interface TransferMultiOptions {
   inputs: Array<{
@@ -212,4 +212,34 @@ export interface AddressHistoryParams {
   address: string;
   fromScore?: number;
   limit?: number;
+}
+
+export interface ProcessedInput {
+  address?: string;
+  amount: number;
+  satoshis: number;
+  inscription?: MneeInscription | null;
+  cosigner?: ParsedCosigner;
+}
+
+export interface ProcessedOutput {
+  address?: string;
+  amount: number;
+  satoshis: number;
+  inscription?: MneeInscription | null;
+  cosigner?: ParsedCosigner;
+}
+
+export interface TxInputResponse {
+  inputs: ProcessedInput[];
+  total: bigint;
+  environment?: Environment;
+  type?: TxOperation;
+}
+
+export interface TxOutputResponse {
+  outputs: ProcessedOutput[];
+  total: bigint;
+  environment?: Environment;
+  type?: TxOperation;
 }

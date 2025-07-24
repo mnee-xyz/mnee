@@ -29,13 +29,17 @@ import {
   TxHistoryResponse,
   TxOperation,
   AddressHistoryParams,
-  ParsedCosigner,
   TxAddressAmount,
   TransferResponse,
+  TxInputResponse,
+  ProcessedInput,
+  TxOutputResponse,
+  ProcessedOutput,
 } from './mnee.types.js';
 import CosignTemplate from './mneeCosignTemplate.js';
 import { applyInscription } from './utils/applyInscription.js';
 import {
+  isValidHex,
   parseCosignerScripts,
   parseInscription,
   parseSyncToTxHistory,
@@ -60,22 +64,6 @@ import {
 } from './constants.js';
 import { RateLimiter } from './batch.js';
 
-// Helper interfaces for parseTransaction refactoring
-interface ProcessedInput {
-  address?: string;
-  amount: number;
-  satoshis: number;
-  inscription?: MneeInscription | null;
-  cosigner?: ParsedCosigner;
-}
-
-interface ProcessedOutput {
-  address?: string;
-  amount: number;
-  satoshis: number;
-  inscription?: MneeInscription | null;
-  cosigner?: ParsedCosigner;
-}
 
 export class MNEEService {
   private mneeApiKey: string;
@@ -262,11 +250,7 @@ export class MNEEService {
     }
   }
 
-  public async transfer(
-    request: SendMNEE[],
-    wif: string,
-    broadcast: boolean = true,
-  ): Promise<TransferResponse> {
+  public async transfer(request: SendMNEE[], wif: string, broadcast: boolean = true): Promise<TransferResponse> {
     try {
       const config = this.mneeConfig || (await this.getCosignerConfig());
       if (!config) throw stacklessError('Config not fetched');
@@ -337,7 +321,7 @@ export class MNEEService {
         return { rawtx: tx.toHex() };
       }
 
-      const {rawtx, txid, error: broadcastError} = await this.broadcastTransaction(tx);
+      const { rawtx, txid, error: broadcastError } = await this.broadcastTransaction(tx);
       if (broadcastError) throw stacklessError(broadcastError);
       if (!rawtx || !txid) throw stacklessError('Failed to broadcast transaction');
       return { rawtx, txid };
@@ -815,12 +799,7 @@ export class MNEEService {
   private async processTransactionInputs(
     tx: Transaction,
     config: MNEEConfig,
-  ): Promise<{
-    inputs: ProcessedInput[];
-    total: bigint;
-    environment?: Environment;
-    type?: TxOperation;
-  }> {
+  ): Promise<TxInputResponse> {
     const txid = tx.id('hex');
     const inputs: ProcessedInput[] = new Array(tx.inputs.length);
     let total = BigInt(0);
@@ -907,12 +886,7 @@ export class MNEEService {
   private processTransactionOutputs(
     tx: Transaction,
     config: MNEEConfig,
-  ): {
-    outputs: ProcessedOutput[];
-    total: bigint;
-    environment?: Environment;
-    type?: TxOperation;
-  } {
+  ): TxOutputResponse {
     const txid = tx.id('hex');
     const outputs: ProcessedOutput[] = [];
     let total = BigInt(0);
@@ -1100,6 +1074,9 @@ export class MNEEService {
   ): Promise<ParseTxResponse | ParseTxExtendedResponse> {
     if (!rawTxHex || typeof rawTxHex !== 'string' || rawTxHex.trim() === '') {
       throw stacklessError('A valid raw transaction is required');
+    }
+    if (!isValidHex(rawTxHex)) {
+      throw stacklessError('Invalid raw transaction hex');
     }
     const tx = Transaction.fromHex(rawTxHex);
     const config = this.mneeConfig || (await this.getCosignerConfig());
@@ -1375,10 +1352,7 @@ export class MNEEService {
     }
   }
 
-  public async transferMulti(
-    options: TransferMultiOptions,
-    broadcast: boolean = true,
-  ): Promise<TransferResponse> {
+  public async transferMulti(options: TransferMultiOptions, broadcast: boolean = true): Promise<TransferResponse> {
     try {
       const config = this.mneeConfig || (await this.getCosignerConfig());
       if (!config) throw stacklessError('Config not fetched');
@@ -1423,7 +1397,7 @@ export class MNEEService {
         throw stacklessError(
           `Insufficient tokens. Have: ${haveDecimal}, Need: ${needDecimal} (including fee: ${this.fromAtomicAmount(
             fee,
-          )})`
+          )})`,
         );
       }
 
@@ -1458,7 +1432,7 @@ export class MNEEService {
         return { rawtx: tx.toHex() };
       }
 
-      const {rawtx, txid, error: broadcastError} = await this.broadcastTransaction(tx);
+      const { rawtx, txid, error: broadcastError } = await this.broadcastTransaction(tx);
       if (broadcastError) throw stacklessError(broadcastError);
       if (!rawtx || !txid) throw stacklessError('Failed to broadcast transaction');
 

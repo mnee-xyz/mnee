@@ -315,3 +315,12 @@ export const validateTransferOptions = (options: SendMNEE[], wif: string): { isV
 
   return { isValid: true, totalAmount, privateKey };
 };
+
+export const isValidHex = (hex: string) => {
+  try {
+    Transaction.fromHex(hex);
+    return true;
+  } catch (error) {
+    return false;
+  }
+};
