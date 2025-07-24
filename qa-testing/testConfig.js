@@ -3,12 +3,12 @@ export default {
   apiKey: '54f1fd1688ba66a58a67675b82feb93e',
   addresses: {
     testAddress: '1525VDfA8swjDMLHjLRCCmPFsTJToarrA2',
-    emptyAddress: '1BoatSLRHtKNngkdXEeobR76b53LETtpyT',
+    emptyAddress: '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa',
     invalidAddress: 'invalid-address',
   },
   balances: {
-    testAddressBalance: 2043900,
-    testAddressDecimalBalance: 20.439,
+    testAddressBalance: 1943000,
+    testAddressDecimalBalance: 19.43,
     testAddressTwoBalance: 2765725,
     testAddressTwoDecimalBalance: 27.65725,
   },

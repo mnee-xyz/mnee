@@ -278,11 +278,29 @@ async function testBatchErrorHandling() {
       'not-a-valid-bitcoin-address',
     ];
 
-    // Test continueOnError = false (default)
+    // Test with invalid addresses - getBalances now filters them out
+    const resultWithInvalid = await batch.getBalances(mixedAddresses, {
+      chunkSize: 2,
+      continueOnError: false,
+      requestsPerSecond: 10,
+    });
+    
+    // Should only return valid addresses (2 out of 4)
+    assert(resultWithInvalid.results.length === 2, 'Should filter out invalid addresses');
+    assert(resultWithInvalid.totalErrors === 0, 'Should not have errors for filtered addresses');
+    console.log('  Invalid addresses filtered correctly ✓');
+
+    // Test parseTx with invalid txids to trigger actual errors
+    const invalidTxids = [
+      '0000000000000000000000000000000000000000000000000000000000000000', // Invalid txid
+      'not-a-valid-txid', // Not even hex
+    ];
+
+    // Test continueOnError = false (should throw)
     let errorThrown = false;
     try {
-      await batch.getBalances(mixedAddresses, {
-        chunkSize: 2,
+      await batch.parseTx(invalidTxids, {
+        chunkSize: 1,
         continueOnError: false,
         requestsPerSecond: 10,
       });
@@ -293,15 +311,15 @@ async function testBatchErrorHandling() {
     console.log('  Error propagation works ✓');
 
     // Test continueOnError = true
-    const result = await batch.getBalances(mixedAddresses, {
-      chunkSize: 2,
+    const result = await batch.parseTx(invalidTxids, {
+      chunkSize: 1,
       continueOnError: true,
       maxRetries: 2,
       retryDelay: 100,
-      requestsPerSecond: 10, // Use your API key's limit
+      requestsPerSecond: 10,
     });
 
-    assert(result.results.length > 0, 'Should return some results');
+    assert(result.results.length === 0, 'Should have no successful results');
     assert(result.errors.length > 0, 'Should capture errors');
     assert(result.totalErrors > 0, 'Should count errors');
 
@@ -318,10 +336,10 @@ async function testBatchErrorHandling() {
 
     // Test progress with errors
     let errorCount = 0;
-    await batch.getBalances(mixedAddresses, {
-      chunkSize: 2,
+    await batch.parseTx(invalidTxids, {
+      chunkSize: 1,
       continueOnError: true,
-      requestsPerSecond: 10, // Use your API key's limit
+      requestsPerSecond: 10,
       onProgress: (_completed, _total, errors) => {
         errorCount = errors;
       },
