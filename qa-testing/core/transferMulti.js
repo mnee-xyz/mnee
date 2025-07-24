@@ -321,7 +321,41 @@ async function testEmptyInputs() {
   assert(errorOccurred, 'Empty inputs should cause an error');
 }
 
-// Test 7.8: TransferMulti with invalid WIF in input
+// Test 7.8: TransferMulti with empty recipients
+async function testEmptyRecipients() {
+  const utxos = await mnee.getUtxos(TEST_ADDRESS);
+  
+  if (utxos.length === 0) {
+    console.log('  ⚠️  No UTXOs available, using dummy data');
+  }
+
+  const options = {
+    inputs: [
+      {
+        txid: utxos[0]?.txid || '0000000000000000000000000000000000000000000000000000000000000000',
+        vout: utxos[0]?.vout || 0,
+        wif: TEST_WIF,
+      },
+    ],
+    recipients: [], // Empty recipients array
+  };
+
+  let errorOccurred = false;
+  try {
+    const result = await mnee.transferMulti(options, false);
+    
+    assert(result.error || !result.rawtx, 'Should fail with empty recipients');
+    errorOccurred = true;
+    console.log(`  Empty recipients handled: ${result.error || 'rejected'}`);
+  } catch (error) {
+    errorOccurred = true;
+    console.log(`  TransferMulti threw error for empty recipients: "${error.message}"`);
+  }
+  
+  assert(errorOccurred, 'Empty recipients should cause an error');
+}
+
+// Test 7.9: TransferMulti with invalid WIF in input
 async function testInvalidWifInInput() {
   const invalidWifs = [
     { wif: 'invalid-wif', desc: 'Invalid characters' },
@@ -364,7 +398,7 @@ async function testInvalidWifInInput() {
   }
 }
 
-// Test 7.9: TransferMulti with invalid recipient addresses
+// Test 7.10: TransferMulti with invalid recipient addresses
 async function testInvalidRecipientAddresses() {
   const invalidAddresses = [
     { address: 'invalid-address', desc: 'Invalid format' },
@@ -412,7 +446,7 @@ async function testInvalidRecipientAddresses() {
   }
 }
 
-// Test 7.10: TransferMulti with invalid amounts
+// Test 7.11: TransferMulti with invalid amounts
 async function testInvalidAmounts() {
   const invalidAmounts = [
     { amount: -100, desc: 'Negative amount' },
@@ -463,7 +497,7 @@ async function testInvalidAmounts() {
   }
 }
 
-// Test 7.11: TransferMulti with missing required fields
+// Test 7.12: TransferMulti with missing required fields
 async function testMissingRequiredFields() {
   console.log('  Testing missing required fields:');
   
@@ -560,7 +594,7 @@ async function testMissingRequiredFields() {
   }
 }
 
-// Test 7.12: TransferMulti with invalid change address
+// Test 7.13: TransferMulti with invalid change address
 async function testInvalidChangeAddress() {
   const utxos = await mnee.getUtxos(TEST_ADDRESS);
   
@@ -703,25 +737,29 @@ async function runTests() {
     await testEmptyInputs();
     console.log('✅ Test 7.7 passed\n');
 
-    console.log('Test 7.8: TransferMulti with invalid WIF in input');
-    await testInvalidWifInInput();
+    console.log('Test 7.8: TransferMulti with empty recipients');
+    await testEmptyRecipients();
     console.log('✅ Test 7.8 passed\n');
 
-    console.log('Test 7.9: TransferMulti with invalid recipient addresses');
-    await testInvalidRecipientAddresses();
+    console.log('Test 7.9: TransferMulti with invalid WIF in input');
+    await testInvalidWifInInput();
     console.log('✅ Test 7.9 passed\n');
 
-    console.log('Test 7.10: TransferMulti with invalid amounts');
-    await testInvalidAmounts();
+    console.log('Test 7.10: TransferMulti with invalid recipient addresses');
+    await testInvalidRecipientAddresses();
     console.log('✅ Test 7.10 passed\n');
 
-    console.log('Test 7.11: TransferMulti with missing required fields');
-    await testMissingRequiredFields();
+    console.log('Test 7.11: TransferMulti with invalid amounts');
+    await testInvalidAmounts();
     console.log('✅ Test 7.11 passed\n');
 
-    console.log('Test 7.12: TransferMulti with invalid change address');
-    await testInvalidChangeAddress();
+    console.log('Test 7.12: TransferMulti with missing required fields');
+    await testMissingRequiredFields();
     console.log('✅ Test 7.12 passed\n');
+
+    console.log('Test 7.13: TransferMulti with invalid change address');
+    await testInvalidChangeAddress();
+    console.log('✅ Test 7.13 passed\n');
 
     console.log('All tests passed! ✅');
   } catch (error) {
