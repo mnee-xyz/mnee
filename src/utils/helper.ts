@@ -288,6 +288,10 @@ export const validateTransferMultiOptions = (options: TransferMultiOptions): { i
 
 export const validateTransferOptions = (options: SendMNEE[], wif: string): { isValid: boolean; totalAmount?: number; privateKey?: PrivateKey; error?: string } => {
   const { isValid, error, privateKey } = validateWIF(wif);
+  if (options.length === 0) {
+    return { isValid: false, error: 'Empty transfer options provided. Please provide at least one recipient.' };
+  }
+  
   if (!isValid) {
     return { isValid: false, error: error || 'Invalid WIF key provided' };
   }
