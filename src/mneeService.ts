@@ -134,6 +134,15 @@ export class MNEEService {
 
   public async getUtxos(address: string | string[]): Promise<MNEEUtxo[]> {
     try {
+      if (!address) {
+        throw stacklessError('Address is required');
+      }
+      if (typeof address === 'string' && !validateAddress(address)) {
+        throw stacklessError(`Invalid Bitcoin address: ${address}`);
+      }
+      if (Array.isArray(address) && address.some((addr) => typeof addr !== 'string' || !validateAddress(addr))) {
+        throw stacklessError('Invalid Bitcoin address(es) provided');
+      }
       const ops = ['transfer', 'deploy+mint'];
       const arrayAddress = Array.isArray(address) ? address : [address];
       const response = await fetch(`${this.mneeApi}/v1/utxos?auth_token=${this.mneeApiKey}`, {
@@ -157,7 +166,6 @@ export class MNEEService {
     } catch (error) {
       if (isNetworkError(error)) {
         logNetworkError(error, 'fetch UTXOs');
-        return [];
       }
       throw error;
     }
@@ -410,7 +418,6 @@ export class MNEEService {
     } catch (error) {
       if (isNetworkError(error)) {
         logNetworkError(error, 'fetch balances');
-        return addresses.map((addr) => ({ address: addr, amount: 0, decimalAmount: 0 }));
       }
       throw error;
     }
@@ -593,9 +600,7 @@ export class MNEEService {
       if (isNetworkError(error)) {
         logNetworkError(error, 'fetch syncs');
       }
-      return Array.isArray(addresses)
-        ? addresses.map((address) => ({ address, syncs: [] }))
-        : [{ address: addresses, syncs: [] }];
+      throw error;
     }
   }
 
