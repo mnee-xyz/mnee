@@ -100,12 +100,11 @@ async function testEmptyArray() {
   try {
     const histories = await mnee.recentTxHistories([]);
 
-    assert(Array.isArray(histories), 'Should return empty array');
-    assert(histories.length === 0, 'Empty input should return empty array');
-
-    console.log(`  Empty array returned empty result ✓`);
+    // Should not reach here
+    assert.fail('Should throw error for empty array');
   } catch (error) {
-    console.log(`  Empty array test error: ${error.message}`);
+    console.log(`  Empty array correctly threw error: "${error.message}"`);
+    assert(error.message.includes('at least 1 address'), 'Error message should indicate empty array');
   }
 }
 
@@ -141,19 +140,71 @@ async function testMixedAddresses() {
   try {
     const histories = await mnee.recentTxHistories(params);
 
-    assert(histories.length === params.length, 'Should return result for each address');
-
-    // Check each result
-    for (let i = 0; i < histories.length; i++) {
-      const history = histories[i];
-      console.log(`  ${params[i].address}: ${history.history ? history.history.length : 'error'} transactions`);
-    }
+    // Should not reach here
+    assert.fail('Should throw error when any address is invalid');
   } catch (error) {
-    console.log(`  Mixed addresses test handled: ${error.message}`);
+    console.log(`  Mixed addresses correctly threw error: "${error.message}"`);
+    assert(error.message.includes('Invalid Bitcoin address'), 'Error message should indicate invalid address');
   }
 }
 
-// Test 12.7: Compare with individual calls
+// Test 12.7: Test with invalid parameter types
+async function testInvalidParameterTypes() {
+  const invalidParams = [
+    { params: null, desc: 'Null' },
+    { params: undefined, desc: 'Undefined' },
+    { params: 'string', desc: 'String' },
+    { params: 123, desc: 'Number' },
+    { params: { address: TEST_ADDRESS }, desc: 'Object' },
+    { params: true, desc: 'Boolean' },
+  ];
+
+  console.log('  Testing various invalid parameter types:');
+  
+  for (const { params, desc } of invalidParams) {
+    try {
+      const histories = await mnee.recentTxHistories(params);
+      
+      // Should not reach here
+      console.log(`    ${desc}: ERROR - returned result instead of throwing`);
+      assert.fail(`Should throw error for ${desc}`);
+    } catch (error) {
+      console.log(`    ${desc}: Correctly threw error - "${error.message}"`);
+      assert(error.message.includes('must be an array'), 'Error message should indicate array requirement');
+    }
+  }
+}
+
+// Test 12.8: Test with invalid address formats in params
+async function testInvalidAddressFormats() {
+  const invalidParams = [
+    [{ address: null }],
+    [{ address: undefined }],
+    [{ address: '' }],
+    [{ address: 12345 }],
+    [{ address: '0x12345' }],
+    [{ address: '1BoatSLRHtKNngkdXEeobR76b53LETtpyX' }], // Invalid checksum
+    [{ address: '3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy' }], // P2SH
+    [{ address: 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4' }], // Bech32
+  ];
+
+  console.log('  Testing various invalid address formats:');
+  
+  for (const params of invalidParams) {
+    try {
+      const histories = await mnee.recentTxHistories(params);
+      
+      // Should not reach here
+      console.log(`    ${params[0].address}: ERROR - returned result instead of throwing`);
+      assert.fail(`Should throw error for ${params[0].address}`);
+    } catch (error) {
+      console.log(`    ${params[0].address}: Correctly threw error`);
+      assert(error.message.includes('Invalid Bitcoin address'), 'Error message should indicate invalid address');
+    }
+  }
+}
+
+// Test 12.9: Compare with individual calls
 async function testCompareWithIndividualCalls() {
   const addresses = [TEST_ADDRESS, EMPTY_ADDRESS, '159zQuZRmHUrZArYTFgogQxndrAeSsbTtJ'];
 
@@ -219,9 +270,17 @@ async function runTests() {
     await testMixedAddresses();
     console.log('✅ Test 12.6 passed\n');
 
-    console.log('Test 12.7: Compare with individual calls');
-    await testCompareWithIndividualCalls();
+    console.log('Test 12.7: Test with invalid parameter types');
+    await testInvalidParameterTypes();
     console.log('✅ Test 12.7 passed\n');
+
+    console.log('Test 12.8: Test with invalid address formats');
+    await testInvalidAddressFormats();
+    console.log('✅ Test 12.8 passed\n');
+
+    console.log('Test 12.9: Compare with individual calls');
+    await testCompareWithIndividualCalls();
+    console.log('✅ Test 12.9 passed\n');
 
     console.log('All tests passed! ✅');
   } catch (error) {

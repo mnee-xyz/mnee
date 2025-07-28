@@ -97,21 +97,32 @@ async function testEmptyAddressHistory() {
 
 // Test 11.4: Test with invalid address
 async function testInvalidAddressHistory() {
-  let errorOccurred = false;
-  try {
-    const history = await mnee.recentTxHistory(testConfig.addresses.invalidAddress);
-    
-    // Some implementations might return empty history instead of error
-    if (history.history.length === 0) {
-      console.log(`  Invalid address returned empty history`);
-    }
-  } catch (error) {
-    errorOccurred = true;
-    console.log(`  Invalid address error: "${error.message}"`);
-  }
+  const invalidAddresses = [
+    { address: testConfig.addresses.invalidAddress, desc: 'Invalid format' },
+    { address: null, desc: 'Null value' },
+    { address: undefined, desc: 'Undefined value' },
+    { address: '', desc: 'Empty string' },
+    { address: 12345, desc: 'Number instead of string' },
+    { address: '0x12345', desc: 'Ethereum-style address' },
+    { address: '1BoatSLRHtKNngkdXEeobR76b53LETtpyX', desc: 'Invalid checksum' },
+    { address: '3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy', desc: 'P2SH address' },
+    { address: 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4', desc: 'Bech32 address' },
+  ];
+
+  console.log('  Testing various invalid addresses:');
   
-  // Either error or empty history is acceptable
-  assert(errorOccurred || true, 'Invalid address handled appropriately');
+  for (const { address, desc } of invalidAddresses) {
+    try {
+      const history = await mnee.recentTxHistory(address);
+      
+      // Should not reach here
+      console.log(`    ${desc}: ERROR - returned result instead of throwing`);
+      assert.fail(`Should throw error for ${desc}`);
+    } catch (error) {
+      console.log(`    ${desc}: Correctly threw error - "${error.message}"`);
+      assert(error.message.includes('Invalid Bitcoin address'), 'Error message should indicate invalid address');
+    }
+  }
 }
 
 // Test 11.5: Test with different limit values

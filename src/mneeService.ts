@@ -600,6 +600,11 @@ export class MNEEService {
   }
 
   public async getRecentTxHistory(address: string, fromScore?: number, limit?: number): Promise<TxHistoryResponse> {
+    if (!validateAddress(address)) {
+      const error = stacklessError(`Invalid Bitcoin address: ${address}`);
+      throw error;
+    }
+
     try {
       const config = this.mneeConfig || (await this.getCosignerConfig());
       if (!config) throw stacklessError('Config not fetched');
@@ -636,11 +641,25 @@ export class MNEEService {
       if (isNetworkError(error)) {
         logNetworkError(error, 'fetch transaction history');
       }
-      return { address, history: [], nextScore: fromScore || 0 };
+      throw error;
     }
   }
 
   public async getRecentTxHistories(params: AddressHistoryParams[]): Promise<TxHistoryResponse[]> {
+    if (!Array.isArray(params)) {
+      throw stacklessError('Parameters must be an array');
+    }
+    
+    const invalidParams = params.filter((param) => !validateAddress(param.address));
+    if (invalidParams.length > 0) {
+      const invalidAddresses = invalidParams.map(p => p.address).join(', ');
+      throw stacklessError(`Invalid Bitcoin address(es): ${invalidAddresses}`);
+    }
+    
+    if (params.length === 0) {
+      throw stacklessError('You must pass at least 1 address parameter');
+    }
+
     try {
       const config = this.mneeConfig || (await this.getCosignerConfig());
       if (!config) throw stacklessError('Config not fetched');
@@ -707,11 +726,7 @@ export class MNEEService {
       if (isNetworkError(error)) {
         logNetworkError(error, 'fetch transaction histories');
       }
-      return params.map(({ address, fromScore }) => ({
-        address,
-        history: [],
-        nextScore: fromScore || 0,
-      }));
+      throw error;
     }
   }
 
