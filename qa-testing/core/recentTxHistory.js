@@ -140,6 +140,43 @@ async function testDifferentLimits() {
   }
 }
 
+// Test 11.5a: Test with invalid limit values
+async function testInvalidLimits() {
+  const invalidLimits = [
+    { limit: null, desc: 'Null limit' },
+    { limit: undefined, desc: 'Undefined limit (should pass)' },
+    { limit: '', desc: 'Empty string' },
+    { limit: 'invalid-limit', desc: 'String instead of number' },
+    { limit: -100, desc: 'Negative number' },
+    { limit: 0, desc: 'Zero' },
+    { limit: 1.5, desc: 'Decimal number' },
+    { limit: Infinity, desc: 'Infinity' },
+    { limit: NaN, desc: 'NaN' },
+  ];
+
+  console.log('  Testing various invalid limit values:');
+  
+  for (const { limit, desc } of invalidLimits) {
+    try {
+      if (limit === undefined) {
+        // undefined should be allowed as it's optional
+        const history = await mnee.recentTxHistory(TEST_ADDRESS, undefined, limit);
+        console.log(`    ${desc}: Allowed (optional parameter)`);
+        continue;
+      }
+      
+      const history = await mnee.recentTxHistory(TEST_ADDRESS, undefined, limit);
+      
+      // Should not reach here for invalid limits
+      console.log(`    ${desc}: ERROR - returned result instead of throwing`);
+      assert.fail(`Should throw error for ${desc}`);
+    } catch (error) {
+      console.log(`    ${desc}: Correctly threw error - "${error.message}"`);
+      assert(error.message.includes('Invalid limit'), 'Error message should indicate invalid limit');
+    }
+  }
+}
+
 // Test 11.6: Test with specific fromScore
 async function testFromScore() {
   try {
@@ -162,6 +199,42 @@ async function testFromScore() {
     }
   } catch (error) {
     console.log(`  FromScore test error: ${error.message}`);
+  }
+}
+
+// Test 11.6a: Test with invalid fromScore values
+async function testInvalidFromScores() {
+  const invalidFromScores = [
+    { fromScore: null, desc: 'Null fromScore' },
+    { fromScore: undefined, desc: 'Undefined fromScore (should pass)' },
+    { fromScore: '', desc: 'Empty string' },
+    { fromScore: 'invalid-fromScore', desc: 'String instead of number' },
+    { fromScore: -100, desc: 'Negative number' },
+    { fromScore: Infinity, desc: 'Infinity' },
+    { fromScore: -Infinity, desc: 'Negative Infinity' },
+    { fromScore: NaN, desc: 'NaN' },
+  ];
+
+  console.log('  Testing various invalid fromScore values:');
+  
+  for (const { fromScore, desc } of invalidFromScores) {
+    try {
+      if (fromScore === undefined) {
+        // undefined should be allowed as it's optional
+        const history = await mnee.recentTxHistory(TEST_ADDRESS, fromScore);
+        console.log(`    ${desc}: Allowed (optional parameter)`);
+        continue;
+      }
+      
+      const history = await mnee.recentTxHistory(TEST_ADDRESS, fromScore);
+      
+      // Should not reach here for invalid fromScores
+      console.log(`    ${desc}: ERROR - returned result instead of throwing`);
+      assert.fail(`Should throw error for ${desc}`);
+    } catch (error) {
+      console.log(`    ${desc}: Correctly threw error - "${error.message}"`);
+      assert(error.message.includes('Invalid fromScore'), 'Error message should indicate invalid fromScore');
+    }
   }
 }
 
@@ -223,9 +296,17 @@ async function runTests() {
     await testDifferentLimits();
     console.log('✅ Test 11.5 passed\n');
 
+    console.log('Test 11.5a: Test invalid limit values');
+    await testInvalidLimits();
+    console.log('✅ Test 11.5a passed\n');
+
     console.log('Test 11.6: Test with specific fromScore');
     await testFromScore();
     console.log('✅ Test 11.6 passed\n');
+
+    console.log('Test 11.6a: Test invalid fromScore values');
+    await testInvalidFromScores();
+    console.log('✅ Test 11.6a passed\n');
 
     console.log('Test 11.7: Test transaction details');
     await testTransactionDetails();

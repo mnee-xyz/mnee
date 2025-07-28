@@ -204,7 +204,61 @@ async function testInvalidAddressFormats() {
   }
 }
 
-// Test 12.9: Compare with individual calls
+// Test 12.9: Test with invalid parameter values
+async function testInvalidParameterValues() {
+  console.log('  Testing various invalid parameter values:');
+  
+  // Test invalid limit values
+  const invalidLimitParams = [
+    [{ address: TEST_ADDRESS, limit: null }],
+    [{ address: TEST_ADDRESS, limit: '' }],
+    [{ address: TEST_ADDRESS, limit: 'invalid-limit' }],
+    [{ address: TEST_ADDRESS, limit: -100 }],
+    [{ address: TEST_ADDRESS, limit: 0 }],
+    [{ address: TEST_ADDRESS, limit: 1.5 }],
+    [{ address: TEST_ADDRESS, limit: Infinity }],
+    [{ address: TEST_ADDRESS, limit: NaN }],
+  ];
+
+  for (const params of invalidLimitParams) {
+    try {
+      const histories = await mnee.recentTxHistories(params);
+      
+      // Should not reach here
+      console.log(`    Limit ${params[0].limit}: ERROR - returned result instead of throwing`);
+      assert.fail(`Should throw error for limit ${params[0].limit}`);
+    } catch (error) {
+      console.log(`    Limit ${params[0].limit}: Correctly threw error - "${error.message}"`);
+      assert(error.message.includes('Invalid limit'), 'Error message should indicate invalid limit');
+    }
+  }
+
+  // Test invalid fromScore values
+  const invalidFromScoreParams = [
+    [{ address: TEST_ADDRESS, fromScore: null }],
+    [{ address: TEST_ADDRESS, fromScore: '' }],
+    [{ address: TEST_ADDRESS, fromScore: 'invalid-fromScore' }],
+    [{ address: TEST_ADDRESS, fromScore: -100 }],
+    [{ address: TEST_ADDRESS, fromScore: Infinity }],
+    [{ address: TEST_ADDRESS, fromScore: -Infinity }],
+    [{ address: TEST_ADDRESS, fromScore: NaN }],
+  ];
+
+  for (const params of invalidFromScoreParams) {
+    try {
+      const histories = await mnee.recentTxHistories(params);
+      
+      // Should not reach here
+      console.log(`    FromScore ${params[0].fromScore}: ERROR - returned result instead of throwing`);
+      assert.fail(`Should throw error for fromScore ${params[0].fromScore}`);
+    } catch (error) {
+      console.log(`    FromScore ${params[0].fromScore}: Correctly threw error - "${error.message}"`);
+      assert(error.message.includes('Invalid fromScore'), 'Error message should indicate invalid fromScore');
+    }
+  }
+}
+
+// Test 12.10: Compare with individual calls
 async function testCompareWithIndividualCalls() {
   const addresses = [TEST_ADDRESS, EMPTY_ADDRESS, '159zQuZRmHUrZArYTFgogQxndrAeSsbTtJ'];
 
@@ -278,9 +332,13 @@ async function runTests() {
     await testInvalidAddressFormats();
     console.log('✅ Test 12.8 passed\n');
 
-    console.log('Test 12.9: Compare with individual calls');
-    await testCompareWithIndividualCalls();
+    console.log('Test 12.9: Test with invalid parameter values');
+    await testInvalidParameterValues();
     console.log('✅ Test 12.9 passed\n');
+
+    console.log('Test 12.10: Compare with individual calls');
+    await testCompareWithIndividualCalls();
+    console.log('✅ Test 12.10 passed\n');
 
     console.log('All tests passed! ✅');
   } catch (error) {

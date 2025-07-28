@@ -605,6 +605,18 @@ export class MNEEService {
       throw error;
     }
 
+    if (fromScore !== undefined) {
+      if (typeof fromScore !== 'number' || fromScore < 0 || !Number.isFinite(fromScore)) {
+        throw stacklessError(`Invalid fromScore: ${fromScore}. Must be a positive number or 0`);
+      }
+    }
+
+    if (limit !== undefined) {
+      if (typeof limit !== 'number' || limit <= 0 || !Number.isInteger(limit)) {
+        throw stacklessError(`Invalid limit: ${limit}. Must be a positive integer`);
+      }
+    }
+
     try {
       const config = this.mneeConfig || (await this.getCosignerConfig());
       if (!config) throw stacklessError('Config not fetched');
@@ -658,6 +670,20 @@ export class MNEEService {
     
     if (params.length === 0) {
       throw stacklessError('You must pass at least 1 address parameter');
+    }
+
+    for (const param of params) {
+      if (param.fromScore !== undefined) {
+        if (typeof param.fromScore !== 'number' || param.fromScore < 0 || !Number.isFinite(param.fromScore)) {
+          throw stacklessError(`Invalid fromScore for address ${param.address}: ${param.fromScore}. Must be a positive number or 0`);
+        }
+      }
+      
+      if (param.limit !== undefined) {
+        if (typeof param.limit !== 'number' || param.limit <= 0 || !Number.isInteger(param.limit)) {
+          throw stacklessError(`Invalid limit for address ${param.address}: ${param.limit}. Must be a positive integer`);
+        }
+      }
     }
 
     try {
