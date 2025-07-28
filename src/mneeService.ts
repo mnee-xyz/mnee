@@ -719,9 +719,12 @@ export class MNEEService {
           }
 
           const txHistory: TxHistory[] = [];
+          const seenTxids = new Set<string>();
+          
           for (const sync of syncs) {
             const historyItem = parseSyncToTxHistory(sync, address, config);
-            if (historyItem) {
+            if (historyItem && !seenTxids.has(historyItem.txid)) {
+              seenTxids.add(historyItem.txid);
               txHistory.push(historyItem);
             }
           }

@@ -258,7 +258,65 @@ async function testInvalidParameterValues() {
   }
 }
 
-// Test 12.10: Compare with individual calls
+// Test 12.10: Test duplicate transaction handling
+async function testDuplicateTransactionHandling() {
+  try {
+    // Use addresses that might have interacted with each other
+    const params = [
+      { address: TEST_ADDRESS, limit: 50 },
+      { address: '1ERN5r4A8Ur6T4XQgaxQLmWtRAmusga5xZ', limit: 50 },
+      { address: '159zQuZRmHUrZArYTFgogQxndrAeSsbTtJ', limit: 50 },
+    ];
+
+    const histories = await mnee.recentTxHistories(params);
+
+    // Check that each address has unique transactions (no duplicates by txid)
+    for (let i = 0; i < histories.length; i++) {
+      const history = histories[i];
+      const txids = history.history.map(tx => tx.txid);
+      const uniqueTxids = new Set(txids);
+      
+      assert(
+        txids.length === uniqueTxids.size,
+        `Address ${history.address} should not have duplicate transactions`
+      );
+      
+      console.log(`  ${history.address}: ${history.history.length} unique transactions ✓`);
+    }
+
+    // Check if any transactions appear in multiple addresses (this is allowed)
+    const allTxids = new Map();
+    for (let i = 0; i < histories.length; i++) {
+      const history = histories[i];
+      for (const tx of history.history) {
+        if (!allTxids.has(tx.txid)) {
+          allTxids.set(tx.txid, []);
+        }
+        allTxids.get(tx.txid).push({
+          address: history.address,
+          type: tx.type
+        });
+      }
+    }
+
+    const sharedTxids = [...allTxids.entries()].filter(([_, addresses]) => addresses.length > 1);
+    if (sharedTxids.length > 0) {
+      console.log(`  Found ${sharedTxids.length} transactions between multiple addresses (this is expected)`);
+      // Show a few examples
+      sharedTxids.slice(0, 3).forEach(([txid, addresses]) => {
+        console.log(`    Transaction ${txid.substring(0, 8)}... appears in:`);
+        addresses.forEach(({ address, type }) => {
+          console.log(`      - ${address} (${type})`);
+        });
+      });
+    }
+  } catch (error) {
+    console.log(`  Duplicate handling test error: ${error.message}`);
+    throw error;
+  }
+}
+
+// Test 12.11: Compare with individual calls
 async function testCompareWithIndividualCalls() {
   const addresses = [TEST_ADDRESS, EMPTY_ADDRESS, '159zQuZRmHUrZArYTFgogQxndrAeSsbTtJ'];
 
@@ -336,9 +394,13 @@ async function runTests() {
     await testInvalidParameterValues();
     console.log('✅ Test 12.9 passed\n');
 
-    console.log('Test 12.10: Compare with individual calls');
-    await testCompareWithIndividualCalls();
+    console.log('Test 12.10: Test duplicate transaction handling');
+    await testDuplicateTransactionHandling();
     console.log('✅ Test 12.10 passed\n');
+
+    console.log('Test 12.11: Compare with individual calls');
+    await testCompareWithIndividualCalls();
+    console.log('✅ Test 12.11 passed\n');
 
     console.log('All tests passed! ✅');
   } catch (error) {
