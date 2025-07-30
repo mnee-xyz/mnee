@@ -104,7 +104,7 @@ async function testEmptyArray() {
     assert.fail('Should throw error for empty array');
   } catch (error) {
     console.log(`  Empty array correctly threw error: "${error.message}"`);
-    assert(error.message.includes('at least 1 address'), 'Error message should indicate empty array');
+    assert(error.message.includes('You must pass at least 1 address parameter'), 'Error message should indicate empty array');
   }
 }
 
@@ -134,17 +134,68 @@ async function testMixedAddresses() {
     { address: TEST_ADDRESS },
     { address: testConfig.addresses.invalidAddress },
     { address: EMPTY_ADDRESS },
+    { address: null },
+    { address: '0x12345' },
+    { address: '' },
+    { address: undefined },
+    { address: 12345 },
     { address: '159zQuZRmHUrZArYTFgogQxndrAeSsbTtJ' },
   ];
 
   try {
-    const histories = await mnee.recentTxHistories(params);
+    // Capture console.warn to verify warning is shown
+    const originalWarn = console.warn;
+    let warnCalled = false;
+    console.warn = (...args) => {
+      warnCalled = true;
+      originalWarn.apply(console, args);
+    };
 
-    // Should not reach here
-    assert.fail('Should throw error when any address is invalid');
+    const histories = await mnee.recentTxHistories(params);
+    
+    // Restore console.warn
+    console.warn = originalWarn;
+
+    // Should only return valid addresses
+    const validAddresses = [TEST_ADDRESS, EMPTY_ADDRESS, '159zQuZRmHUrZArYTFgogQxndrAeSsbTtJ'];
+    assert(histories.length === validAddresses.length, `Should return ${validAddresses.length} valid addresses`);
+    
+    // Verify all returned addresses are valid
+    for (const history of histories) {
+      assert(validAddresses.includes(history.address), `${history.address} should be in valid addresses list`);
+      assert(Array.isArray(history.history), 'History should be an array');
+    }
+    
+    // Verify warning was shown
+    assert(warnCalled, 'Should show warning for invalid addresses');
+    
+    console.log(`  Mixed addresses handled correctly: ${histories.length} valid addresses processed`);
+    console.log(`  Invalid addresses were filtered out with warning ✓`);
   } catch (error) {
-    console.log(`  Mixed addresses correctly threw error: "${error.message}"`);
-    assert(error.message.includes('Invalid Bitcoin address'), 'Error message should indicate invalid address');
+    console.log(`  Mixed addresses test error: ${error.message}`);
+    throw error;
+  }
+}
+
+// Test 12.6a: Test with all invalid addresses
+async function testAllInvalidAddresses() {
+  const params = [
+    { address: 'invalid-address' },
+    { address: null },
+    { address: '0x12345' },
+    { address: '' },
+    { address: undefined },
+    { address: 12345 },
+  ];
+
+  try {
+    await mnee.recentTxHistories(params);
+    
+    // Should not reach here
+    assert.fail('Should throw error when all addresses are invalid');
+  } catch (error) {
+    console.log(`  All invalid addresses correctly threw error: "${error.message}"`);
+    assert(error.message.includes('You must pass at least 1 valid address'), 'Error message should indicate no valid addresses');
   }
 }
 
@@ -199,7 +250,7 @@ async function testInvalidAddressFormats() {
       assert.fail(`Should throw error for ${params[0].address}`);
     } catch (error) {
       console.log(`    ${params[0].address}: Correctly threw error`);
-      assert(error.message.includes('Invalid Bitcoin address'), 'Error message should indicate invalid address');
+      assert(error.message.includes('You must pass at least 1 valid address'), 'Error message should indicate no valid addresses');
     }
   }
 }
@@ -381,6 +432,10 @@ async function runTests() {
     console.log('Test 12.6: Test with mixed valid/invalid addresses');
     await testMixedAddresses();
     console.log('✅ Test 12.6 passed\n');
+
+    console.log('Test 12.6a: Test with all invalid addresses');
+    await testAllInvalidAddresses();
+    console.log('✅ Test 12.6a passed\n');
 
     console.log('Test 12.7: Test with invalid parameter types');
     await testInvalidParameterTypes();

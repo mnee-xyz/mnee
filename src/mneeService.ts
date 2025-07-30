@@ -667,17 +667,23 @@ export class MNEEService {
       throw stacklessError('Parameters must be an array');
     }
     
-    const invalidParams = params.filter((param) => !validateAddress(param.address));
-    if (invalidParams.length > 0) {
-      const invalidAddresses = invalidParams.map(p => p.address).join(', ');
-      throw stacklessError(`Invalid Bitcoin address(es): ${invalidAddresses}`);
-    }
-    
     if (params.length === 0) {
       throw stacklessError('You must pass at least 1 address parameter');
     }
+    
+    // Filter out invalid addresses and keep only valid ones
+    const validParams = params.filter((param) => param && param.address && validateAddress(param.address));
+    
+    if (validParams.length === 0) {
+      throw stacklessError('You must pass at least 1 valid address');
+    }
+    
+    const totalInvalidAddresses = params.length - validParams.length;
+    if (totalInvalidAddresses > 0) {
+      console.warn(`\x1b[33m${totalInvalidAddresses} invalid bitcoin addresses will be ignored\x1b[0m`);
+    }
 
-    for (const param of params) {
+    for (const param of validParams) {
       if (param.fromScore !== undefined) {
         if (typeof param.fromScore !== 'number' || param.fromScore < 0 || !Number.isFinite(param.fromScore)) {
           throw stacklessError(`Invalid fromScore for address ${param.address}: ${param.fromScore}. Must be a positive number or 0`);
@@ -697,7 +703,7 @@ export class MNEEService {
 
       // Group addressParams by fromScore and limit to batch requests efficiently
       const groupedParams: Record<string, AddressHistoryParams[]> = {};
-      params.forEach((param) => {
+      validParams.forEach((param) => {
         const key = `${param.fromScore || 0}:${param.limit || 100}`;
         if (!groupedParams[key]) {
           groupedParams[key] = [];
