@@ -71,6 +71,47 @@ async function testBatchParseTx() {
     console.log('  ✓ Batch returns parsed transactions for valid ids');
     console.log('  ✓ Batch reports errors for invalid ids');
     console.log('  ✓ No error thrown - graceful handling confirmed');
+
+    // Test with various invalid txid formats
+    console.log('  Testing various invalid transaction ID formats...');
+    const invalidFormats = [
+      null,
+      '',
+      'invalid-hex',
+      '123', // too short
+      'd7fe19af19332d8ab1d83ed82003ecc41c8c5def8e786b58e90512e82087302a'.slice(0, -1), // 63 chars
+      'd7fe19af19332d8ab1d83ed82003ecc41c8c5def8e786b58e90512e82087302aa', // 65 chars
+      123456, // number instead of string
+    ];
+    
+    // Mix invalid formats with valid txids
+    const validTxid = history.history[0].txid;
+    const mixedFormatsArray = [validTxid, ...invalidFormats, validTxid];
+    
+    const formatResult = await batch.parseTx(mixedFormatsArray, {
+      continueOnError: true,
+      chunkSize: 3, // Test with chunking
+    });
+    
+    assert(formatResult.results.length === 2, 'Should parse only the 2 valid txids');
+    assert(formatResult.errors.length > 0, 'Should report errors for all invalid formats');
+    assert(formatResult.totalErrors === invalidFormats.length, `Should have ${invalidFormats.length} errors`);
+    console.log(`  ✓ Handled ${invalidFormats.length} invalid formats correctly`);
+
+    // Test that continueOnError: false actually throws
+    console.log('  Testing continueOnError: false behavior...');
+    let errorThrown = false;
+    try {
+      await batch.parseTx(['invalid-txid', validTxid], {
+        continueOnError: false,
+        chunkSize: 5,
+      });
+    } catch (error) {
+      errorThrown = true;
+      assert(error.message.includes('Invalid transaction ID format'), 'Should throw with invalid format error');
+    }
+    assert(errorThrown, 'Should throw error when continueOnError is false');
+    console.log('  ✓ continueOnError: false throws as expected');
   } catch (error) {
     console.log(`  Batch parseTx error: ${error.message}`);
     throw error;

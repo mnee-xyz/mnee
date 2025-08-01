@@ -13,6 +13,7 @@ import {
   ParseTxExtendedResponse,
   ParseOptions,
 } from './mnee.types.js';
+import { stacklessError } from './utils/stacklessError.js';
 
 export interface BatchOptions {
   /** Maximum items per API call (default: 20) */
@@ -71,6 +72,11 @@ export class Batch {
    * });
    */
   async getUtxos(addresses: string[], options: BatchOptions = {}): Promise<BatchResult<BatchUtxoResult>> {
+    // Validate input is an array
+    if (!Array.isArray(addresses)) {
+      throw stacklessError('Input must be an array of addresses');
+    }
+    
     return this.processBatch(
       addresses,
       async (chunk) => {
@@ -91,6 +97,11 @@ export class Batch {
    * const totalBalance = result.results.reduce((sum, b) => sum + b.decimalAmount, 0);
    */
   async getBalances(addresses: string[], options: BatchOptions = {}): Promise<BatchResult<MNEEBalance>> {
+    // Validate input is an array
+    if (!Array.isArray(addresses)) {
+      throw stacklessError('Input must be an array of addresses');
+    }
+    
     return this.processBatch(addresses, async (chunk) => this.service.getBalances(chunk), options);
   }
 
@@ -104,6 +115,11 @@ export class Batch {
     params: AddressHistoryParams[],
     options: BatchOptions = {},
   ): Promise<BatchResult<TxHistoryResponse>> {
+    // Validate input is an array
+    if (!Array.isArray(params)) {
+      throw stacklessError('Input must be an array of address history parameters');
+    }
+    
     return this.processBatch(
       params,
       async (chunk) => this.service.getRecentTxHistories(chunk),
@@ -123,6 +139,11 @@ export class Batch {
     txids: string[],
     options: BatchOptions & { parseOptions?: ParseOptions } = {},
   ): Promise<BatchResult<BatchParseTxResult>> {
+    // Validate input is an array
+    if (!Array.isArray(txids)) {
+      throw stacklessError('Input must be an array of transaction IDs');
+    }
+    
     const { parseOptions, ...batchOptions } = options;
 
     // Track individual errors within chunks
@@ -164,13 +185,18 @@ export class Batch {
         }
       });
 
+      // If continueOnError is false and we have errors, throw the first one
+      if (!batchOptions.continueOnError && individualErrors.length > 0) {
+        throw individualErrors[0].error;
+      }
+
       return successfulResults;
     };
 
     const batchResult = await this.processBatch(
       txids,
       modifiedProcessor,
-      { ...batchOptions, continueOnError: true }, // Always continue on error for parseTx
+      batchOptions, // Respect user's continueOnError preference
     );
 
     // Merge individual errors with any chunk-level errors

@@ -39,6 +39,55 @@ async function testBatchEdgeCases() {
     assert(firstTwo[0].address === firstTwo[1].address, 'Duplicates should return same data');
     assert(firstTwo[0].decimalAmount === firstTwo[1].decimalAmount, 'Duplicate balances should match');
     console.log('  Duplicate addresses handled ✓');
+
+    // Test parseTx with all invalid txids
+    console.log('\n  Testing edge cases for invalid inputs...');
+    const allInvalidTxids = [undefined, null, '', 'invalid'];
+    const allInvalidResult = await batch.parseTx(allInvalidTxids, {
+      continueOnError: true,
+      chunkSize: 2,
+    });
+    assert(allInvalidResult.results.length === 0, 'Should have no successful results');
+    assert(allInvalidResult.errors.length > 0, 'Should have errors');
+    assert(allInvalidResult.totalErrors === allInvalidResult.errors.length, 'Error count should match');
+    console.log('  All invalid txids handled correctly ✓');
+
+    // Test with mixed valid/invalid in single chunk
+    const history = await mnee.recentTxHistory(testConfig.addresses.testAddress, undefined, 2);
+    if (history.history.length > 0) {
+      const mixedChunk = [history.history[0].txid, null, undefined];
+      const mixedChunkResult = await batch.parseTx(mixedChunk, {
+        continueOnError: true,
+        chunkSize: 10, // Force single chunk
+      });
+      assert(mixedChunkResult.results.length === 1, 'Should parse valid txid in mixed chunk');
+      assert(mixedChunkResult.errors.length > 0, 'Should report errors for invalid txids');
+      console.log('  Mixed valid/invalid in single chunk works ✓');
+    }
+
+    // Test empty arrays for all batch methods
+    const emptyUtxos = await batch.getUtxos([]);
+    assert(emptyUtxos.results.length === 0, 'Empty array should return empty results');
+    assert(emptyUtxos.totalProcessed === 0, 'Should process 0 items');
+    
+    const emptyBalances = await batch.getBalances([]);
+    assert(emptyBalances.results.length === 0, 'Empty array should return empty results');
+    
+    const emptyParseTx = await batch.parseTx([]);
+    assert(emptyParseTx.results.length === 0, 'Empty array should return empty results');
+    
+    const emptyHistories = await batch.getTxHistories([]);
+    assert(emptyHistories.results.length === 0, 'Empty array should return empty results');
+    
+    console.log('  Empty arrays handled correctly ✓');
+
+    // Test negative chunk size (should use default)
+    const negativeChunkResult = await batch.getBalances([testConfig.addresses.testAddress], {
+      chunkSize: -5,
+      requestsPerSecond: 10,
+    });
+    assert(negativeChunkResult.results.length === 1, 'Negative chunk size should use default');
+    console.log('  Negative chunk size uses default ✓');
   } catch (error) {
     console.log(`  Batch edge cases error: ${error.message}`);
     throw error;
