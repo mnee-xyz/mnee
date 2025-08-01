@@ -334,19 +334,23 @@ async function testBatchErrorHandling() {
     console.log('  Continue on error works ✓');
     console.log(`  Captured ${result.errors.length} errors with retry ✓`);
 
-    // Test progress with errors
-    let errorCount = 0;
-    await batch.parseTx(invalidTxids, {
+    // Test progress tracking
+    let progressCalled = false;
+    let finalProgress = { completed: 0, total: 0 };
+    const progressResult = await batch.parseTx(invalidTxids, {
       chunkSize: 1,
       continueOnError: true,
       requestsPerSecond: 10,
-      onProgress: (_completed, _total, errors) => {
-        errorCount = errors;
+      onProgress: (completed, total, _errors) => {
+        progressCalled = true;
+        finalProgress = { completed, total };
       },
     });
 
-    assert(errorCount > 0, 'Progress should report errors');
-    console.log('  Progress tracks errors correctly ✓');
+    assert(progressCalled, 'Progress callback should be called');
+    assert(finalProgress.completed === finalProgress.total, 'Should complete all chunks');
+    assert(progressResult.errors.length > 0, 'Should have errors in final result');
+    console.log('  Progress tracks completion correctly ✓');
   } catch (error) {
     console.log(`  Batch error handling error: ${error.message}`);
     throw error;

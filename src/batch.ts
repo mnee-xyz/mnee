@@ -234,7 +234,7 @@ export class Batch {
           individualErrors.push({
             items: [txid],
             error: result.reason as Error,
-            retryCount: 0,
+            retryCount: batchOptions.maxRetries || 3,
           });
         }
       });
