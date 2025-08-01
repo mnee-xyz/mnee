@@ -47,6 +47,30 @@ async function testBatchParseTx() {
     const hasRaw = rawResult.results.some((r) => r.parsed.raw);
     assert(hasRaw, 'Should include raw transaction data');
     console.log('  Parse with raw data works ✓');
+
+    // Test with invalid transaction IDs (QA team test case)
+    console.log('  Testing with invalid transaction IDs (QA reported issue)...');
+    const mixedTxids = [
+      'd7fe19af19332d8ab1d83ed82003ecc41c8c5def8e786b58e90512e82087302a',
+      undefined,
+      'd9d2f6764c2b67af5f7cc4088ec745ff7c3bcca9e1ae2d9b1d533f575c6b5def'
+    ];
+    
+    // Test case as reported by QA
+    const mixedResult = await batch.parseTx(mixedTxids, {
+      continueOnError: true,  // This ensures we get results for valid txids
+    });
+    
+    console.log(`  QA test case results: ${mixedResult.results.length} successful, ${mixedResult.errors.length} errors`);
+    
+    // Verify we got results for valid txids (not throwing an error)
+    assert(mixedResult.results.length === 2, 'Should parse 2 valid transactions');
+    assert(mixedResult.errors.length > 0, 'Should report errors for invalid transaction');
+    
+    // The batch should NOT throw an error - it should return results for valid txids
+    console.log('  ✓ Batch returns parsed transactions for valid ids');
+    console.log('  ✓ Batch reports errors for invalid ids');
+    console.log('  ✓ No error thrown - graceful handling confirmed');
   } catch (error) {
     console.log(`  Batch parseTx error: ${error.message}`);
     throw error;

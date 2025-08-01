@@ -16,7 +16,7 @@
     "test:all": "npm run test:balance && npm run test:balances && npm run test:batch && npm run test:config"
   },
   "dependencies": {
-    "mnee": "file:versions/qa-mnee-0.0.2.tgz"
+    "mnee": "file:versions/qa-mnee-0.0.3.tgz"
   },
   "engines": {
     "node": ">=16.14.0"

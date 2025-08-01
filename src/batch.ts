@@ -125,19 +125,60 @@ export class Batch {
   ): Promise<BatchResult<BatchParseTxResult>> {
     const { parseOptions, ...batchOptions } = options;
 
-    return this.processBatch(
-      txids,
-      async (chunk) => {
-        const results = await Promise.all(
-          chunk.map(async (txid) => ({
+    // Track individual errors within chunks
+    const individualErrors: BatchError[] = [];
+
+    const modifiedProcessor = async (chunk: string[]) => {
+      const results = await Promise.allSettled(
+        chunk.map(async (txid) => {
+          // Validate txid first
+          if (!txid || typeof txid !== 'string' || txid.trim() === '') {
+            throw new Error('Invalid transaction ID: empty or not a string');
+          }
+          
+          const hexRegex = /^[a-fA-F0-9]{64}$/;
+          if (!hexRegex.test(txid)) {
+            throw new Error(`Invalid transaction ID format: ${txid}`);
+          }
+
+          return {
             txid,
             parsed: await this.service.parseTx(txid, parseOptions),
-          })),
-        );
-        return results;
-      },
-      batchOptions,
+          };
+        }),
+      );
+
+      const successfulResults: BatchParseTxResult[] = [];
+      
+      results.forEach((result, index) => {
+        const txid = chunk[index];
+        if (result.status === 'fulfilled') {
+          successfulResults.push(result.value);
+        } else {
+          // Track individual errors
+          individualErrors.push({
+            items: [txid],
+            error: result.reason as Error,
+            retryCount: 0,
+          });
+        }
+      });
+
+      return successfulResults;
+    };
+
+    const batchResult = await this.processBatch(
+      txids,
+      modifiedProcessor,
+      { ...batchOptions, continueOnError: true }, // Always continue on error for parseTx
     );
+
+    // Merge individual errors with any chunk-level errors
+    return {
+      ...batchResult,
+      errors: [...batchResult.errors, ...individualErrors],
+      totalErrors: batchResult.errors.length + individualErrors.length,
+    };
   }
 
   /**
