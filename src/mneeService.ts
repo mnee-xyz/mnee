@@ -137,32 +137,64 @@ export class MNEEService {
       if (!address) {
         throw stacklessError('Address is required');
       }
-      if (typeof address === 'string' && !validateAddress(address)) {
-        throw stacklessError(`Invalid Bitcoin address: ${address}`);
-      }
-      if (Array.isArray(address) && address.some((addr) => typeof addr !== 'string' || !validateAddress(addr))) {
-        throw stacklessError('Invalid Bitcoin address(es) provided');
-      }
-      const ops = ['transfer', 'deploy+mint'];
-      const arrayAddress = Array.isArray(address) ? address : [address];
-      const response = await fetch(`${this.mneeApi}/v1/utxos?auth_token=${this.mneeApiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(arrayAddress),
-      });
-
-      if (response.status === 401 || response.status === 403) {
-        throw stacklessError('Invalid API key');
-      }
-
-      if (!response.ok) throw stacklessError(`HTTP error! status: ${response.status}`);
-      const data: MNEEUtxo[] = await response.json();
-      if (ops.length) {
+      
+      // Handle single address
+      if (typeof address === 'string') {
+        if (!validateAddress(address)) {
+          throw stacklessError(`Invalid Bitcoin address: ${address}`);
+        }
+        const arrayAddress = [address];
+        const response = await fetch(`${this.mneeApi}/v1/utxos?auth_token=${this.mneeApiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(arrayAddress),
+        });
+        if (response.status === 401 || response.status === 403) {
+          throw stacklessError('Invalid API key');
+        }
+        if (!response.ok) throw stacklessError(`HTTP error! status: ${response.status}`);
+        const data: MNEEUtxo[] = await response.json();
+        const ops = ['transfer', 'deploy+mint'];
         return data.filter((utxo) =>
           ops.includes(utxo.data.bsv21.op.toLowerCase() as 'transfer' | 'burn' | 'deploy+mint'),
         );
       }
-      return data;
+      
+      // Handle array of addresses - filter out invalid ones
+      if (Array.isArray(address)) {
+        const validAddresses = address.filter((addr) => 
+          typeof addr === 'string' && validateAddress(addr)
+        );
+        
+        if (validAddresses.length === 0) {
+          throw stacklessError('No valid Bitcoin addresses provided');
+        }
+        
+        // Log warning about invalid addresses
+        const invalidAddresses = address.filter((addr) => 
+          typeof addr !== 'string' || !validateAddress(addr)
+        );
+        if (invalidAddresses.length > 0) {
+          console.warn(`\x1b[33m${invalidAddresses.length} invalid bitcoin addresses will be ignored\x1b[0m`);
+        }
+        
+        const response = await fetch(`${this.mneeApi}/v1/utxos?auth_token=${this.mneeApiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(validAddresses),
+        });
+        if (response.status === 401 || response.status === 403) {
+          throw stacklessError('Invalid API key');
+        }
+        if (!response.ok) throw stacklessError(`HTTP error! status: ${response.status}`);
+        const data: MNEEUtxo[] = await response.json();
+        const ops = ['transfer', 'deploy+mint'];
+        return data.filter((utxo) =>
+          ops.includes(utxo.data.bsv21.op.toLowerCase() as 'transfer' | 'burn' | 'deploy+mint'),
+        );
+      }
+      
+      throw stacklessError('Invalid input type for address');
     } catch (error) {
       if (isNetworkError(error)) {
         logNetworkError(error, 'fetch UTXOs');

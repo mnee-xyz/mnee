@@ -96,7 +96,40 @@ async function testGetUtxosInvalid() {
   }
 }
 
-// Test 4.5: UTXO details verification
+// Test 4.5: Mixed valid and invalid addresses (QA reported issue)
+async function testGetUtxosMixedAddresses() {
+  console.log('  Testing with mixed valid and invalid addresses...');
+  
+  // Test case from QA: mix of valid and invalid addresses
+  const mixedAddresses = [TEST_ADDRESS, "invalidaddress1234567890", EMPTY_ADDRESS];
+  
+  // Should get UTXOs for valid addresses and ignore invalid ones
+  const utxos = await mnee.getUtxos(mixedAddresses);
+  
+  assert(Array.isArray(utxos), 'UTXOs should be an array');
+  
+  // Check that we got UTXOs for valid addresses
+  const testAddressUtxos = utxos.filter((utxo) => utxo.owners.includes(TEST_ADDRESS));
+  const emptyAddressUtxos = utxos.filter((utxo) => utxo.owners.includes(EMPTY_ADDRESS));
+  
+  assert(testAddressUtxos.length > 0, 'Should have UTXOs for valid test address');
+  assert(emptyAddressUtxos.length === 0, 'Should have no UTXOs for empty address');
+  
+  // Verify total amount matches expected
+  const totalAmount = utxos.reduce((sum, utxo) => {
+    if (utxo.data.bsv21.op === 'transfer') {
+      return sum + utxo.data.bsv21.amt;
+    }
+    return sum;
+  }, 0);
+  
+  console.log(`  Found ${utxos.length} UTXOs for valid addresses`);
+  console.log(`  Total MNEE amount: ${mnee.fromAtomicAmount(totalAmount)} MNEE`);
+  console.log('  ✓ Invalid addresses were filtered out');
+  console.log('  ✓ Valid addresses returned correct UTXOs');
+}
+
+// Test 4.6: UTXO details verification
 async function testUtxoDetails() {
   const utxos = await mnee.getUtxos(TEST_ADDRESS);
 
@@ -137,9 +170,13 @@ async function runTests() {
     await testGetUtxosInvalid();
     console.log('✅ Test 4.4 passed\n');
 
-    console.log('Test 4.5: UTXO details verification');
-    await testUtxoDetails();
+    console.log('Test 4.5: Mixed valid and invalid addresses');
+    await testGetUtxosMixedAddresses();
     console.log('✅ Test 4.5 passed\n');
+
+    console.log('Test 4.6: UTXO details verification');
+    await testUtxoDetails();
+    console.log('✅ Test 4.6 passed\n');
 
     console.log('All tests passed! ✅');
   } catch (error) {
