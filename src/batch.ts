@@ -280,11 +280,12 @@ export class Batch {
     } = options;
     
     const validChunkSize = chunkSize > 0 ? chunkSize : 20;
+    const validRequestsPerSecond = requestsPerSecond > 0 ? requestsPerSecond : 3;
 
     // Create rate limiter based on requests per second
     // Use requestsPerSecond as both the max concurrent and to calculate delay
-    const minDelay = Math.ceil(1000 / requestsPerSecond);
-    const rateLimiter = new RateLimiter(requestsPerSecond, minDelay);
+    const minDelay = Math.ceil(1000 / validRequestsPerSecond);
+    const rateLimiter = new RateLimiter(validRequestsPerSecond, minDelay);
 
     if (items.length === 0) {
       return { results: [], errors: [], totalProcessed: 0, totalErrors: 0 };

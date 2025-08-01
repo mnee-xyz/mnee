@@ -88,6 +88,31 @@ async function testBatchEdgeCases() {
     });
     assert(negativeChunkResult.results.length === 1, 'Negative chunk size should use default');
     console.log('  Negative chunk size uses default ✓');
+
+    // Test requestsPerSecond edge cases (QA reported issue)
+    console.log('\n  Testing requestsPerSecond edge cases...');
+    
+    // Test with requestsPerSecond = 0
+    const zeroRpsAddresses = [testConfig.addresses.testAddress, testConfig.addresses.emptyAddress];
+    const startTimeZero = Date.now();
+    const zeroRpsResult = await batch.getBalances(zeroRpsAddresses, {
+      chunkSize: 10,
+      requestsPerSecond: 0,
+    });
+    const elapsedZero = Date.now() - startTimeZero;
+    assert(zeroRpsResult.results.length === 2, 'Should process with requestsPerSecond=0');
+    assert(elapsedZero < 5000, 'Should complete in reasonable time with requestsPerSecond=0');
+    console.log(`  ✓ requestsPerSecond=0 uses default (completed in ${elapsedZero}ms)`);
+    
+    // Test with negative requestsPerSecond
+    const startTimeNeg = Date.now();
+    const negRpsResult = await batch.getBalances([testConfig.addresses.testAddress], {
+      requestsPerSecond: -5,
+    });
+    const elapsedNeg = Date.now() - startTimeNeg;
+    assert(negRpsResult.results.length === 1, 'Should process with negative requestsPerSecond');
+    assert(elapsedNeg < 5000, 'Should complete in reasonable time with negative requestsPerSecond');
+    console.log(`  ✓ negative requestsPerSecond uses default (completed in ${elapsedNeg}ms)`);
   } catch (error) {
     console.log(`  Batch edge cases error: ${error.message}`);
     throw error;
