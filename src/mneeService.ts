@@ -425,11 +425,8 @@ export class MNEEService {
 
   private processMneeValidation(tx: Transaction, config: MNEEConfig, request?: SendMNEE[]) {
     try {
-      // Deploy transactions are always valid
       const txid = tx.id('hex');
-      if (txid === config.tokenId.split('_')[0]) {
-        return true;
-      }
+      const isDeployTx = txid === config.tokenId.split('_')[0];
 
       const scripts = tx.outputs.map((output) => output.lockingScript);
       const parsedScripts = parseCosignerScripts(scripts);
@@ -475,8 +472,8 @@ export class MNEEService {
         const insc = output.inscription as MneeInscription;
         if (insc.p !== 'bsv-20') return false;
 
-        // Check token ID
-        if (insc.id !== config.tokenId) {
+        // Check token ID (skip for deploy transactions)
+        if (!isDeployTx && insc.id !== config.tokenId) {
           throw stacklessError(`Invalid token ID: ${insc.id}`);
         }
 
@@ -503,16 +500,15 @@ export class MNEEService {
         throw stacklessError('Cosigner not found in transaction with transfer/burn operation');
       }
 
-      // Filter to just transfers for request validation
-      const mneeTransfers = mneeInscriptions.filter((output) => {
+      const mneeOutputsForValidation = mneeInscriptions.filter((output) => {
         const insc = output.inscription as MneeInscription;
-        return insc.op === 'transfer';
+        return insc.op === 'transfer' || insc.op === 'burn' || insc.op === 'deploy+mint';
       });
 
       // If request is provided, validate it matches the transaction
       if (request) {
         // Ensure we have enough outputs for all requests (including duplicates)
-        const remainingOutputs = [...mneeTransfers];
+        const remainingOutputs = [...mneeOutputsForValidation];
         for (const req of request) {
           const outputIndex = remainingOutputs.findIndex(
             (output) =>
@@ -548,15 +544,16 @@ export class MNEEService {
       if (!isValid) return false;
 
       const txid = tx.id('hex');
-      if (txid === config.tokenId.split('_')[0]) {
-        return true;
-      }
+      const isDeployTx = txid === config.tokenId.split('_')[0];
+      
+      // For non-deploy transactions, validate input/output totals
+      if (!isDeployTx) {
+        const inputData = await this.processTransactionInputs(tx, config);
+        const outputData = this.processTransactionOutputs(tx, config);
 
-      const inputData = await this.processTransactionInputs(tx, config);
-      const outputData = this.processTransactionOutputs(tx, config);
-
-      if (inputData.total !== outputData.total) {
-        return false;
+        if (inputData.total !== outputData.total) {
+          return false;
+        }
       }
 
       return true;

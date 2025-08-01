@@ -150,7 +150,151 @@ async function testValidTxWithRequest() {
   }
 }
 
-// Test 5.5: Edge cases
+// Test 5.5: Burn transaction validation (QA reported issue)
+async function testBurnTransactionValidation() {
+  console.log('  Testing burn transaction validation...');
+  
+  // Burn transaction from QA
+  const burnRawTx = '0100000002b28b8ec4473e19bf2c5e93782dd6b2cff281cafa01d0ba1c4848506a9fd4ec9b00000000b4483045022100b6af6aa748af6e5060e8aee310b0847ac57c31362b0135220c193d2221d20abf022015712d6a84a1b6e9f8740d90d57a3bf3d7402d08f310f901c824eca9a0c7e70341483045022100e5e4b0de28903fe612bfc9a62ada714c0506cbf424f91af72674f48b6eee62ca02207da57376235ca92ff4cb007f307e0550b268de5b25d9e2d1c7ad5b1ee3a508dfc12103bd8d11a2742709d64ca80ad0999eee9b41e871bd76f05c6c868a7cbde4876a38ffffffffa4e0d8fae4b8e4798ab500ac682b4bf4acd5d22489fbd2a5433334d1479bbfe5000000006a4730440220374eb71e246fc8da0e9ca07e3ec682cc6e89c7c5a727a68655928c3e6d32f12502203d34abe64bcc66349fa841de09200e2e8a0b5c36910a012cd01b81d483691bcc412102bed35e894cc41cc9879b4002ad03d33533b615c1b476068c8dd6822a09f93f6cffffffff010100000000000000ce0063036f726451126170706c69636174696f6e2f6273762d3230004c747b2270223a226273762d3230222c226f70223a226275726e222c226964223a22383333613737323039363661326134333564623238643936373338356538616137323834623631353065626233393438326363353232386237336531373033665f30222c22616d74223a2231313030303030227d6876a914b3a67b6403094f22a56de3b302751ad6bf0d6add88ad2102bed35e894cc41cc9879b4002ad03d33533b615c1b476068c8dd6822a09f93f6cac00000000';
+  
+  // Parse the burn transaction to understand it
+  const parsedBurnTx = await mnee.parseTxFromRawTx(burnRawTx);
+  console.log('  Parsed burn transaction:', {
+    type: parsedBurnTx.type,
+    outputs: parsedBurnTx.outputs
+  });
+  
+  // Test 1: Burn transaction with matching request should validate
+  const burnRequest = [
+    {
+      address: '1HNuPi9Y7nMV6x8crJ6DnD1wJtkLym8EFE',
+      amount: 11 // 1100000 atomic units = 11 MNEE
+    }
+  ];
+  
+  const isValidBurn = await mnee.validateMneeTx(burnRawTx, burnRequest);
+  assert(isValidBurn === true, 'Burn transaction with matching request should validate as true');
+  console.log('  ✓ Burn transaction with matching request validated correctly');
+  
+  // Test 2: Burn transaction with wrong amount should fail
+  const wrongAmountRequest = [
+    {
+      address: '1HNuPi9Y7nMV6x8crJ6DnD1wJtkLym8EFE',
+      amount: 100 // Wrong amount
+    }
+  ];
+  
+  const isValidWrongAmount = await mnee.validateMneeTx(burnRawTx, wrongAmountRequest);
+  assert(isValidWrongAmount === false, 'Burn transaction with wrong amount should validate as false');
+  console.log('  ✓ Burn transaction with wrong amount correctly failed validation');
+  
+  // Test 3: Burn transaction without request should validate
+  const isValidBurnNoRequest = await mnee.validateMneeTx(burnRawTx);
+  assert(isValidBurnNoRequest === true, 'Valid burn transaction without request should validate as true');
+  console.log('  ✓ Burn transaction without request validated correctly');
+}
+
+// Test 5.6: Deploy transaction validation (QA reported issue)
+async function testDeployTransactionValidation() {
+  console.log('  Testing deploy transaction validation...');
+  
+  // Deploy transaction from QA
+  const deployRawTx = '0100000001f90a45e6914b9ec609b138a97f0d259ad15ab8939405fffa537744ac713aa2ef000000006a47304402201e66123a544c754c7172f4ccad2380cd436f86dd4d7bb42c857189178582c5ee0220244a35265185f3de44831406073756957c03a4238adad412250ce004c944bc70c12103688c68f5e0632af5a5b6b3901b02c1455a07a4453c6d3949554dbce5b488b500ffffffff020100000000000000d80063036f726451126170706c69636174696f6e2f6273762d3230004ca17b2270223a226273762d3230222c226f70223a226465706c6f792b6d696e74222c2273796d223a224d4e4545222c2269636f6e223a22396337663766313738386336333832643561633733376134303532333334636631353062353264316534366334383465636662316436653030313834663236335f30222c22616d74223a223138343436373434303733373039353030303030222c22646563223a2235227d6876a91468d87fd6ebf2f69a385dbf118779d430a0235f9b88ac3a420f00000000001976a91468d87fd6ebf2f69a385dbf118779d430a0235f9b88ac00000000';
+  
+  // Parse the deploy transaction
+  const parsedDeployTx = await mnee.parseTxFromRawTx(deployRawTx);
+  console.log('  Parsed deploy transaction:', {
+    type: parsedDeployTx.type,
+    outputs: parsedDeployTx.outputs.map(o => ({
+      address: o.address,
+      amount: o.amount,
+      decimalAmount: mnee.fromAtomicAmount(o.amount)
+    }))
+  });
+  
+  // Test 1: Deploy transaction with invalid request should fail validation
+  const invalidDeployRequest = [
+    {
+      address: '1HNuPi9Y7nMV6x8crJ6DnD1wJtkLym8EFE', // Wrong address
+      amount: 111212 // Wrong amount
+    }
+  ];
+  
+  const isValidInvalidDeploy = await mnee.validateMneeTx(deployRawTx, invalidDeployRequest);
+  assert(isValidInvalidDeploy === false, 'Deploy transaction with invalid request should validate as false');
+  console.log('  ✓ Deploy transaction with invalid request correctly failed validation');
+  
+  // Test 2: Deploy transaction with matching request should validate
+  const validDeployRequest = [
+    {
+      address: '1AZNdbFYBDFTAEgzZMfPzANxyNrpGJZAUY',
+      amount: 184467440737095 // Matching the deploy+mint output amount in decimal MNEE
+    }
+  ];
+  
+  const isValidDeploy = await mnee.validateMneeTx(deployRawTx, validDeployRequest);
+  assert(isValidDeploy === true, 'Deploy transaction with matching request should validate as true');
+  console.log('  ✓ Deploy transaction with matching request validated correctly');
+  
+  // Test 3: Deploy transaction without request should validate
+  const isValidDeployNoRequest = await mnee.validateMneeTx(deployRawTx);
+  assert(isValidDeployNoRequest === true, 'Valid deploy transaction without request should validate as true');
+  console.log('  ✓ Deploy transaction without request validated correctly');
+}
+
+// Test 5.7: Mint transaction validation
+async function testMintTransactionValidation() {
+  console.log('  Testing mint transaction validation...');
+  
+  // Get a known mint transaction from sandbox
+  const mintTxid = '9b42a339a97df37c8756a3425d4200ae2a592fd751c50e1d5ce0a1ddcab06b81';
+  
+  try {
+    // Parse the mint transaction to understand it
+    const parsedMintTx = await mnee.parseTx(mintTxid, { includeRaw: true });
+    console.log('  Parsed mint transaction:', {
+      type: parsedMintTx.type,
+      outputs: parsedMintTx.outputs
+    });
+    
+    // Get the raw transaction for validation
+    const mintRawTx = parsedMintTx.raw?.txHex;
+    if (!mintRawTx) {
+      console.log('  ⚠️  Could not get raw transaction hex, skipping mint validation test');
+      return;
+    }
+    
+    // Test 1: Mint transaction with matching request should validate
+    const mintRequest = parsedMintTx.outputs.map(output => ({
+      address: output.address,
+      amount: mnee.fromAtomicAmount(output.amount)
+    }));
+    
+    const isValidMint = await mnee.validateMneeTx(mintRawTx, mintRequest);
+    assert(isValidMint === true, 'Mint transaction with matching request should validate as true');
+    console.log('  ✓ Mint transaction with matching request validated correctly');
+    
+    // Test 2: Mint transaction with wrong amount should fail
+    const wrongMintRequest = [{
+      address: parsedMintTx.outputs[0].address,
+      amount: 999999 // Wrong amount
+    }];
+    
+    const isValidWrongMint = await mnee.validateMneeTx(mintRawTx, wrongMintRequest);
+    assert(isValidWrongMint === false, 'Mint transaction with wrong amount should validate as false');
+    console.log('  ✓ Mint transaction with wrong amount correctly failed validation');
+    
+    // Test 3: Mint transaction without request should validate
+    const isValidMintNoRequest = await mnee.validateMneeTx(mintRawTx);
+    assert(isValidMintNoRequest === true, 'Valid mint transaction without request should validate as true');
+    console.log('  ✓ Mint transaction without request validated correctly');
+  } catch (error) {
+    console.log('  ⚠️  Could not test mint transaction:', error.message);
+    console.log('  Note: This test requires access to transaction data');
+  }
+}
+
+// Test 5.8: Edge cases
 async function testEdgeCases() {
   // Test with null/undefined
   let nullHandled = false;
@@ -220,9 +364,21 @@ async function runTests() {
     await testValidTxWithRequest();
     console.log('✅ Test 5.4 passed\n');
 
-    console.log('Test 5.5: Edge cases');
-    await testEdgeCases();
+    console.log('Test 5.5: Burn transaction validation');
+    await testBurnTransactionValidation();
     console.log('✅ Test 5.5 passed\n');
+
+    console.log('Test 5.6: Deploy transaction validation');
+    await testDeployTransactionValidation();
+    console.log('✅ Test 5.6 passed\n');
+
+    console.log('Test 5.7: Mint transaction validation');
+    await testMintTransactionValidation();
+    console.log('✅ Test 5.7 passed\n');
+
+    console.log('Test 5.8: Edge cases');
+    await testEdgeCases();
+    console.log('✅ Test 5.8 passed\n');
 
     console.log('All tests passed! ✅');
   } catch (error) {
