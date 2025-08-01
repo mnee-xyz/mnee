@@ -283,9 +283,11 @@ export class Batch {
     const validRequestsPerSecond = requestsPerSecond > 0 ? requestsPerSecond : 3;
 
     // Create rate limiter based on requests per second
-    // Use requestsPerSecond as both the max concurrent and to calculate delay
+    // For requestsPerSecond < 1, we need to ensure maxConcurrent is at least 1
+    // but still respect the intended delay between requests
     const minDelay = Math.ceil(1000 / validRequestsPerSecond);
-    const rateLimiter = new RateLimiter(validRequestsPerSecond, minDelay);
+    const maxConcurrent = Math.max(1, Math.floor(validRequestsPerSecond));
+    const rateLimiter = new RateLimiter(maxConcurrent, minDelay);
 
     if (items.length === 0) {
       return { results: [], errors: [], totalProcessed: 0, totalErrors: 0 };

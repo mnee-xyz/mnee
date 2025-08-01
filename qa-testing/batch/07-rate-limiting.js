@@ -39,6 +39,33 @@ async function testBatchRateLimiting() {
     const optionsResult = await batch.getBalances([TEST_ADDRESSES[0]], customOptions);
     assert(optionsResult.results.length === 1, 'Custom options should work');
     console.log('  Rate limiting configuration respected ✓');
+    
+    // Test with requestsPerSecond < 1 (QA reported issue)
+    console.log('\n  Testing requestsPerSecond < 1 (0.1 = 1 request per 10 seconds)...');
+    const slowAddresses = [
+      TEST_ADDRESSES[0],
+      TEST_ADDRESSES[1],
+      TEST_ADDRESSES[2],
+      TEST_ADDRESSES[3],
+    ];
+    
+    console.log(`  Starting slow rate test with ${slowAddresses.length} addresses, chunkSize: 2, requestsPerSecond: 0.1`);
+    const slowStartTime = Date.now();
+    const slowResult = await batch.getBalances(slowAddresses, {
+      chunkSize: 2,  // 2 chunks total
+      requestsPerSecond: 0.1,  // Should take ~10 seconds per chunk
+      continueOnError: true,
+      maxRetries: 1,
+    });
+    const slowElapsed = Date.now() - slowStartTime;
+    
+    assert(slowResult.results.length === 4, 'Should process all addresses');
+    console.log(`  Processed ${slowAddresses.length} addresses in ${slowElapsed}ms`);
+    console.log(`  Expected time: ~10000ms per chunk (2 chunks) = ~10-20 seconds`);
+    
+    // With 2 chunks and 10 second delay, should take at least 10 seconds
+    assert(slowElapsed >= 9000, `Should take at least 9 seconds, took ${slowElapsed}ms`);
+    console.log('  ✓ requestsPerSecond < 1 properly enforces delay');
   } catch (error) {
     console.log(`  Batch rate limiting error: ${error.message}`);
     throw error;
