@@ -77,17 +77,71 @@ export class Batch {
       throw stacklessError('Input must be an array of addresses');
     }
     
-    return this.processBatch(
+    // Track individual errors within chunks
+    const individualErrors: BatchError[] = [];
+
+    const modifiedProcessor = async (chunk: string[]) => {
+      // First validate addresses
+      const validAddresses: string[] = [];
+      const invalidAddresses: string[] = [];
+      
+      for (const address of chunk) {
+        if (!address || typeof address !== 'string' || address.trim() === '') {
+          invalidAddresses.push(address);
+          individualErrors.push({
+            items: [address],
+            error: new Error('Invalid address: empty or not a string'),
+            retryCount: 0,
+          });
+        } else {
+          // Basic Bitcoin address validation (starts with 1, 3, or bc1)
+          const isValid = /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$|^bc1[a-z0-9]{39,59}$/.test(address);
+          if (isValid) {
+            validAddresses.push(address);
+          } else {
+            invalidAddresses.push(address);
+            individualErrors.push({
+              items: [address],
+              error: new Error(`Invalid address format: ${address}`),
+              retryCount: 0,
+            });
+          }
+        }
+      }
+
+      // If continueOnError is false and we have invalid addresses, throw
+      if (!options.continueOnError && invalidAddresses.length > 0) {
+        throw individualErrors[0].error;
+      }
+
+      // Process only valid addresses
+      if (validAddresses.length === 0) {
+        return [];
+      }
+
+      const utxos = await this.service.getUtxos(validAddresses);
+      
+      // Return results for all addresses in chunk (valid ones get UTXOs, invalid get empty)
+      return chunk.map((address) => ({
+        address,
+        utxos: validAddresses.includes(address) 
+          ? utxos.filter((utxo) => utxo.owners.includes(address))
+          : [],
+      }));
+    };
+
+    const batchResult = await this.processBatch(
       addresses,
-      async (chunk) => {
-        const utxos = await this.service.getUtxos(chunk);
-        return chunk.map((address) => ({
-          address,
-          utxos: utxos.filter((utxo) => utxo.owners.includes(address)),
-        }));
-      },
+      modifiedProcessor,
       options,
     );
+
+    // Merge individual errors with any chunk-level errors
+    return {
+      ...batchResult,
+      errors: [...batchResult.errors, ...individualErrors],
+      totalErrors: batchResult.errors.length + individualErrors.length,
+    };
   }
 
   /**
