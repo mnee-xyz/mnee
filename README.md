@@ -1,137 +1,232 @@
 # MNEE TypeScript SDK
 
-**⚠️ Beta Notice**: This SDK is in beta and scheduled for a security audit. It has undergone extensive testing, but you should treat it as experimental until the audit and full QA are complete.
+The MNEE TypeScript SDK provides a comprehensive and efficient way to interact with the MNEE USD token. It offers a full suite of features including balance checking, UTXO management, transaction validation and parsing, token transfers (including multi-source), HD wallet support, and high-performance batch operations for processing large numbers of addresses.
 
-The MNEE TypeScript SDK provides a simple and efficient way to interact with the MNEE USD token. It allows developers to retrieve configuration, check balances (single or batch), validate transactions, transfer MNEE tokens, fetch transaction history, parse transactions, and convert between human and atomic units.
+## Documentation
 
-## Features
+📚 **Full documentation is available at [https://docs.mnee.io](https://docs.mnee.io)**
 
-- Retrieve MNEE service configuration
-- Check the balance of an address or multiple addresses
-- Validate MNEE transactions (basic and deep validation)
-- Transfer MNEE tokens
-- Convert amounts to and from atomic units for precise calculations
-- Fetch recent transaction history (single or batch)
-- Parse transactions by txid or raw hex
+For detailed API references and advanced usage, see the [docs](./docs) directory:
+- [Configuration](./docs/config.md)
+- [Balance Operations](./docs/balance.md)
+- [Transfers](./docs/transfer.md) & [Multi-source Transfers](./docs/transferMulti.md)
+- [Batch Operations](./docs/batch.md)
+- [HD Wallet](./docs/hdWallet.md)
+- [Transaction Parsing](./docs/parseTx.md)
+- [And more...](./docs)
 
 ## Installation
-
-To use this SDK in your project, install it via npm:
 
 ```bash
 npm install mnee
 ```
 
-## Usage
+## Quick Start
 
-### Initialization
+### Basic Setup
 
 ```typescript
 import Mnee from 'mnee';
 
-// Initialize with environment and optional API key
+// Initialize the SDK
 const mnee = new Mnee({
   environment: 'production', // or 'sandbox'
-  apiKey: 'your-api-token',  // optional
+  apiKey: 'your-api-key'     // optional but recommended
 });
 ```
 
-### Checking a Balance
+### Check Balance
 
-#### Single Address
 ```typescript
-const balance = await mnee.balance('your-address-here');
-console.log('Balance:', balance);
-```
+// Single address
+const balance = await mnee.balance('1YourAddressHere...');
+console.log(`Balance: ${balance.decimalAmount} MNEE`);
 
-#### Multiple Addresses
-```typescript
+// Multiple addresses
 const balances = await mnee.balances(['address1', 'address2']);
-console.log('Balances:', balances);
 ```
 
-### Transferring MNEE Tokens
+### Transfer MNEE
 
 ```typescript
-const request = [
-  { address: 'recipient-1-address', amount: 2.55 },
-  { address: 'recipient-2-address', amount: 5 },
+const recipients = [
+  { address: '1RecipientAddress...', amount: 10.5 },
+  { address: '1AnotherAddress...', amount: 5.25 }
 ];
-const wif = 'sender-wif-key';
-const response = await mnee.transfer(request, wif);
-console.log('Transfer Response:', response);
+
+const response = await mnee.transfer(recipients, 'your-private-key-wif');
+console.log('Transaction ID:', response.txid);
 ```
 
-### Validating a Transaction
-
-#### Basic Validation
-```typescript
-const rawtx = '0100000002b170f2d41764c...'; // raw tx hex
-const isValid = await mnee.validateMneeTx(rawtx);
-```
-
-#### Deep Validation (with expected outputs)
-```typescript
-const isValid = await mnee.validateMneeTx(rawtx, [
-  { address: 'recipient-1-address', amount: 1 },
-  { address: 'recipient-2-address', amount: 10.25 },
-]);
-```
-
-### Converting to and from Atomic Amounts
+### HD Wallet
 
 ```typescript
-const atomic = mnee.toAtomicAmount(1.5);
-console.log('Atomic Amount:', atomic); // e.g. 150000
+import { HDWallet } from 'mnee';
 
-const human = mnee.fromAtomicAmount(150000);
-console.log('Human Amount:', human); // 1.5
+// Generate a new wallet
+const mnemonic = HDWallet.generateMnemonic();
+const hdWallet = mnee.HDWallet(mnemonic, {
+  derivationPath: "m/44'/236'/0'"
+});
+
+// Derive addresses
+const address = hdWallet.deriveAddress(0, false);
+console.log('Address:', address.address);
+console.log('Private Key:', address.privateKey);
 ```
 
-### Fetching Transaction History
+### Batch Operations
 
-#### Single Address
+Process hundreds or thousands of addresses efficiently:
+
 ```typescript
-const history = await mnee.recentTxHistory('your-address-here');
-console.log('History:', history);
+const batch = mnee.batch();
+
+// Get balances for many addresses with progress tracking
+const result = await batch.getBalances(addresses, {
+  chunkSize: 50,
+  continueOnError: true,
+  onProgress: (completed, total, errors) => {
+    console.log(`Progress: ${completed}/${total} chunks, Errors: ${errors}`);
+  }
+});
+
+console.log(`Successfully processed ${result.results.length} addresses`);
+console.log(`Errors: ${result.errors.length}`);
 ```
 
-#### Multiple Addresses (Batch)
+## Key Features
+
+### 🔐 **HD Wallet Support**
+Full BIP32/BIP44 hierarchical deterministic wallet implementation for managing multiple addresses from a single seed.
+
+### ⚡ **Batch Processing**
+High-performance batch operations with automatic chunking, rate limiting, and error recovery.
+
+### 💸 **Flexible Transfers**
+- Simple transfers with automatic UTXO selection
+- Multi-source transfers for complex scenarios
+- Support for multiple change addresses
+
+### 🔍 **Transaction Analysis**
+- Parse transactions by ID or raw hex
+- Validate transactions before broadcasting
+- Extract inscription and cosigner data
+
+### 📊 **Comprehensive Data Access**
+- Real-time balance queries
+- UTXO management
+- Transaction history with pagination
+- BSV21 token data support
+
+## Common Use Cases
+
+### Portfolio Management
+
 ```typescript
-const histories = await mnee.recentTxHistories([
-  { address: 'address1' },
-  { address: 'address2', fromScore: 0, limit: 10 },
-]);
-console.log('Histories:', histories);
+// Check total balance across multiple addresses
+const addresses = ['address1', 'address2', 'address3'];
+const balances = await mnee.balances(addresses);
+
+const total = balances.reduce((sum, bal) => sum + bal.decimalAmount, 0);
+console.log(`Total portfolio: ${total} MNEE`);
 ```
 
-### Parsing Transactions
+### Automated Payments
 
-#### By Transaction ID
 ```typescript
-const parsed = await mnee.parseTx('txid-here');
-console.log('Parsed TX:', parsed);
+// Send payments to multiple recipients
+const payments = [
+  { address: 'employee1', amount: 1000 },
+  { address: 'employee2', amount: 1500 },
+  { address: 'contractor1', amount: 750 }
+];
+
+try {
+  const result = await mnee.transfer(payments, payerWif);
+  console.log('Payments sent:', result.txid);
+} catch (error) {
+  console.error('Payment failed:', error.message);
+}
 ```
 
-#### By Raw Transaction Hex
+### UTXO Consolidation
+
 ```typescript
-const parsed = await mnee.parseTxFromRawTx('raw-tx-hex-here');
-console.log('Parsed TX:', parsed);
+// Consolidate UTXOs from multiple addresses
+const utxos = await mnee.getUtxos(['address1', 'address2']);
+const inputs = utxos.map(utxo => ({
+  txid: utxo.outpoint.split(':')[0],
+  vout: parseInt(utxo.outpoint.split(':')[1]),
+  wif: getWifForAddress(utxo.owners[0])
+}));
+
+const totalAmount = utxos.reduce(
+  (sum, utxo) => sum + mnee.fromAtomicAmount(utxo.data.bsv21.amt), 
+  0
+);
+
+const result = await mnee.transferMulti({
+  inputs,
+  recipients: [{ 
+    address: 'consolidation-address', 
+    amount: totalAmount - 0.01 // Leave room for fees
+  }]
+});
 ```
 
-## Types Overview
+## Error Handling
 
-- `SdkConfig`: `{ environment: 'production' | 'sandbox', apiKey?: string }`
-- `MNEEBalance`: `{ address: string, amount: number, decimalAmount: number }`
-- `SendMNEE`: `{ address: string, amount: number }`
-- `TransferResponse`: `{ txid?: string, rawtx?: string, error?: string }`
-- `TxHistoryResponse`: `{ address: string, history: TxHistory[], nextScore: number }`
-- `ParseTxResponse`: `{ txid: string, environment: string, type: string, inputs: TxAddressAmount[], outputs: TxAddressAmount[] }`
+The SDK provides detailed error messages for common scenarios:
 
-## Configuration & Environments
+```typescript
+try {
+  const result = await mnee.transfer(recipients, wif);
+} catch (error) {
+  switch (error.message) {
+    case 'Insufficient MNEE balance':
+      console.error('Not enough tokens');
+      break;
+    case 'Invalid API key':
+      console.error('Authentication failed');
+      break;
+    case 'Failed to broadcast transaction':
+      console.error('Transaction rejected by network');
+      break;
+    default:
+      console.error('Transfer failed:', error.message);
+  }
+}
+```
 
-- `environment`: Set to `'production'` for mainnet or `'sandbox'` for testnet/sandbox usage.
-- `apiKey`: (Optional) Your API key for the MNEE service. If not provided, a default key is used (suitable for most public/test use cases).
+## Unit Conversion
+
+MNEE uses atomic units internally (1 MNEE = 100,000 atomic units):
+
+```typescript
+// Convert to atomic units for precise calculations
+const atomic = mnee.toAtomicAmount(1.5);  // Returns: 150000
+
+// Convert from atomic to MNEE for display
+const mneeAmount = mnee.fromAtomicAmount(150000);  // Returns: 1.5
+```
+
+## Advanced Features
+
+For advanced usage including:
+- Transaction validation with custom rules
+- Multi-signature support
+- Custom change address strategies
+- Inscription parsing
+- Gap limit scanning for HD wallets
+- And more...
+
+Please refer to the [full documentation](https://docs.mnee.io) or the [docs directory](./docs).
+
+## Support
+
+- 📖 Documentation: [https://docs.mnee.io](https://docs.mnee.io)
+- 🐛 Issues: [GitHub Issues](https://github.com/mnee-xyz/mnee/issues)
 
 ## Contributing
 
