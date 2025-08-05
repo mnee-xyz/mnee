@@ -3,6 +3,7 @@ qa-testing/
 temp/
 tests/
 test/
+docs/
 
 # Source files (only include dist)
 src/
