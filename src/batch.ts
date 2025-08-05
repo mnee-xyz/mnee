@@ -32,7 +32,10 @@ export interface BatchOptions {
 
 export interface BatchError {
   items: string[];
-  error: Error;
+  error: {
+    message: string;
+    code?: string;
+  };
   retryCount: number;
 }
 
@@ -90,7 +93,7 @@ export class Batch {
           invalidAddresses.push(address);
           individualErrors.push({
             items: [address],
-            error: new Error('Invalid address: empty or not a string'),
+            error: { message: 'Invalid address: empty or not a string' },
             retryCount: 0,
           });
         } else {
@@ -102,7 +105,7 @@ export class Batch {
             invalidAddresses.push(address);
             individualErrors.push({
               items: [address],
-              error: new Error(`Invalid address format: ${address}`),
+              error: { message: `Invalid address format: ${address}` },
               retryCount: 0,
             });
           }
@@ -111,7 +114,7 @@ export class Batch {
 
       // If continueOnError is false and we have invalid addresses, throw
       if (!options.continueOnError && invalidAddresses.length > 0) {
-        throw individualErrors[0].error;
+        throw new Error(individualErrors[0].error.message);
       }
 
       // Process only valid addresses
@@ -231,9 +234,12 @@ export class Batch {
           successfulResults.push(result.value);
         } else {
           // Track individual errors
+          const errorMessage = result.reason instanceof Error 
+            ? result.reason.message 
+            : String(result.reason);
           individualErrors.push({
             items: [txid],
-            error: result.reason as Error,
+            error: { message: errorMessage },
             retryCount: batchOptions.maxRetries || 3,
           });
         }
@@ -241,7 +247,7 @@ export class Batch {
 
       // If continueOnError is false and we have errors, throw the first one
       if (!batchOptions.continueOnError && individualErrors.length > 0) {
-        throw individualErrors[0].error;
+        throw new Error(individualErrors[0].error.message);
       }
 
       return successfulResults;
@@ -336,7 +342,10 @@ export class Batch {
               partialResults.push(...singleResult);
             }
           } catch (itemError) {
-            failedItems.push({ item, error: itemError as Error });
+            const error = itemError instanceof Error 
+              ? itemError
+              : new Error(String(itemError));
+            failedItems.push({ item, error });
           }
         }
 
@@ -346,9 +355,13 @@ export class Batch {
         // Record errors for failed items
         if (failedItems.length > 0) {
           const itemIds = failedItems.map(({ item }) => (getItemId ? getItemId(item) : (item as unknown as string)));
+          const firstError = failedItems[0].error;
           errors.push({
             items: itemIds,
-            error: failedItems[0].error, // Use first error as representative
+            error: {
+              message: firstError.message,
+              code: (firstError as any).code,
+            },
             retryCount: maxRetries,
           });
         }

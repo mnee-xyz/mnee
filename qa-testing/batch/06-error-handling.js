@@ -48,7 +48,8 @@ async function testBatchErrorHandling() {
     // Verify error structure
     result.errors.forEach((error) => {
       assert(Array.isArray(error.items), 'Error should have items array');
-      assert(error.error instanceof Error, 'Should have Error object');
+      assert(error.error && typeof error.error === 'object', 'Should have error object');
+      assert(typeof error.error.message === 'string', 'Error should have message property');
       assert(typeof error.retryCount === 'number', 'Should have retry count');
     });
 

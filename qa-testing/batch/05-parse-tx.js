@@ -67,9 +67,14 @@ async function testBatchParseTx() {
     assert(mixedResult.results.length === 2, 'Should parse 2 valid transactions');
     assert(mixedResult.errors.length > 0, 'Should report errors for invalid transaction');
     
+    // Verify errors array contains proper error messages (QA reported this was missing)
+    assert(mixedResult.errors[0].error.message, 'Error should have a message property');
+    assert(mixedResult.errors[0].error.message === 'Invalid transaction ID: empty or not a string', 
+           'Error message should describe the invalid txid');
+    
     // The batch should NOT throw an error - it should return results for valid txids
     console.log('  ✓ Batch returns parsed transactions for valid ids');
-    console.log('  ✓ Batch reports errors for invalid ids');
+    console.log('  ✓ Batch reports errors for invalid ids with proper error messages');
     console.log('  ✓ No error thrown - graceful handling confirmed');
 
     // Test with various invalid txid formats
@@ -112,6 +117,24 @@ async function testBatchParseTx() {
     }
     assert(errorThrown, 'Should throw error when continueOnError is false');
     console.log('  ✓ continueOnError: false throws as expected');
+
+    // Test QA scenario with chunkSize = 2 as specifically mentioned
+    console.log('  Testing QA scenario with chunkSize = 2...');
+    const qaChunkTest = [
+      'd7fe19af19332d8ab1d83ed82003ecc41c8c5def8e786b58e90512e82087302a',
+      undefined,  // This will be in first chunk with valid txid
+      'd9d2f6764c2b67af5f7cc4088ec745ff7c3bcca9e1ae2d9b1d533f575c6b5def'  // This will be in second chunk alone
+    ];
+    
+    const chunkResult = await batch.parseTx(qaChunkTest, {
+      continueOnError: true,
+      chunkSize: 2
+    });
+    
+    assert(chunkResult.results.length === 2, 'Should parse both valid transactions across chunks');
+    assert(chunkResult.errors.length === 1, 'Should have one error for undefined txid');
+    assert(chunkResult.errors[0].error.message, 'Error should have message even with chunking');
+    console.log('  ✓ Chunking works correctly with mixed valid/invalid txids');
   } catch (error) {
     console.log(`  Batch parseTx error: ${error.message}`);
     throw error;
