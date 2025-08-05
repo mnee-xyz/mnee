@@ -38,6 +38,14 @@
   ],
   "author": "Dan Wagner",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mnee-xyz/mnee.git"
+  },
+  "homepage": "https://github.com/mnee-xyz/mnee#readme",
+  "bugs": {
+    "url": "https://github.com/mnee-xyz/mnee/issues"
+  },
   "devDependencies": {
     "@types/node": "^22.14.0",
     "microbundle": "^0.15.1",
