@@ -199,12 +199,12 @@ Get UTXOs for multiple addresses with efficient batch processing.
 ```typescript
 const batch = mnee.batch();
 const result = await batch.getUtxos(addresses, {
-  chunkSize: 20,          // Addresses per chunk
-  concurrency: 3,         // Parallel requests
-  continueOnError: true,  // Don't stop on errors
-  maxRetries: 3,          // Retry failed chunks
+  chunkSize: 20,            // Addresses per chunk
+  requestsPerSecond: 3,     // API rate limit
+  continueOnError: true,    // Don't stop on errors
+  maxRetries: 3,            // Retry failed chunks
   onProgress: (completed, total, errors) => {
-    console.log(`Progress: ${completed}/${total}, Errors: ${errors}`);
+    console.log(`Progress: ${completed}/${total} chunks, Errors: ${errors}`);
   }
 });
 
@@ -227,9 +227,9 @@ Get balances for multiple addresses efficiently.
 const batch = mnee.batch();
 const result = await batch.getBalances(addresses, {
   continueOnError: true,
-  onProgress: (completed, total) => {
+  onProgress: (completed, total, errors) => {
     const percentage = (completed / total * 100).toFixed(1);
-    console.log(`Fetching balances: ${percentage}%`);
+    console.log(`Fetching balances: ${percentage}% complete (${errors} errors)`);
   }
 });
 
@@ -255,8 +255,8 @@ const params = addresses.map(address => ({
 
 const batch = mnee.batch();
 const result = await batch.getTxHistories(params, {
-  chunkSize: 10,   // Smaller chunks for history queries
-  concurrency: 2   // Lower concurrency for complex queries
+  chunkSize: 10,            // Smaller chunks for history queries
+  requestsPerSecond: 2      // Lower rate for complex queries
 });
 
 // Process histories
@@ -274,8 +274,8 @@ const batch = mnee.batch();
 const result = await batch.parseTx(txids, {
   parseOptions: { includeRaw: true }, // Optional parsing options
   continueOnError: true,
-  onProgress: (completed, total) => {
-    console.log(`Parsed ${completed}/${total} transactions`);
+  onProgress: (completed, total, errors) => {
+    console.log(`Parsed ${completed}/${total} chunks (${errors} errors)`);
   }
 });
 
@@ -285,32 +285,6 @@ result.results.forEach(({ txid, parsed }) => {
 });
 ```
 
-### batch.getAll
-
-Get all data (UTXOs, balances, and transaction history) efficiently. This method is optimized to avoid redundant API calls.
-
-```typescript
-const batch = mnee.batch();
-const data = await batch.getAll(addresses, {
-  historyLimit: 50,
-  chunkSize: 20,
-  concurrency: 5,
-  onProgress: (completed, total, errors) => {
-    console.log(`Processing: ${completed}/${total} chunks, ${errors} errors`);
-  }
-});
-
-// UTXOs and histories are fetched in parallel
-// Balances are calculated locally from UTXOs (no redundant API calls)
-console.log('UTXOs:', data.utxos.results);
-console.log('Balances:', data.balances.results);
-console.log('Histories:', data.histories.results);
-
-// Check for errors in each operation
-if (data.utxos.errors.length > 0) {
-  console.error('UTXO errors:', data.utxos.errors);
-}
-```
 
 ## Batch Options
 
@@ -318,52 +292,49 @@ All batch methods accept the following options:
 
 ```typescript
 interface BatchOptions {
-  /** Maximum addresses per API call (default: 20) */
+  /** Maximum items per API call (default: 20) */
   chunkSize?: number;
   
-  /** Number of concurrent requests (default: 3) */
-  concurrency?: number;
+  /** API requests per second limit (default: 3) */
+  requestsPerSecond?: number;
   
-  /** Continue if an error occurs (default: false) */
+  /** Continue processing if an error occurs (default: false) */
   continueOnError?: boolean;
-  
-  /** Progress callback */
-  onProgress?: (completed: number, total: number, errors: number) => void;
-  
-  /** Delay between chunks in ms (default: 100) */
-  delayBetweenChunks?: number;
   
   /** Maximum retries per chunk (default: 3) */
   maxRetries?: number;
   
-  /** Retry delay in ms (default: 1000) */
+  /** Retry delay in milliseconds (default: 1000) */
   retryDelay?: number;
+  
+  /** Progress callback (reports chunk progress, not individual items) */
+  onProgress?: (completed: number, total: number, errors: number) => void;
 }
 ```
 
-### Important: Concurrency and API Rate Limits
+### Important: Rate Limiting and API Limits
 
-**The default concurrency is set to 3, which matches the default rate limit for MNEE API keys.**
+**The default `requestsPerSecond` is set to 3, which matches the default rate limit for MNEE API keys.**
 
-You should check your API key's rate limit in the MNEE Developer Portal and adjust the concurrency setting accordingly to avoid rate limit errors:
+You should check your API key's rate limit and adjust the `requestsPerSecond` setting accordingly to avoid rate limit errors:
 
 ```javascript
 // Default settings (works for most API keys)
 const batch = mnee.batch();
 const result = await batch.getBalances(addresses);
 
-// If your API key has a higher rate limit (e.g., 10 concurrent requests)
+// If your API key has a higher rate limit (e.g., 10 requests per second)
 const result = await batch.getBalances(addresses, {
-  concurrency: 10,  // Match your API key's rate limit
+  requestsPerSecond: 10,  // Match your API key's rate limit
 });
 
-// If your API key has a lower rate limit (e.g., 1 concurrent request)
+// If your API key has a lower rate limit (e.g., 1 request per second)
 const result = await batch.getBalances(addresses, {
-  concurrency: 1,   // Prevent rate limit errors
+  requestsPerSecond: 1,   // Prevent rate limit errors
 });
 ```
 
-Setting concurrency higher than your API rate limit will result in 429 (Too Many Requests) errors.
+Setting `requestsPerSecond` higher than your API rate limit will result in 429 (Too Many Requests) errors.
 
 ## Performance Optimization
 
@@ -497,13 +468,13 @@ await batch.getBalances(addresses, {
 ### 4. Monitor Error Patterns
 ```typescript
 const batch = mnee.batch();
-const result = await batch.getAll(addresses, {
+const result = await batch.getBalances(addresses, {
   continueOnError: true
 });
 
 // Analyze error patterns
 const errorsByType = new Map();
-result.utxos.errors.forEach(error => {
+result.errors.forEach(error => {
   const key = error.error.message;
   errorsByType.set(key, (errorsByType.get(key) || 0) + 1);
 });

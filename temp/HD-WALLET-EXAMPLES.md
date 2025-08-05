@@ -52,7 +52,10 @@ const mnemonic = Mnee.HDWallet.generateMnemonic();
 console.log('Save this mnemonic:', mnemonic);
 
 // Create HD wallet instance
-const mnee = new Mnee({ environment: 'sandbox' });
+const mnee = new Mnee({ 
+  environment: 'sandbox',
+  apiKey: 'your-api-key'  // optional but recommended
+});
 const hdWallet = mnee.HDWallet(mnemonic, {
   derivationPath: "m/44'/236'/0'",  // Standard BIP44 path for MNEE
   cacheSize: 1000                    // Cache derived keys for performance
@@ -70,8 +73,8 @@ console.log('Private Key:', receiveAddr.privateKey);
 console.log('Path:', receiveAddr.path);  // "m/44'/236'/0'/0/0"
 
 // Batch derive addresses for better performance
-const addresses = await hdWallet.deriveAddresses(0, 10, false);  // 10 receive addresses
-const changeAddresses = await hdWallet.deriveAddresses(0, 5, true);  // 5 change addresses
+const addresses = hdWallet.deriveAddresses(0, 10, false);  // 10 receive addresses
+const changeAddresses = hdWallet.deriveAddresses(0, 5, true);  // 5 change addresses
 ```
 
 ## Common HD Wallet Patterns
@@ -149,8 +152,8 @@ async function sweepHDWallet(mnemonic, destinationAddress) {
   
   // Step 4: Build inputs for transferMulti
   const inputs = utxos.map(utxo => ({
-    txid: utxo.txid,
-    vout: utxo.vout,
+    txid: utxo.outpoint.split(':')[0],
+    vout: parseInt(utxo.outpoint.split(':')[1]),
     wif: privateKeys[utxo.owners[0]]  // Private key for this specific UTXO
   }));
   
@@ -204,8 +207,8 @@ async function exportFundedAddresses(mnemonic, options = {}) {
   const hdWallet = mnee.HDWallet(mnemonic, { derivationPath: "m/44'/236'/0'" });
   
   // Derive addresses
-  const receiveAddresses = await hdWallet.deriveAddresses(0, maxReceiveAddresses, false);
-  const changeAddresses = await hdWallet.deriveAddresses(0, maxChangeAddresses, true);
+  const receiveAddresses = hdWallet.deriveAddresses(0, maxReceiveAddresses, false);
+  const changeAddresses = hdWallet.deriveAddresses(0, maxChangeAddresses, true);
   
   // Create lookup map
   const addressMap = new Map();
@@ -325,7 +328,7 @@ await mnee.transfer([
 const hdWallet = mnee.HDWallet(mnemonic, { derivationPath: "m/44'/236'/0'" });
 
 // Get balance across multiple addresses
-const addresses = await hdWallet.deriveAddresses(0, 10);
+const addresses = hdWallet.deriveAddresses(0, 10);
 const balances = await mnee.balances(addresses.map(a => a.address));
 const totalBalance = balances.reduce((sum, b) => sum + b.decimalAmount, 0);
 
@@ -384,11 +387,11 @@ if (!Mnee.HDWallet.isValidMnemonic(mnemonic)) {
 ### 2. Performance Optimization
 ```javascript
 // Use batch derivation for better performance
-const addresses = await hdWallet.deriveAddresses(0, 100); // ✅ Efficient
+const addresses = hdWallet.deriveAddresses(0, 100); // ✅ Efficient
 
 // Avoid individual derivation in loops
 for (let i = 0; i < 100; i++) {
-  const addr = hdWallet.deriveAddress(i); // ❌ Slower
+  const addr = hdWallet.deriveAddress(i); // ❌ Slower (but still works)
 }
 
 // Clear cache when done with large operations

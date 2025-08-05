@@ -4,3 +4,4 @@ qa-testing/versions/qa-mnee-*.tgz
 node_modules/
 dist
 local-test/
+temp/
