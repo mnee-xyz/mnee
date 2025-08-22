@@ -38,7 +38,7 @@ export interface MneeInterface {
   parseInscription(script: Script): Inscription | undefined;
   parseCosignerScripts(scripts: Script[]): ParsedCosigner[];
   HDWallet(mnemonic: string, options: HDWalletOptions): HDWallet;
-  // batch(): Batch; // TODO: Add batch back once the consigner updates are released
+  batch(): Batch;
 }
 
 /**
@@ -253,19 +253,18 @@ export default class Mnee implements MneeInterface {
     return new HDWallet(mnemonic, options);
   }
 
-  // TODO: Add batch back once the consigner updates are released
-  // /**
-  //  * Returns a Batch instance for performing batch operations
-  //  * @returns A Batch instance for batch processing
-  //  * @example
-  //  * const batch = mnee.batch();
-  //  * const balances = await batch.getBalances(addresses);
-  //  * const utxos = await batch.getUtxos(addresses);
-  //  */
-  // batch(): Batch {
-  //   if (!this._batch) {
-  //     this._batch = new Batch(this.service);
-  //   }
-  //   return this._batch;
-  // }
+  /**
+   * Returns a Batch instance for performing batch operations
+   * @returns A Batch instance for batch processing
+   * @example
+   * const batch = mnee.batch();
+   * const balances = await batch.getBalances(addresses);
+   * const utxos = await batch.getUtxos(addresses);
+   */
+  batch(): Batch {
+    if (!this._batch) {
+      this._batch = new Batch(this.service);
+    }
+    return this._batch;
+  }
 }
