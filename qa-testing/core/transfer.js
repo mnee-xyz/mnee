@@ -458,7 +458,7 @@ async function testTransferWithBroadcast() {
   // Uncomment only if you want to test real broadcasting in sandbox/production
 
   try {
-    const broadcastResult = await mnee.transfer(request, TEST_WIF, { broadcast: true });
+    const broadcastResult = await mnee.transfer(request, TEST_WIF);
     console.log('broadcastResult', broadcastResult);
 
     // When broadcast=true succeeds

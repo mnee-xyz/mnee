@@ -375,7 +375,8 @@ export class MNEEService {
       if (signResult.error) throw stacklessError(signResult.error);
 
       const rawtx = tx.toHex();
-      if (!transferOptions?.broadcast) {
+      
+      if (transferOptions?.broadcast === false) {
         return { rawtx };
       }
 
@@ -395,8 +396,11 @@ export class MNEEService {
     transferOptions: TransferOptions = { broadcast: true, callbackUrl: undefined },
   ): Promise<TransferResponse> {
     try {
-      if (transferOptions?.callbackUrl && transferOptions?.broadcast !== false) {
-        transferOptions.broadcast = true;
+      if (transferOptions?.broadcast !== false) {
+        transferOptions = { ...transferOptions, broadcast: true };
+      }
+      if (transferOptions?.callbackUrl && transferOptions?.broadcast === false) {
+        throw stacklessError('Callback URL cannot be provided when broadcast is false');
       }
       if (!rawtx) {
         throw stacklessError('Raw transaction is required');
@@ -427,7 +431,6 @@ export class MNEEService {
       }
 
       const ticketId = await response.text();
-      console.log('ticketId', ticketId);
 
       return { ticketId };
     } catch (error) {
