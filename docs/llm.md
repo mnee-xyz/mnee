@@ -9,6 +9,7 @@ This document provides comprehensive documentation for the MNEE SDK, designed to
 3. [Batch Operations](#batch-operations)
 4. [HD Wallet](#hd-wallet)
 5. [Type Definitions](#type-definitions)
+6. [Webhook Support](#webhook-support)
 
 ## Setup and Configuration
 
@@ -89,8 +90,15 @@ const balances = await mnee.balances(['address1', 'address2']);
 ### UTXO Operations
 
 ```typescript
-const utxos = await mnee.getUtxos('address'); // Single address
-const utxos = await mnee.getUtxos(['address1', 'address2']); // Multiple addresses
+// Single address (returns up to 10 UTXOs by default)
+const utxos = await mnee.getUtxos('address');
+
+// With pagination
+const utxos = await mnee.getUtxos('address', 0, 100, 'desc');
+// Parameters: address, page, size (max 1000), order ('asc' | 'desc')
+
+// Multiple addresses
+const utxos = await mnee.getUtxos(['address1', 'address2'], 0, 50);
 // Returns: MNEEUtxo[]
 ```
 
@@ -155,9 +163,13 @@ const recipients: SendMNEE[] = [
 const response = await mnee.transfer(
   recipients, 
   'sender-private-key-wif',
-  true  // broadcast (optional, default: true)
+  { broadcast: true, callbackUrl: 'https://your-api.com/webhook' }  // optional
 );
 // Returns: TransferResponse
+
+// Get transaction ID from status
+const status = await mnee.getTxStatus(response.ticketId);
+console.log('Transaction ID:', status.tx_id);
 ```
 
 #### Multi-Source Transfer
@@ -175,16 +187,38 @@ const options: TransferMultiOptions = {
   changeAddress: 'change-address' // optional
 };
 
-const response = await mnee.transferMulti(options, true);
+const response = await mnee.transferMulti(options, { broadcast: true });
 // Returns: TransferResponse
+
+// Get transaction ID from status
+const status = await mnee.getTxStatus(response.ticketId);
+console.log('Transaction ID:', status.tx_id);
 ```
 
 #### Transfer Response
 
 ```typescript
 interface TransferResponse {
-  txid: string;
-  rawTx: string;
+  ticketId?: string;  // Ticket ID for tracking (only if broadcast is true)
+  rawtx?: string;     // The raw transaction hex (only if broadcast is false)
+}
+```
+
+#### Transaction Status
+
+```typescript
+const status = await mnee.getTxStatus(ticketId);
+// Returns: TransferStatus
+
+interface TransferStatus {
+  id: string;
+  tx_id: string;
+  tx_hex: string;
+  action_requested: 'transfer';
+  status: 'BROADCASTING' | 'SUCCESS' | 'MINED' | 'FAILED';
+  createdAt: string;
+  updatedAt: string;
+  errors: string | null;
 }
 ```
 
@@ -200,8 +234,15 @@ const isValid = await mnee.validateMneeTx(rawTxHex, recipients);
 ### Submit Raw Transaction
 
 ```typescript
-const response = await mnee.submitRawTx(rawTxHex);
-// Returns: TransferResponse
+const response = await mnee.submitRawTx(rawTxHex, {
+  broadcast: true,
+  callbackUrl: 'https://your-api.com/webhook'  // optional
+});
+// Returns: TransferResponse with ticketId
+
+// Get transaction ID from status
+const status = await mnee.getTxStatus(response.ticketId);
+console.log('Transaction ID:', status.tx_id);
 ```
 
 ### Unit Conversion
@@ -624,6 +665,55 @@ try {
 ```
 
 Note: When methods make POST requests to the cosigner API (transfer, transferMulti, submitRawTx), they handle HTTP 401/403 as "Invalid API key" and other HTTP errors as "HTTP error! status: {code}".
+
+## Webhook Support
+
+Transactions can be tracked via webhook callbacks for real-time status updates.
+
+### Webhook Response Format
+
+```typescript
+interface TransferWebhookResponse {
+  id: string;              // The ticket ID
+  tx_id: string;           // The blockchain transaction ID
+  tx_hex: string;          // The raw transaction hex
+  action_requested: 'transfer';  // Always 'transfer' for MNEE transactions
+  callback_url: string;    // Your webhook URL (for verification)
+  status: 'BROADCASTING' | 'SUCCESS' | 'MINED' | 'FAILED';
+  createdAt: string;       // ISO timestamp when ticket was created
+  updatedAt: string;       // ISO timestamp of this update
+  errors: string | null;   // Error details if status is FAILED
+}
+```
+
+### Using Webhooks
+
+```typescript
+// Transfer with webhook
+const response = await mnee.transfer(recipients, wif, {
+  broadcast: true,
+  callbackUrl: 'https://your-api.com/webhook'
+});
+
+// TransferMulti with webhook
+const response = await mnee.transferMulti(options, {
+  broadcast: true,
+  callbackUrl: 'https://your-api.com/webhook'
+});
+
+// Submit raw transaction with webhook
+const response = await mnee.submitRawTx(rawTxHex, {
+  broadcast: true,
+  callbackUrl: 'https://your-api.com/webhook'
+});
+```
+
+### Webhook Status Flow
+
+- **BROADCASTING** → Transaction is being broadcast to the network
+- **SUCCESS** → Transaction successfully broadcast and accepted by the network
+- **MINED** → Transaction has been mined into a block
+- **FAILED** → Transaction failed (check `errors` field for details)
 
 ### Performance
 - Batch operations automatically chunk requests

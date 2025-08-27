@@ -19,7 +19,11 @@ const options = {
 };
 
 const response = await mnee.transferMulti(options);
-console.log('Transaction ID:', response.txid);
+console.log('Ticket ID:', response.ticketId);
+
+// Check transaction status
+const status = await mnee.getTxStatus(response.ticketId);
+console.log('Transaction ID:', status.tx_id);
 ```
 
 ### Multiple Change Addresses
@@ -41,6 +45,30 @@ const options = {
 };
 
 const response = await mnee.transferMulti(options);
+console.log('Ticket ID:', response.ticketId);
+```
+
+### Transfer with Webhook Callback
+
+```typescript
+const options = {
+  inputs: [
+    { txid: 'abc123...', vout: 0, wif: 'L1...' },
+    { txid: 'def456...', vout: 1, wif: 'L2...' }
+  ],
+  recipients: [
+    { address: '1Recipient...', amount: 75 }
+  ]
+};
+
+// Add webhook for async status updates
+const response = await mnee.transferMulti(options, {
+  broadcast: true,
+  callbackUrl: 'https://your-api.com/webhook'
+});
+
+console.log('Ticket ID:', response.ticketId);
+// Your webhook will receive status updates
 ```
 
 ## Parameters
@@ -57,11 +85,22 @@ const response = await mnee.transferMulti(options);
 - **changeAddress** (optional): Where to send change
   - Can be a single address (string)
   - Or array of addresses with specific amounts
-- **broadcast** (optional): Whether to broadcast (default: `true`)
+
+### TransferOptions (second parameter, optional)
+
+- **broadcast**: Whether to broadcast the transaction (default: `true`)
+- **callbackUrl**: Webhook URL for status updates (only when broadcast is true)
 
 ## Response
 
-Returns a `TransferResponse` object with the raw transaction and transaction ID (if broadcast).
+Returns a `TransferResponse` object:
+
+```typescript
+{
+  ticketId?: string;  // Ticket ID for tracking (only if broadcast is true)
+  rawtx?: string;     // The raw transaction hex (only if broadcast is false)
+}
+```
 
 ## Common Use Cases
 
@@ -93,7 +132,10 @@ async function consolidateUTXOs(address, wif) {
   });
   
   console.log(`Consolidated ${utxos.length} UTXOs into 1`);
-  return response.txid;
+  
+  // Get transaction ID from status
+  const status = await mnee.getTxStatus(response.ticketId);
+  return status.tx_id;
 }
 ```
 
@@ -117,8 +159,8 @@ async function hdWalletTransfer(hdWallet, recipients, totalAmount) {
     }
   }
   
-  // Get UTXOs for all addresses
-  const allUtxos = await mnee.getUtxos(addresses);
+  // Get UTXOs for all addresses (specify size to get all)
+  const allUtxos = await mnee.getUtxos(addresses, 0, 1000);
   
   // Prepare inputs
   const inputs = allUtxos.map(utxo => ({
@@ -134,7 +176,9 @@ async function hdWalletTransfer(hdWallet, recipients, totalAmount) {
     changeAddress: hdWallet.deriveAddress(0, true).address // change address
   });
   
-  return response.txid;
+  // Wait for confirmation
+  const status = await mnee.getTxStatus(response.ticketId);
+  return status.tx_id;
 }
 ```
 
@@ -171,7 +215,10 @@ async function aggregateFromMultipleWallets(wallets, destinationAddress) {
   });
   
   console.log(`Aggregated from ${wallets.length} wallets`);
-  return response.txid;
+  
+  // Wait for transaction to be broadcast
+  const status = await mnee.getTxStatus(response.ticketId);
+  return status.tx_id;
 }
 ```
 
@@ -220,15 +267,17 @@ async function spendSpecificUTXOs(utxoList, recipient) {
   
   const response = await mnee.transferMulti({
     inputs,
-    recipients: [recipient],
-    broadcast: false // Create but don't broadcast
-  });
+    recipients: [recipient]
+  }, { broadcast: false }); // Create but don't broadcast
   
   // Validate before broadcasting
   const isValid = await mnee.validateMneeTx(response.rawtx);
   if (isValid) {
     const result = await mnee.submitRawTx(response.rawtx);
-    return result.txid;
+    
+    // Wait for confirmation
+    const status = await mnee.getTxStatus(result.ticketId);
+    return status.tx_id;
   }
   
   throw new Error('Transaction validation failed');
@@ -291,5 +340,6 @@ try {
 
 - [Transfer](./transfer.md) - Simple transfers with automatic UTXO selection
 - [Get UTXOs](./getUtxos.md) - Find available UTXOs to spend
-- [HD Wallet](./hdWallet.md) - Manage HD wallet operations
+- [Get Transaction Status](./getTxStatus.md) - Track transaction status
+- [Transfer Webhooks](./transferWebhook.md) - Webhook callbacks for async updates
 - [Submit Raw Transaction](./submitRawTx.md) - Broadcast created transactions

@@ -47,13 +47,17 @@ Returns a Promise that resolves to a boolean:
 const transferRequest = [
   { address: '1Recipient...', amount: 5.5 }
 ];
-const response = await mnee.transfer(transferRequest, wif, false); // broadcast: false
+const response = await mnee.transfer(transferRequest, wif, { broadcast: false });
 
 // Validate before submitting
 const isValid = await mnee.validateMneeTx(response.rawtx);
 if (isValid) {
   const submitResult = await mnee.submitRawTx(response.rawtx);
-  console.log('Transaction submitted:', submitResult.txid);
+  console.log('Transaction submitted, ticket ID:', submitResult.ticketId);
+  
+  // Get transaction ID from status
+  const status = await mnee.getTxStatus(submitResult.ticketId);
+  console.log('Transaction ID:', status.tx_id);
 } else {
   console.log('Transaction validation failed');
 }

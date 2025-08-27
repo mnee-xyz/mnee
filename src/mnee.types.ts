@@ -139,6 +139,18 @@ export type TransferOptions = {
   // callbackSecret?: string; // TODO: Add this back in if/when we have a way to generate a secret
 };
 
+export type TransferWebhookResponse = {
+  id: string;
+  tx_id: string;
+  tx_hex: string;
+  action_requested: 'transfer';
+  callback_url: string;
+  status: 'SUCCESS' | 'BROADCASTING' | 'MINED' | 'FAILED';
+  createdAt: string;
+  updatedAt: string;
+  errors: string | null;
+};
+
 export interface TransferMultiOptions {
   inputs: Array<{
     txid: string;

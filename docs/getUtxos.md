@@ -4,14 +4,32 @@ The `getUtxos` method retrieves the Unspent Transaction Outputs (UTXOs) for one 
 
 ## Usage
 
-### Single Address
+### Basic Usage
 
 ```typescript
 const address = '1G6CB3Ch4zFkPmuhZzEyChQmrQPfi86qk3';
 
-mnee.getUtxos(address).then(utxos => {
-  console.log('UTXOs:', utxos);
-});
+// Returns up to 10 UTXOs by default
+const utxos = await mnee.getUtxos(address);
+console.log('UTXOs:', utxos);
+```
+
+### With Pagination
+
+```typescript
+const address = '1G6CB3Ch4zFkPmuhZzEyChQmrQPfi86qk3';
+
+// Get first page with 20 UTXOs
+const page1 = await mnee.getUtxos(address, 0, 20);
+console.log('First 20 UTXOs:', page1);
+
+// Get second page
+const page2 = await mnee.getUtxos(address, 1, 20);
+console.log('Next 20 UTXOs:', page2);
+
+// Get UTXOs in ascending order (oldest first)
+const ascUtxos = await mnee.getUtxos(address, 0, 50, 'asc');
+console.log('Oldest UTXOs first:', ascUtxos);
 ```
 
 ### Multiple Addresses
@@ -19,10 +37,21 @@ mnee.getUtxos(address).then(utxos => {
 ```typescript
 const addresses = ['1G6CB3Ch4zFkPmuhZzEyChQmrQPfi86qk3', '1BFaJwJz5KPYGe28afDkGswbuKK6uK8hzQ'];
 
-mnee.getUtxos(addresses).then(utxos => {
-  console.log('All UTXOs:', utxos);
-});
+// Returns up to 10 UTXOs by default
+const utxos = await mnee.getUtxos(addresses);
+console.log('UTXOs from all addresses:', utxos);
+
+// Get more UTXOs by specifying size
+const moreUtxos = await mnee.getUtxos(addresses, 0, 100, 'desc');
+console.log('First 100 UTXOs (newest first):', moreUtxos);
 ```
+
+## Parameters
+
+- **address**: Single Bitcoin address or array of addresses
+- **page** (optional): Page number starting from 0
+- **size** (optional): Number of UTXOs per page (default: 10)
+- **order** (optional): Sort order - 'asc' for oldest first, 'desc' for newest first (default: 'desc')
 
 ## Response
 
@@ -82,6 +111,7 @@ The method returns a Promise that resolves to an array of `MNEEUtxo` objects. Ea
 ## UTXO Properties
 
 ### Main Properties
+
 - **outpoint**: The full UTXO identifier in format `txid:vout`
 - **height**: The block height when this UTXO was created
 - **idx**: The output index within the transaction
@@ -90,6 +120,7 @@ The method returns a Promise that resolves to an array of `MNEEUtxo` objects. Ea
 - **score**: A sortable score based on height and index
 
 ### BSV21 Data (`data.bsv21`)
+
 - **amt**: The amount of MNEE tokens in atomic units (100,000 = 1 MNEE)
 - **dec**: Number of decimal places (5 for MNEE)
 - **icon**: The icon address for the token
@@ -98,6 +129,7 @@ The method returns a Promise that resolves to an array of `MNEEUtxo` objects. Ea
 - **sym**: The token symbol ("MNEE")
 
 ### Cosigner Data (`data.cosign`)
+
 - **address**: The cosigner address for this UTXO
 - **cosigner**: The cosigner public key
 
@@ -106,17 +138,48 @@ The method returns a Promise that resolves to an array of `MNEEUtxo` objects. Ea
 ### Calculate Total Spendable Balance
 
 ```typescript
-const utxos = await mnee.getUtxos(address);
+// WARNING: Default only returns 10 UTXOs - may not be complete balance!
+// Specify a larger size or use pagination for accurate balance
+const utxos = await mnee.getUtxos(address, 0, 1000); // Get up to 1000 UTXOs
 const totalAtomicUnits = utxos.reduce((sum, utxo) => sum + utxo.data.bsv21.amt, 0);
 const totalMNEE = mnee.fromAtomicAmount(totalAtomicUnits);
 console.log(`Total spendable: ${totalMNEE} MNEE`);
+
+// For accurate balance, consider using the balance() method instead:
+const balance = await mnee.balance(address);
+console.log(`Total balance: ${balance.decimalAmount} MNEE`);
+```
+
+### Get All UTXOs with Pagination
+
+```typescript
+async function getAllUtxosWithPagination(address) {
+  const allUtxos = [];
+  const pageSize = 100;
+  let page = 0;
+
+  while (true) {
+    const utxos = await mnee.getUtxos(address, page, pageSize);
+    allUtxos.push(...utxos);
+
+    console.log(`Retrieved page ${page + 1}: ${utxos.length} UTXOs`);
+
+    // If we got less than pageSize, we've reached the end
+    if (utxos.length < pageSize) break;
+
+    page++;
+  }
+
+  console.log(`Total UTXOs retrieved: ${allUtxos.length}`);
+  return allUtxos;
+}
 ```
 
 ### Find UTXOs Above a Certain Amount
 
 ```typescript
 const utxos = await mnee.getUtxos(address);
-const largeUtxos = utxos.filter(utxo => utxo.data.bsv21.amt >= 10000); // 0.1 MNEE or more
+const largeUtxos = utxos.filter((utxo) => utxo.data.bsv21.amt >= 10000); // 0.1 MNEE or more
 console.log(`Found ${largeUtxos.length} UTXOs with 0.1 MNEE or more`);
 ```
 
@@ -135,10 +198,10 @@ const utxosByAddress = allUtxos.reduce((acc, utxo) => {
 }, {});
 
 // Convert to transferMulti format
-const inputs = allUtxos.map(utxo => ({
+const inputs = allUtxos.map((utxo) => ({
   txid: utxo.outpoint.split(':')[0],
   vout: parseInt(utxo.outpoint.split(':')[1]),
-  wif: 'private-key-for-owner' // You need to provide the WIF for each UTXO owner
+  wif: 'private-key-for-owner', // You need to provide the WIF for each UTXO owner
 }));
 ```
 
@@ -146,25 +209,42 @@ const inputs = allUtxos.map(utxo => ({
 
 ```typescript
 const utxos = await mnee.getUtxos(address);
-const transferUtxos = utxos.filter(utxo => utxo.data.bsv21.op === 'transfer');
+const transferUtxos = utxos.filter((utxo) => utxo.data.bsv21.op === 'transfer');
 console.log(`Found ${transferUtxos.length} transfer UTXOs`);
 ```
 
 ## Performance Considerations
 
-- For single addresses, this method is very efficient
-- When querying multiple addresses, consider using batch operations for better performance:
+- The API returns only 10 UTXOs by default - specify a larger `size` parameter if you need more
+- For addresses with many UTXOs, use pagination to retrieve all of them:
 
 ```typescript
-const batch = mnee.batch();
-const result = await batch.getUtxos(addresses, {
-  chunkSize: 20,
-  continueOnError: true
-});
+// Get all UTXOs for an address
+async function getAllUtxos(address) {
+  const allUtxos = [];
+  const pageSize = 100; // Balance between efficiency and memory
+  let page = 0;
+  let hasMore = true;
+
+  while (hasMore) {
+    const utxos = await mnee.getUtxos(address, page, pageSize);
+    allUtxos.push(...utxos);
+    hasMore = utxos.length === pageSize;
+    page++;
+  }
+
+  return allUtxos;
+}
 ```
+
+## Important Notes
+
+- **Default limit is 10 UTXOs** - Always specify the `size` parameter if you need more
+- If an address has more UTXOs than your page size, use pagination to retrieve all of them
+- For just checking balance, use the `balance()` method which is more efficient
+- UTXOs are sorted by score (based on height and index) in descending order by default
 
 ## See Also
 
-- [Balance](./balance.md) - Get balance without UTXO details
+- [Balance](./balance.md) - Get balance without UTXO details (more efficient for balance checks)
 - [Transfer Multi](./transferMulti.md) - Use UTXOs for multi-source transfers
-- [Batch Operations](./batch.md) - Process large numbers of addresses efficiently
