@@ -24,11 +24,11 @@ async function testTransferNoBroadcast() {
   ];
 
   try {
-    const result = await mnee.transfer(request, TEST_WIF, false);
+    const result = await mnee.transfer(request, TEST_WIF, { broadcast: false });
 
     // When broadcast is false, we should get a rawtx
     assert(result.rawtx, 'Should return raw transaction when broadcast is false');
-    assert(!result.txid, 'Should not have txid when broadcast is false');
+    assert(!result.ticketId, 'Should not have ticketId when broadcast is false');
     assert(!result.error, 'Should not have error for valid transfer');
 
     console.log('  Transfer created successfully (not broadcast)');
@@ -69,7 +69,7 @@ async function testMultipleRecipients() {
   ];
 
   try {
-    const result = await mnee.transfer(request, TEST_WIF, false);
+    const result = await mnee.transfer(request, TEST_WIF, { broadcast: false });
 
     assert(result.rawtx, 'Should return raw transaction');
     assert(!result.error, 'Should not have error');
@@ -114,12 +114,12 @@ async function testInsufficientBalance() {
   ];
 
   try {
-    const result = await mnee.transfer(request, TEST_WIF, false);
+    const result = await mnee.transfer(request, TEST_WIF, { broadcast: false });
 
     // Should have an error
     assert(result.error, 'Should have error for insufficient balance');
     assert(!result.rawtx, 'Should not have rawtx when error occurs');
-    assert(!result.txid, 'Should not have txid when error occurs');
+    assert(!result.ticketId, 'Should not have ticketId when error occurs');
 
     console.log(`  Insufficient balance error: "${result.error}"`);
   } catch (error) {
@@ -138,8 +138,8 @@ async function testInvalidWif() {
 
   let errorOccurred = false;
   try {
-    const result = await mnee.transfer(request, 'invalid-wif-key', false);
-    
+    const result = await mnee.transfer(request, 'invalid-wif-key', { broadcast: false });
+
     // With the new behavior, this should never execute as transfer will throw
     assert.fail('Transfer should throw error for invalid WIF');
   } catch (error) {
@@ -162,11 +162,11 @@ async function testZeroAmount() {
 
   let errorOccurred = false;
   try {
-    const result = await mnee.transfer(request, TEST_WIF, false);
+    const result = await mnee.transfer(request, TEST_WIF, { broadcast: false });
 
     if (result.error) {
       assert(!result.rawtx, 'Should not have rawtx when error occurs');
-      assert(!result.txid, 'Should not have txid when error occurs');
+      assert(!result.ticketId, 'Should not have ticketId when error occurs');
       errorOccurred = true;
       console.log(`  Zero amount error: "${result.error}"`);
     } else if (result.rawtx) {
@@ -194,7 +194,7 @@ async function testInvalidRecipient() {
   ];
 
   try {
-    const result = await mnee.transfer(request, TEST_WIF, false);
+    const result = await mnee.transfer(request, TEST_WIF, { broadcast: false });
 
     // Should have an error
     assert(result.error || !result.rawtx, 'Should fail for invalid recipient address');
@@ -210,7 +210,7 @@ async function testEmptyRequest() {
 
   let errorOccurred = false;
   try {
-    const result = await mnee.transfer(request, TEST_WIF, false);
+    const result = await mnee.transfer(request, TEST_WIF, { broadcast: false });
 
     if (result.error) {
       assert(!result.rawtx, 'Should not have rawtx with empty request');
@@ -238,7 +238,7 @@ async function testNegativeAmount() {
 
   let errorOccurred = false;
   try {
-    const result = await mnee.transfer(request, TEST_WIF, false);
+    const result = await mnee.transfer(request, TEST_WIF, { broadcast: false });
 
     assert(result.error || !result.rawtx, 'Should fail for negative amount');
     errorOccurred = true;
@@ -262,11 +262,11 @@ async function testSpecificInvalidWifFormats() {
     { wif: 123, desc: 'Number instead of string' },
     { wif: true, desc: 'Boolean instead of string' },
     { wif: {}, desc: 'Object instead of string' },
-    { wif: [], desc: 'Array instead of string' }
+    { wif: [], desc: 'Array instead of string' },
   ];
 
   console.log('  Testing various invalid WIF formats:');
-  
+
   const request = [
     {
       address: testConfig.addresses.emptyAddress,
@@ -276,8 +276,8 @@ async function testSpecificInvalidWifFormats() {
 
   for (const { wif, desc } of invalidWifs) {
     try {
-      const result = await mnee.transfer(request, wif, false);
-      
+      const result = await mnee.transfer(request, wif, { broadcast: false });
+
       if (result.error) {
         console.log(`    ${desc}: "${result.error}"`);
       } else {
@@ -302,11 +302,11 @@ async function testSpecificInvalidAddresses() {
     { address: 123, desc: 'Number instead of string' },
     { address: true, desc: 'Boolean instead of string' },
     { address: {}, desc: 'Object instead of string' },
-    { address: [], desc: 'Array instead of string' }
+    { address: [], desc: 'Array instead of string' },
   ];
 
   console.log('  Testing various invalid address formats:');
-  
+
   for (const { address, desc } of invalidAddresses) {
     const request = [
       {
@@ -316,8 +316,8 @@ async function testSpecificInvalidAddresses() {
     ];
 
     try {
-      const result = await mnee.transfer(request, TEST_WIF, false);
-      
+      const result = await mnee.transfer(request, TEST_WIF, { broadcast: false });
+
       if (result.error) {
         console.log(`    ${desc}: "${result.error}"`);
       } else {
@@ -346,11 +346,11 @@ async function testSpecificInvalidAmounts() {
     { amount: true, desc: 'Boolean true' },
     { amount: false, desc: 'Boolean false' },
     { amount: {}, desc: 'Object' },
-    { amount: [], desc: 'Array' }
+    { amount: [], desc: 'Array' },
   ];
 
   console.log('  Testing various invalid amount values:');
-  
+
   for (const { amount, desc } of invalidAmounts) {
     const request = [
       {
@@ -360,8 +360,8 @@ async function testSpecificInvalidAmounts() {
     ];
 
     try {
-      const result = await mnee.transfer(request, TEST_WIF, false);
-      
+      const result = await mnee.transfer(request, TEST_WIF, { broadcast: false });
+
       if (result.error) {
         console.log(`    ${desc}: "${result.error}"`);
       } else {
@@ -376,7 +376,7 @@ async function testSpecificInvalidAmounts() {
 // Test 6.12: Transfer with malformed request objects
 async function testMalformedRequests() {
   console.log('  Testing malformed request objects:');
-  
+
   // Missing address field
   let request = [
     {
@@ -385,7 +385,7 @@ async function testMalformedRequests() {
   ];
 
   try {
-    const result = await mnee.transfer(request, TEST_WIF, false);
+    const result = await mnee.transfer(request, TEST_WIF, { broadcast: false });
     console.log(`    Missing address field: "${result.error || 'No error (FAIL)'}"`);
   } catch (error) {
     console.log(`    Missing address field: Exception - "${error.message}"`);
@@ -399,7 +399,7 @@ async function testMalformedRequests() {
   ];
 
   try {
-    const result = await mnee.transfer(request, TEST_WIF, false);
+    const result = await mnee.transfer(request, TEST_WIF, { broadcast: false });
     console.log(`    Missing amount field: "${result.error || 'No error (FAIL)'}"`);
   } catch (error) {
     console.log(`    Missing amount field: Exception - "${error.message}"`);
@@ -409,7 +409,7 @@ async function testMalformedRequests() {
   request = [{}];
 
   try {
-    const result = await mnee.transfer(request, TEST_WIF, false);
+    const result = await mnee.transfer(request, TEST_WIF, { broadcast: false });
     console.log(`    Empty object: "${result.error || 'No error (FAIL)'}"`);
   } catch (error) {
     console.log(`    Empty object: Exception - "${error.message}"`);
@@ -421,13 +421,13 @@ async function testMalformedRequests() {
     { req: undefined, desc: 'Undefined request' },
     { req: 'string', desc: 'String instead of array' },
     { req: 123, desc: 'Number instead of array' },
-    { req: {address: testConfig.addresses.emptyAddress, amount: 0.01}, desc: 'Object instead of array' },
-    { req: true, desc: 'Boolean instead of array' }
+    { req: { address: testConfig.addresses.emptyAddress, amount: 0.01 }, desc: 'Object instead of array' },
+    { req: true, desc: 'Boolean instead of array' },
   ];
 
   for (const { req, desc } of invalidRequests) {
     try {
-      const result = await mnee.transfer(req, TEST_WIF, false);
+      const result = await mnee.transfer(req, TEST_WIF, { broadcast: false });
       console.log(`    ${desc}: "${result.error || 'No error (FAIL)'}"`);
     } catch (error) {
       console.log(`    ${desc}: Exception - "${error.message}"`);
@@ -448,33 +448,34 @@ async function testTransferWithBroadcast() {
   ];
 
   // First create transaction without broadcast to compare
-  const noBroadcastResult = await mnee.transfer(request, TEST_WIF, false);
-  assert(noBroadcastResult.rawtx && !noBroadcastResult.txid, 'Without broadcast should return rawtx but no txid');
+  const noBroadcastResult = await mnee.transfer(request, TEST_WIF, { broadcast: false });
+  assert(
+    noBroadcastResult.rawtx && !noBroadcastResult.ticketId,
+    'Without broadcast should return rawtx but no ticketId',
+  );
 
   // IMPORTANT: The following code would actually broadcast and spend funds!
   // Uncomment only if you want to test real broadcasting in sandbox/production
 
   try {
-    const broadcastResult = await mnee.transfer(request, TEST_WIF, true);
+    const broadcastResult = await mnee.transfer(request, TEST_WIF, { broadcast: true });
+    console.log('broadcastResult', broadcastResult);
 
     // When broadcast=true succeeds
-    if (broadcastResult.txid) {
-      assert(broadcastResult.txid, 'Broadcast result should have txid');
+    if (broadcastResult.ticketId) {
+      assert(broadcastResult.ticketId, 'Broadcast result should have ticketId');
       assert(!broadcastResult.error, 'Successful broadcast should not have error');
-      assert(typeof broadcastResult.txid === 'string', 'txid should be a string');
-      assert(broadcastResult.txid.length === 64, 'txid should be 64 characters (32 bytes hex)');
-      console.log(`  ✓ Transaction broadcast successfully: ${broadcastResult.txid}`);
-
-      const txDetails = await mnee.parseTx(broadcastResult.txid);
-      assert(txDetails, 'Broadcast transaction should be retrievable');
+      assert(typeof broadcastResult.ticketId === 'string', 'ticketId should be a string');
+      assert(broadcastResult.ticketId.length === 36, 'ticketId should be a uuid');
+      console.log(`  ✓ Transaction broadcast successfully: ${broadcastResult.ticketId}`);
     }
     // When broadcast fails
     else if (broadcastResult.error) {
       assert(broadcastResult.error, 'Failed broadcast should have error message');
-      assert(!broadcastResult.txid, 'Failed broadcast should not have txid');
+      assert(!broadcastResult.ticketId, 'Failed broadcast should not have ticketId');
       console.log(`  ✓ Broadcast failed as expected: ${broadcastResult.error}`);
     } else {
-      assert.fail('Broadcast result should have either txid or error');
+      assert.fail('Broadcast result should have either ticketId or error');
     }
   } catch (error) {
     console.log(`  ✓ Broadcast threw error (may be expected): ${error.message}`);

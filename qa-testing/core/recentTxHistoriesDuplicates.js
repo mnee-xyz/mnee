@@ -36,10 +36,53 @@ async function testDuplicateTransactions() {
       console.log(`  ${address}: ${history.history.length} transactions`);
     }
 
-    // Now get batch histories
+    // Now get batch histories with default order
     console.log('\nStep 2: Getting batch histories...');
     const params = addresses.map(address => ({ address, limit: 20 }));
     const batchHistories = await mnee.recentTxHistories(params);
+    
+    // Test with different order parameters
+    console.log('\nStep 2b: Testing with order parameters...');
+    const ascParams = addresses.map(address => ({ address, limit: 20, order: 'asc' }));
+    const ascBatchHistories = await mnee.recentTxHistories(ascParams);
+    
+    const descParams = addresses.map(address => ({ address, limit: 20, order: 'desc' }));
+    const descBatchHistories = await mnee.recentTxHistories(descParams);
+    
+    // Verify order affects results
+    for (let i = 0; i < addresses.length; i++) {
+      const address = addresses[i];
+      const ascHistory = ascBatchHistories[i];
+      const descHistory = descBatchHistories[i];
+      
+      if (ascHistory.history.length > 1 && descHistory.history.length > 1) {
+        const firstAscTxid = ascHistory.history[0].txid;
+        const firstDescTxid = descHistory.history[0].txid;
+        
+        if (firstAscTxid !== firstDescTxid) {
+          console.log(`  ${address}: Different first transaction with asc/desc order ✓`);
+        }
+        
+        // Verify score ordering
+        const ascScores = ascHistory.history.map(tx => tx.score);
+        const descScores = descHistory.history.map(tx => tx.score);
+        
+        let ascOrdered = true;
+        let descOrdered = true;
+        
+        for (let j = 1; j < ascScores.length; j++) {
+          if (ascScores[j] < ascScores[j-1]) ascOrdered = false;
+        }
+        
+        for (let j = 1; j < descScores.length; j++) {
+          if (descScores[j] > descScores[j-1]) descOrdered = false;
+        }
+        
+        if (ascOrdered && descOrdered) {
+          console.log(`  ${address}: Scores properly ordered (asc: ${ascOrdered}, desc: ${descOrdered}) ✓`);
+        }
+      }
+    }
 
     // Compare results
     console.log('\nStep 3: Comparing results...');

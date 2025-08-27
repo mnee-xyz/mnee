@@ -1,7 +1,7 @@
 import Mnee from 'mnee';
 import assert from 'assert';
 import testConfig from '../testConfig.js';
-import knownTxs from '../knownTestTransactions.js'
+import knownTxs from '../knownTestTransactions.js';
 import { Script } from '@bsv/sdk';
 
 // Test configuration
@@ -23,51 +23,53 @@ async function testKnownTransactionCosigners() {
 
     for (const [type, txInfo] of Object.entries(transactions)) {
       console.log(`  Testing ${type} transaction: ${txInfo.txid.substring(0, 10)}...`);
-      
+
       const parsed = await mnee.parseTx(txInfo.txid, { includeRaw: true });
-      
+
       if (parsed.raw && parsed.raw.outputs) {
         const scripts = parsed.raw.outputs
-          .filter(output => output.scriptPubKey)
-          .map(output => {
+          .filter((output) => output.scriptPubKey)
+          .map((output) => {
             try {
               return Script.fromHex(output.scriptPubKey);
             } catch (e) {
               return null;
             }
           })
-          .filter(script => script !== null);
-        
+          .filter((script) => script !== null);
+
         if (scripts.length > 0) {
           const cosigners = mnee.parseCosignerScripts(scripts);
-          
+
           // Debug output
           console.log(`    Scripts: ${scripts.length}, Cosigners found: ${cosigners.length}`);
-          
+
           if (txInfo.hasCosigners) {
             assert(cosigners.length > 0, `${type} transaction should have cosigner scripts`);
             if (cosigners.length !== txInfo.expectedCosigners) {
               console.log(`    Warning: Expected ${txInfo.expectedCosigners} but found ${cosigners.length}`);
               // Don't fail on count mismatch for now, just warn
             }
-            
+
             // Verify cosigner structure
             for (const cosigner of cosigners) {
               assert(typeof cosigner.cosigner === 'string', 'Cosigner field should be string');
               assert(cosigner.address, 'Should have address');
               assert(cosigner.address.startsWith('1'), 'Address should be valid Bitcoin address');
             }
-            
+
             // Check for expected cosigner (except for deploy which may have different structure)
             const mneeConfig = await mnee.config();
             if (mneeConfig && mneeConfig.approver && type !== 'deploy') {
-              const hasExpectedCosigner = cosigners.some(c => c.cosigner === mneeConfig.approver);
+              const hasExpectedCosigner = cosigners.some((c) => c.cosigner === mneeConfig.approver);
               if (!hasExpectedCosigner) {
                 console.log(`    Warning: ${type} doesn't have expected approver cosigner`);
-                console.log(`    Found cosigners: ${cosigners.map(c => c.cosigner.substring(0, 10) + '...').join(', ')}`);
+                console.log(
+                  `    Found cosigners: ${cosigners.map((c) => c.cosigner.substring(0, 10) + '...').join(', ')}`,
+                );
               }
             }
-            
+
             console.log(`    Found ${cosigners.length} cosigner scripts ✓`);
           } else {
             assert(cosigners.length === 0, `${type} transaction should not have cosigner scripts`);
@@ -86,33 +88,39 @@ async function testKnownTransactionCosigners() {
 async function testScriptCosigners() {
   try {
     const testScripts = knownTxs.testScripts;
-    
+
     for (const [name, scriptInfo] of Object.entries(testScripts)) {
       console.log(`  Testing ${name}: ${scriptInfo.description}`);
-      
+
       if (scriptInfo.hex) {
         try {
           const script = Script.fromHex(scriptInfo.hex);
           const cosigners = mnee.parseCosignerScripts([script]);
-          
+
           if (scriptInfo.hasCosigner) {
             assert(cosigners.length === 1, `${name} should have one cosigner result`);
-            
+
             const cosigner = cosigners[0];
             assert(typeof cosigner.cosigner === 'string', 'Cosigner should be string');
             assert(cosigner.address, 'Should have address');
-            
+
             if (scriptInfo.expectedCosigner !== undefined) {
-              assert(cosigner.cosigner === scriptInfo.expectedCosigner, 
-                `Cosigner should be ${scriptInfo.expectedCosigner}`);
+              assert(
+                cosigner.cosigner === scriptInfo.expectedCosigner,
+                `Cosigner should be ${scriptInfo.expectedCosigner}`,
+              );
             }
-            
+
             if (scriptInfo.expectedAddress) {
-              assert(cosigner.address === scriptInfo.expectedAddress, 
-                `Address should be ${scriptInfo.expectedAddress}`);
+              assert(
+                cosigner.address === scriptInfo.expectedAddress,
+                `Address should be ${scriptInfo.expectedAddress}`,
+              );
             }
-            
-            console.log(`    Found cosigner: ${cosigner.cosigner ? cosigner.cosigner.substring(0, 10) + '...' : '(empty)'} ✓`);
+
+            console.log(
+              `    Found cosigner: ${cosigner.cosigner ? cosigner.cosigner.substring(0, 10) + '...' : '(empty)'} ✓`,
+            );
             console.log(`    Address: ${cosigner.address} ✓`);
           } else {
             assert(cosigners.length === 0, `${name} should not have cosigner`);
@@ -137,28 +145,30 @@ async function testScriptCosigners() {
 async function testRawTransactionCosigners() {
   try {
     const rawTxs = knownTxs.rawTransactions;
-    
+
     for (const [name, txInfo] of Object.entries(rawTxs)) {
       console.log(`  Testing ${name}: ${txInfo.description}`);
-      
+
       const parsed = await mnee.parseTxFromRawTx(txInfo.hex, { includeRaw: true });
-      
+
       if (parsed.raw && parsed.raw.outputs) {
         const scripts = parsed.raw.outputs
-          .filter(output => output.scriptPubKey)
-          .map(output => Script.fromHex(output.scriptPubKey));
-        
+          .filter((output) => output.scriptPubKey)
+          .map((output) => Script.fromHex(output.scriptPubKey));
+
         const cosigners = mnee.parseCosignerScripts(scripts);
-        
+
         if (txInfo.hasCosigners) {
           assert(cosigners.length > 0, `${name} should have cosigners`);
-          assert(cosigners.length >= txInfo.expectedCosigners, 
-            `${name} should have at least ${txInfo.expectedCosigners} cosigners`);
-          
+          assert(
+            cosigners.length >= txInfo.expectedCosigners,
+            `${name} should have at least ${txInfo.expectedCosigners} cosigners`,
+          );
+
           // Check for unique cosigners
-          const uniqueCosigners = new Set(cosigners.filter(c => c.cosigner).map(c => c.cosigner));
+          const uniqueCosigners = new Set(cosigners.filter((c) => c.cosigner).map((c) => c.cosigner));
           console.log(`    Found ${cosigners.length} cosigners (${uniqueCosigners.size} unique) ✓`);
-          
+
           // Verify all have valid addresses
           for (const cosigner of cosigners) {
             assert(cosigner.address, 'Each cosigner should have address');
@@ -184,14 +194,14 @@ async function testCosignerEdgeCases() {
     assert(Array.isArray(emptyCosigners), 'Should return array');
     assert(emptyCosigners.length === 0, 'Empty input should return empty array');
     console.log('  Empty array: Returns empty result ✓');
-    
+
     // Test script with empty chunks
     const emptyChunksScript = new Script();
     emptyChunksScript.chunks = [];
     const emptyChunksCosigners = mnee.parseCosignerScripts([emptyChunksScript]);
     assert(emptyChunksCosigners.length === 0, 'Empty chunks should return empty array');
     console.log('  Empty chunks script: No cosigners ✓');
-    
+
     // Test multiple P2PKH scripts
     const p2pkhScripts = [
       Script.fromHex('76a91489abcdefabbaabbaabbaabbaabbaabbaabbaabba88ac'),
@@ -199,10 +209,16 @@ async function testCosignerEdgeCases() {
     ];
     const p2pkhCosigners = mnee.parseCosignerScripts(p2pkhScripts);
     assert(p2pkhCosigners.length === 2, 'Should parse both P2PKH scripts');
-    assert(p2pkhCosigners.every(c => c.cosigner === ''), 'P2PKH should have empty cosigner');
-    assert(p2pkhCosigners.every(c => c.address), 'All should have addresses');
+    assert(
+      p2pkhCosigners.every((c) => c.cosigner === ''),
+      'P2PKH should have empty cosigner',
+    );
+    assert(
+      p2pkhCosigners.every((c) => c.address),
+      'All should have addresses',
+    );
     console.log('  Multiple P2PKH scripts: Parsed correctly ✓');
-    
+
     // Test mixed valid and invalid scripts
     const mixedScripts = [
       Script.fromHex('76a91489abcdefabbaabbaabbaabbaabbaabbaabbaabba88ac'), // Valid P2PKH
@@ -226,36 +242,35 @@ async function testCreatedTransactionCosigners() {
       { address: testConfig.addresses.emptyAddress, amount: 0.00001 },
       { address: testConfig.addresses.testAddress, amount: 0.00001 },
     ];
-    
-    const transfer = await mnee.transfer(requests, testConfig.wallet.testWif, false);
+
+    const transfer = await mnee.transfer(requests, testConfig.wallet.testWif, { broadcast: false });
     const parsed = await mnee.parseTxFromRawTx(transfer.rawtx, { includeRaw: true });
-    
+
     if (parsed.raw && parsed.raw.outputs) {
       const scripts = parsed.raw.outputs
-        .filter(output => output.scriptPubKey)
-        .map(output => Script.fromHex(output.scriptPubKey));
-      
+        .filter((output) => output.scriptPubKey)
+        .map((output) => Script.fromHex(output.scriptPubKey));
+
       const cosigners = mnee.parseCosignerScripts(scripts);
-      
+
       // All MNEE outputs should have cosigners
       assert(cosigners.length >= requests.length, 'Should have cosigners for all outputs');
-      
+
       // Verify expected cosigner
       const mneeConfig = await mnee.config();
       if (mneeConfig && mneeConfig.approver) {
-        const hasExpectedCosigner = cosigners.some(c => c.cosigner === mneeConfig.approver);
+        const hasExpectedCosigner = cosigners.some((c) => c.cosigner === mneeConfig.approver);
         assert(hasExpectedCosigner, 'Should have expected approver cosigner');
-        
+
         // Count cosigners with the approver
-        const approverCount = cosigners.filter(c => c.cosigner === mneeConfig.approver).length;
+        const approverCount = cosigners.filter((c) => c.cosigner === mneeConfig.approver).length;
         console.log(`  Found ${cosigners.length} cosigners (${approverCount} with approver) ✓`);
       }
-      
+
       // Verify addresses match recipients
-      const outputAddresses = cosigners.map(c => c.address);
+      const outputAddresses = cosigners.map((c) => c.address);
       for (const req of requests) {
-        assert(outputAddresses.includes(req.address), 
-          `Output addresses should include recipient ${req.address}`);
+        assert(outputAddresses.includes(req.address), `Output addresses should include recipient ${req.address}`);
       }
       console.log('  Recipients addresses found in outputs ✓');
     }
@@ -269,53 +284,54 @@ async function testCreatedTransactionCosigners() {
 async function testUtxoCosignerParsing() {
   try {
     const utxos = await mnee.getUtxos(testConfig.addresses.testAddress);
-    
+
     if (utxos.length > 0) {
       console.log(`  Testing ${utxos.length} UTXOs`);
-      
+
       const scripts = [];
       let skippedCount = 0;
-      
+
       // Convert UTXO scripts (may be base64) to Script objects
-      for (const utxo of utxos.slice(0, 10)) { // Test first 10
+      for (const utxo of utxos.slice(0, 10)) {
+        // Test first 10
         if (utxo.script) {
           try {
             let scriptHex = utxo.script;
-            
+
             // Check if base64 encoded
             if (utxo.script.length % 4 === 0 && /^[A-Za-z0-9+/]+=*$/.test(utxo.script)) {
               const buffer = Buffer.from(utxo.script, 'base64');
               scriptHex = buffer.toString('hex');
             }
-            
+
             scripts.push(Script.fromHex(scriptHex));
           } catch (e) {
             skippedCount++;
           }
         }
       }
-      
+
       if (scripts.length > 0) {
         const cosigners = mnee.parseCosignerScripts(scripts);
-        
+
         // All MNEE UTXOs should have cosigner scripts
         assert(cosigners.length === scripts.length, 'All UTXO scripts should parse');
-        
+
         // Check for expected cosigner
         const mneeConfig = await mnee.config();
         if (mneeConfig && mneeConfig.approver) {
-          const withApprover = cosigners.filter(c => c.cosigner === mneeConfig.approver).length;
+          const withApprover = cosigners.filter((c) => c.cosigner === mneeConfig.approver).length;
           assert(withApprover > 0, 'Should have at least one UTXO with approver');
           console.log(`  Parsed ${cosigners.length} UTXOs (${withApprover} with approver) ✓`);
         }
-        
+
         // Verify all addresses are valid
         for (const cosigner of cosigners) {
           assert(cosigner.address, 'Each UTXO should have address');
           assert(cosigner.address.startsWith('1'), 'Address should be valid Bitcoin format');
         }
       }
-      
+
       if (skippedCount > 0) {
         console.log(`  Skipped ${skippedCount} invalid UTXO scripts`);
       }
@@ -336,7 +352,7 @@ async function runTests() {
   try {
     // Fetch config first
     await mnee.config();
-    
+
     console.log('Test 16.1: Parse cosigner scripts from known transactions');
     await testKnownTransactionCosigners();
     console.log('✅ Test 16.1 passed\n');

@@ -18,15 +18,15 @@ const TEST_WIF = testConfig.wallet.testWif;
 async function testBasicTransferMulti() {
   // First get UTXOs for the test address
   const utxos = await mnee.getUtxos(TEST_ADDRESS);
-  
+
   if (utxos.length === 0) {
     console.log('  ⚠️  No UTXOs available for test address, skipping test');
     return;
   }
 
   // find a utxo that has enough balance
-  const utxo = utxos.find(u => u.data.bsv21.amt >= 1500);
-  
+  const utxo = utxos.find((u) => u.data.bsv21.amt >= 1500);
+
   const options = {
     inputs: [
       {
@@ -45,23 +45,23 @@ async function testBasicTransferMulti() {
   };
 
   try {
-    const result = await mnee.transferMulti(options, false);
-    
+    const result = await mnee.transferMulti(options, { broadcast: false });
+
     assert(result.rawtx, 'Should return raw transaction');
-    assert(!result.txid, 'Should not have txid when broadcast is false');
+    assert(!result.ticketId, 'Should not have ticketId when broadcast is false');
     assert(!result.error, 'Should not have error for valid transfer');
-    
+
     console.log('  TransferMulti created successfully');
     console.log(`  Raw transaction length: ${result.rawtx.length} characters`);
-    
+
     // Validate the created transaction
     const isValid = await mnee.validateMneeTx(result.rawtx, options.recipients);
     assert(isValid === true, 'Created transaction should be valid');
-    
+
     // Parse to verify outputs
     const parsedTx = await mnee.parseTxFromRawTx(result.rawtx);
     assert(parsedTx.outputs && parsedTx.outputs.length >= 2, 'Should have recipient and change outputs');
-    
+
     return result.rawtx;
   } catch (error) {
     console.log(`  TransferMulti failed: ${error.message}`);
@@ -72,7 +72,7 @@ async function testBasicTransferMulti() {
 // Test 7.2: TransferMulti with multiple inputs from same address
 async function testMultipleInputs() {
   const utxos = await mnee.getUtxos(TEST_ADDRESS);
-  
+
   if (utxos.length < 2) {
     console.log('  ⚠️  Not enough UTXOs for multiple input test, skipping');
     return;
@@ -102,13 +102,13 @@ async function testMultipleInputs() {
   };
 
   try {
-    const result = await mnee.transferMulti(options, false);
-    
+    const result = await mnee.transferMulti(options, { broadcast: false });
+
     assert(result.rawtx, 'Should return raw transaction');
     assert(!result.error, 'Should not have error');
-    
+
     console.log('  Multiple inputs transfer created successfully');
-    
+
     // Verify inputs were used
     const parsedTx = await mnee.parseTxFromRawTx(result.rawtx);
     console.log(`  Transaction uses ${parsedTx.inputs.length} inputs`);
@@ -120,7 +120,7 @@ async function testMultipleInputs() {
 // Test 7.3: TransferMulti with multiple recipients
 async function testMultipleRecipients() {
   const utxos = await mnee.getUtxos(TEST_ADDRESS);
-  
+
   if (utxos.length === 0) {
     console.log('  ⚠️  No UTXOs available, skipping test');
     return;
@@ -148,20 +148,22 @@ async function testMultipleRecipients() {
   };
 
   try {
-    const result = await mnee.transferMulti(options, false);
-    
+    const result = await mnee.transferMulti(options, { broadcast: false });
+
     assert(result.rawtx, 'Should return raw transaction');
     assert(!result.error, 'Should not have error');
-    
+
     // Verify all recipients have outputs
     const parsedTx = await mnee.parseTxFromRawTx(result.rawtx);
     for (const recipient of options.recipients) {
-      const output = parsedTx.outputs.find(o => o.address === recipient.address);
+      const output = parsedTx.outputs.find((o) => o.address === recipient.address);
       assert(output, `Should have output for recipient ${recipient.address}`);
-      assert(output.amount === mnee.toAtomicAmount(recipient.amount), 
-        `Output amount should match for ${recipient.address}`);
+      assert(
+        output.amount === mnee.toAtomicAmount(recipient.amount),
+        `Output amount should match for ${recipient.address}`,
+      );
     }
-    
+
     console.log('  Multiple recipients transfer created successfully');
   } catch (error) {
     console.log(`  Multiple recipients transfer failed: ${error.message}`);
@@ -187,12 +189,12 @@ async function testInvalidUtxo() {
   };
 
   try {
-    const result = await mnee.transferMulti(options, false);
-    
+    const result = await mnee.transferMulti(options, { broadcast: false });
+
     assert(result.error, 'Should have error for invalid UTXO');
     assert(!result.rawtx, 'Should not have rawtx when error occurs');
-    assert(!result.txid, 'Should not have txid when error occurs');
-    
+    assert(!result.ticketId, 'Should not have ticketId when error occurs');
+
     console.log(`  Invalid UTXO error: "${result.error}"`);
   } catch (error) {
     console.log(`  TransferMulti threw error for invalid UTXO: "${error.message}"`);
@@ -202,7 +204,7 @@ async function testInvalidUtxo() {
 // Test 7.5: TransferMulti with mismatched WIF
 async function testMismatchedWif() {
   const utxos = await mnee.getUtxos(TEST_ADDRESS);
-  
+
   if (utxos.length === 0) {
     console.log('  ⚠️  No UTXOs available, skipping test');
     return;
@@ -226,8 +228,8 @@ async function testMismatchedWif() {
 
   let errorOccurred = false;
   try {
-    const result = await mnee.transferMulti(options, false);
-    
+    const result = await mnee.transferMulti(options, { broadcast: false });
+
     if (result.error) {
       errorOccurred = true;
       console.log(`  Mismatched WIF error: "${result.error}"`);
@@ -238,14 +240,14 @@ async function testMismatchedWif() {
     errorOccurred = true;
     console.log(`  TransferMulti threw error for mismatched WIF: "${error.message}"`);
   }
-  
+
   assert(errorOccurred, 'Mismatched WIF should cause an error');
 }
 
 // Test 7.6: TransferMulti with multiple change addresses
 async function testMultipleChangeAddresses() {
   const utxos = await mnee.getUtxos(TEST_ADDRESS);
-  
+
   if (utxos.length === 0) {
     console.log('  ⚠️  No UTXOs available, skipping test');
     return;
@@ -278,11 +280,11 @@ async function testMultipleChangeAddresses() {
   };
 
   try {
-    const result = await mnee.transferMulti(options, false);
-    
+    const result = await mnee.transferMulti(options, { broadcast: false });
+
     if (result.rawtx) {
       console.log('  Multiple change addresses handled');
-      
+
       // Verify change outputs
       const parsedTx = await mnee.parseTxFromRawTx(result.rawtx);
       console.log(`  Transaction has ${parsedTx.outputs.length} outputs`);
@@ -308,8 +310,8 @@ async function testEmptyInputs() {
 
   let errorOccurred = false;
   try {
-    const result = await mnee.transferMulti(options, false);
-    
+    const result = await mnee.transferMulti(options, { broadcast: false });
+
     assert(result.error || !result.rawtx, 'Should fail with empty inputs');
     errorOccurred = true;
     console.log(`  Empty inputs handled: ${result.error || 'rejected'}`);
@@ -317,14 +319,14 @@ async function testEmptyInputs() {
     errorOccurred = true;
     console.log(`  TransferMulti threw error for empty inputs: "${error.message}"`);
   }
-  
+
   assert(errorOccurred, 'Empty inputs should cause an error');
 }
 
 // Test 7.8: TransferMulti with empty recipients
 async function testEmptyRecipients() {
   const utxos = await mnee.getUtxos(TEST_ADDRESS);
-  
+
   if (utxos.length === 0) {
     console.log('  ⚠️  No UTXOs available, using dummy data');
   }
@@ -342,8 +344,8 @@ async function testEmptyRecipients() {
 
   let errorOccurred = false;
   try {
-    const result = await mnee.transferMulti(options, false);
-    
+    const result = await mnee.transferMulti(options, { broadcast: false });
+
     assert(result.error || !result.rawtx, 'Should fail with empty recipients');
     errorOccurred = true;
     console.log(`  Empty recipients handled: ${result.error || 'rejected'}`);
@@ -351,7 +353,7 @@ async function testEmptyRecipients() {
     errorOccurred = true;
     console.log(`  TransferMulti threw error for empty recipients: "${error.message}"`);
   }
-  
+
   assert(errorOccurred, 'Empty recipients should cause an error');
 }
 
@@ -362,11 +364,11 @@ async function testInvalidWifInInput() {
     { wif: 'L1z7N5Qkpkz93odzExb8DNyee2CRQAXsqWX3WQb2hpsbGsWAPeb', desc: 'Missing last character' },
     { wif: '', desc: 'Empty string' },
     { wif: null, desc: 'Null value' },
-    { wif: 123, desc: 'Number instead of string' }
+    { wif: 123, desc: 'Number instead of string' },
   ];
 
   console.log('  Testing various invalid WIF formats:');
-  
+
   for (const { wif, desc } of invalidWifs) {
     const options = {
       inputs: [
@@ -386,7 +388,7 @@ async function testInvalidWifInInput() {
 
     try {
       const result = await mnee.transferMulti(options, false);
-      
+
       if (result.error) {
         console.log(`    ${desc}: "${result.error}"`);
       } else {
@@ -405,16 +407,16 @@ async function testInvalidRecipientAddresses() {
     { address: '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNx', desc: 'Wrong checksum' },
     { address: '', desc: 'Empty string' },
     { address: null, desc: 'Null value' },
-    { address: 123, desc: 'Number instead of string' }
+    { address: 123, desc: 'Number instead of string' },
   ];
 
   console.log('  Testing various invalid recipient addresses:');
-  
+
   const utxos = await mnee.getUtxos(TEST_ADDRESS);
   if (utxos.length === 0) {
     console.log('    ⚠️  No UTXOs available, using dummy data');
   }
-  
+
   for (const { address, desc } of invalidAddresses) {
     const options = {
       inputs: [
@@ -433,8 +435,8 @@ async function testInvalidRecipientAddresses() {
     };
 
     try {
-      const result = await mnee.transferMulti(options, false);
-      
+      const result = await mnee.transferMulti(options, { broadcast: false });
+
       if (result.error) {
         console.log(`    ${desc}: "${result.error}"`);
       } else {
@@ -456,16 +458,16 @@ async function testInvalidAmounts() {
     { amount: null, desc: 'Null value' },
     { amount: undefined, desc: 'Undefined value' },
     { amount: NaN, desc: 'NaN value' },
-    { amount: Infinity, desc: 'Infinity value' }
+    { amount: Infinity, desc: 'Infinity value' },
   ];
 
   console.log('  Testing various invalid amounts:');
-  
+
   const utxos = await mnee.getUtxos(TEST_ADDRESS);
   if (utxos.length === 0) {
     console.log('    ⚠️  No UTXOs available, using dummy data');
   }
-  
+
   for (const { amount, desc } of invalidAmounts) {
     const options = {
       inputs: [
@@ -484,8 +486,8 @@ async function testInvalidAmounts() {
     };
 
     try {
-      const result = await mnee.transferMulti(options, false);
-      
+      const result = await mnee.transferMulti(options, { broadcast: false });
+
       if (result.error) {
         console.log(`    ${desc}: "${result.error}"`);
       } else {
@@ -500,7 +502,7 @@ async function testInvalidAmounts() {
 // Test 7.12: TransferMulti with missing required fields
 async function testMissingRequiredFields() {
   console.log('  Testing missing required fields:');
-  
+
   // Missing txid in input
   let options = {
     inputs: [
@@ -518,7 +520,7 @@ async function testMissingRequiredFields() {
   };
 
   try {
-    const result = await mnee.transferMulti(options, false);
+    const result = await mnee.transferMulti(options, { broadcast: false });
     console.log(`    Missing txid: "${result.error || 'No error (FAIL)'}"`);
   } catch (error) {
     console.log(`    Missing txid: Exception - "${error.message}"`);
@@ -541,7 +543,7 @@ async function testMissingRequiredFields() {
   };
 
   try {
-    const result = await mnee.transferMulti(options, false);
+    const result = await mnee.transferMulti(options, { broadcast: false });
     console.log(`    Missing vout: "${result.error || 'No error (FAIL)'}"`);
   } catch (error) {
     console.log(`    Missing vout: Exception - "${error.message}"`);
@@ -564,7 +566,7 @@ async function testMissingRequiredFields() {
   };
 
   try {
-    const result = await mnee.transferMulti(options, false);
+    const result = await mnee.transferMulti(options, { broadcast: false });
     console.log(`    Missing recipient address: "${result.error || 'No error (FAIL)'}"`);
   } catch (error) {
     console.log(`    Missing recipient address: Exception - "${error.message}"`);
@@ -587,7 +589,7 @@ async function testMissingRequiredFields() {
   };
 
   try {
-    const result = await mnee.transferMulti(options, false);
+    const result = await mnee.transferMulti(options, { broadcast: false });
     console.log(`    Missing recipient amount: "${result.error || 'No error (FAIL)'}"`);
   } catch (error) {
     console.log(`    Missing recipient amount: Exception - "${error.message}"`);
@@ -597,7 +599,7 @@ async function testMissingRequiredFields() {
 // Test 7.13: TransferMulti with invalid change address
 async function testInvalidChangeAddress() {
   const utxos = await mnee.getUtxos(TEST_ADDRESS);
-  
+
   if (utxos.length === 0) {
     console.log('  ⚠️  No UTXOs available, skipping test');
     return;
@@ -624,7 +626,7 @@ async function testInvalidChangeAddress() {
   };
 
   try {
-    const result = await mnee.transferMulti(options, false);
+    const result = await mnee.transferMulti(options, { broadcast: false });
     console.log(`    Invalid single change address: "${result.error || 'No error (FAIL)'}"`);
   } catch (error) {
     console.log(`    Invalid single change address: Exception - "${error.message}"`);
@@ -654,7 +656,7 @@ async function testInvalidChangeAddress() {
   };
 
   try {
-    const result = await mnee.transferMulti(options, false);
+    const result = await mnee.transferMulti(options, { broadcast: false });
     console.log(`    Invalid change address in array: "${result.error || 'No error (FAIL)'}"`);
   } catch (error) {
     console.log(`    Invalid change address in array: Exception - "${error.message}"`);
@@ -684,11 +686,96 @@ async function testInvalidChangeAddress() {
   };
 
   try {
-    const result = await mnee.transferMulti(options, false);
+    const result = await mnee.transferMulti(options, { broadcast: false });
     console.log(`    Change amount below minimum: "${result.error || 'No error (FAIL)'}"`);
   } catch (error) {
     console.log(`    Change amount below minimum: Exception - "${error.message}"`);
   }
+}
+
+// Test 7.14: TransferMulti with broadcast=true
+async function testTransferMultiWithBroadcast() {
+  console.log('  Testing transferMulti with actual broadcast to the network!');
+
+  const utxos = await mnee.getUtxos(TEST_ADDRESS);
+
+  if (utxos.length === 0) {
+    console.log('  ⚠️  No UTXOs available for broadcast test, skipping');
+    return;
+  }
+
+  // find a utxo that has enough balance
+  const utxo = utxos.find((u) => u.data.bsv21.amt >= 1500);
+
+  if (!utxo) {
+    console.log('  ⚠️  No UTXO with sufficient balance for broadcast test, skipping');
+    return;
+  }
+
+  const options = {
+    inputs: [
+      {
+        txid: utxo.txid,
+        vout: utxo.vout,
+        wif: TEST_WIF,
+      },
+    ],
+    recipients: [
+      {
+        address: '1525VDfA8swjDMLHjLRCCmPFsTJToarrA2',
+        amount: 0.01,
+      },
+      {
+        address: '1PpT4b8aQwgzQkauvrYnZGWfyE8e1rkE4H',
+        amount: 0.02,
+      },
+    ],
+    changeAddress: TEST_ADDRESS,
+  };
+
+  // First create transaction without broadcast to compare
+  const noBroadcastResult = await mnee.transferMulti(options, { broadcast: false });
+  assert(
+    noBroadcastResult.rawtx && !noBroadcastResult.ticketId,
+    'Without broadcast should return rawtx but no ticketId',
+  );
+
+  // IMPORTANT: The following code would actually broadcast and spend funds!
+  // Uncomment only if you want to test real broadcasting in sandbox/production
+
+  try {
+    const broadcastResult = await mnee.transferMulti(options, { broadcast: true });
+
+    // When broadcast=true succeeds
+    if (broadcastResult.ticketId) {
+      assert(broadcastResult.ticketId, 'Broadcast result should have ticketId');
+      assert(!broadcastResult.error, 'Successful broadcast should not have error');
+      assert(typeof broadcastResult.ticketId === 'string', 'ticketId should be a string');
+      assert(broadcastResult.ticketId.length === 36, 'ticketId should be a uuid');
+      console.log(`  ✓ Transaction broadcast successfully: ${broadcastResult.ticketId}`);
+
+      // Wait for transaction to process
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+
+      const txStatus = await mnee.getTxStatus(broadcastResult.ticketId);
+      assert(txStatus, 'Broadcast transaction status should be retrievable');
+      console.log(`  ✓ Transaction status: ${txStatus.status}`);
+      console.log(`  ✓ Ticket ID: ${txStatus.id}`);
+      console.log(`  ✓ Transaction ID: ${txStatus.tx_id}`);
+    }
+    // When broadcast fails
+    else if (broadcastResult.error) {
+      assert(broadcastResult.error, 'Failed broadcast should have error message');
+      assert(!broadcastResult.ticketId, 'Failed broadcast should not have ticketId');
+      console.log(`  ✓ Broadcast failed as expected: ${broadcastResult.error}`);
+    } else {
+      assert.fail('Broadcast result should have either ticketId or error');
+    }
+  } catch (error) {
+    console.log(`  ✓ Broadcast threw error (may be expected): ${error.message}`);
+  }
+
+  console.log('  ✓ Broadcast test structure verified');
 }
 
 // Run tests
@@ -701,10 +788,10 @@ async function runTests() {
     // Check balance
     const balance = await mnee.balance(TEST_ADDRESS);
     console.log(`Current balance: ${balance.decimalAmount} MNEE`);
-    
+
     const utxos = await mnee.getUtxos(TEST_ADDRESS);
     console.log(`Available UTXOs: ${utxos.length}\n`);
-    
+
     if (balance.decimalAmount === 0) {
       console.log('⚠️  Warning: Test address has zero balance. Most tests will be skipped.\n');
     }
@@ -760,6 +847,10 @@ async function runTests() {
     console.log('Test 7.13: TransferMulti with invalid change address');
     await testInvalidChangeAddress();
     console.log('✅ Test 7.13 passed\n');
+
+    console.log('Test 7.14: TransferMulti with broadcast');
+    await testTransferMultiWithBroadcast();
+    console.log('✅ Test 7.14 passed\n');
 
     console.log('All tests passed! ✅');
   } catch (error) {

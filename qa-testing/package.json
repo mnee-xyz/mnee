@@ -13,10 +13,13 @@
     "test:config": "node config.js",
     "test:transfer": "node transfer.js",
     "test:transferMulti": "node transferMulti.js",
-    "test:all": "npm run test:balance && npm run test:balances && npm run test:batch && npm run test:config"
+    "test:all": "npm run test:balance && npm run test:balances && npm run test:batch && npm run test:config",
+    "webhook": "node webhook-server.js",
+    "test-webhook": "node test-webhook.js"
   },
   "dependencies": {
-    "mnee": "file:versions/qa-mnee-0.0.3.tgz"
+    "express": "^4.21.2",
+    "mnee": "file:versions/qa-mnee-0.0.4.tgz"
   },
   "engines": {
     "node": ">=16.14.0"

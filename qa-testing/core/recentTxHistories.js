@@ -46,11 +46,11 @@ async function testMultipleAddressHistories() {
   }
 }
 
-// Test 12.2: Test with different parameters per address
+// Test 12.2: Test with different parameters per address (including order)
 async function testDifferentParametersPerAddress() {
   const params = [
-    { address: TEST_ADDRESS, limit: 5 },
-    { address: EMPTY_ADDRESS, limit: 10 },
+    { address: TEST_ADDRESS, limit: 5, order: 'asc' },
+    { address: EMPTY_ADDRESS, limit: 10, order: 'desc' },
     { address: '159zQuZRmHUrZArYTFgogQxndrAeSsbTtJ', limit: 15 },
   ];
 
@@ -63,8 +63,26 @@ async function testDifferentParametersPerAddress() {
     assert(histories[0].history.length <= 5, 'First address should respect limit of 5');
     assert(histories[1].history.length <= 10, 'Second address should respect limit of 10');
 
-    console.log(`  Address 1 (limit 5): ${histories[0].history.length} transactions`);
-    console.log(`  Address 2 (limit 10): ${histories[1].history.length} transactions`);
+    console.log(`  Address 1 (limit 5, order asc): ${histories[0].history.length} transactions`);
+    console.log(`  Address 2 (limit 10, order desc): ${histories[1].history.length} transactions`);
+    console.log(`  Address 3 (limit 15, default order): ${histories[2].history.length} transactions`);
+    
+    // Verify order for addresses with transactions
+    if (histories[0].history.length > 1) {
+      const scores = histories[0].history.map(tx => tx.score);
+      for (let i = 1; i < scores.length; i++) {
+        assert(scores[i] >= scores[i-1], 'Address 1 scores should be in ascending order');
+      }
+      console.log('    ✓ Address 1 transactions in ascending order');
+    }
+    
+    if (histories[1].history.length > 1) {
+      const scores = histories[1].history.map(tx => tx.score);
+      for (let i = 1; i < scores.length; i++) {
+        assert(scores[i] <= scores[i-1], 'Address 2 scores should be in descending order');
+      }
+      console.log('    ✓ Address 2 transactions in descending order');
+    }
   } catch (error) {
     console.log(`  Different parameters test error: ${error.message}`);
   }
@@ -305,6 +323,35 @@ async function testInvalidParameterValues() {
     } catch (error) {
       console.log(`    FromScore ${params[0].fromScore}: Correctly threw error - "${error.message}"`);
       assert(error.message.includes('Invalid fromScore'), 'Error message should indicate invalid fromScore');
+    }
+  }
+  
+  // Test invalid order values
+  const invalidOrderParams = [
+    [{ address: TEST_ADDRESS, order: 'invalid' }],
+    [{ address: TEST_ADDRESS, order: 123 }],
+    [{ address: TEST_ADDRESS, order: true }],
+    [{ address: TEST_ADDRESS, order: {} }],
+    [{ address: TEST_ADDRESS, order: [] }],
+    [{ address: TEST_ADDRESS, order: null }],
+  ];
+
+  for (const params of invalidOrderParams) {
+    try {
+      const histories = await mnee.recentTxHistories(params);
+      
+      // Should not reach here
+      console.log(`    Order ${JSON.stringify(params[0].order)}: ERROR - returned result instead of throwing`);
+      assert.fail(`Should throw error for order ${JSON.stringify(params[0].order)}`);
+    } catch (error) {
+      // Check if this is our assert.fail error
+      if (error.message.startsWith('Should throw error for order')) {
+        throw error; // Re-throw the assert.fail error
+      }
+      console.log(`    Order ${JSON.stringify(params[0].order)}: Correctly threw error - "${error.message}"`);
+      assert(error.message.includes('Invalid order') || error.message.includes('400') || 
+             error.message.includes("Must be 'asc' or 'desc'"), 
+             'Error message should indicate invalid order');
     }
   }
 }

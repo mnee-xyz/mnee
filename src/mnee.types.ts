@@ -114,7 +114,30 @@ export interface Inscription {
   parent?: string;
 }
 
-export type TransferResponse = { rawtx: string; txid?: string };
+export type BalanceResponse = Array<{
+  address: string;
+  amt: number;
+  precised: number;
+}>;
+
+export type TransferResponse = { ticketId?: string; rawtx?: string };
+
+export type TransferStatus = {
+  id: string;
+  tx_id: string;
+  tx_hex: string;
+  action_requested: 'transfer';
+  status: 'BROADCASTING' | 'SUCCESS' | 'MINED' | 'FAILED';
+  createdAt: string;
+  updatedAt: string;
+  errors: string | null;
+};
+
+export type TransferOptions = {
+  broadcast?: boolean;
+  callbackUrl?: string;
+  // callbackSecret?: string; // TODO: Add this back in if/when we have a way to generate a secret
+};
 
 export interface TransferMultiOptions {
   inputs: Array<{
@@ -212,6 +235,7 @@ export interface AddressHistoryParams {
   address: string;
   fromScore?: number;
   limit?: number;
+  order?: 'asc' | 'desc';
 }
 
 export interface ProcessedInput {

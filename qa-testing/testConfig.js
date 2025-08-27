@@ -7,10 +7,10 @@ export default {
     invalidAddress: 'invalid-address',
   },
   balances: {
-    testAddressBalance: 1453000,
-    testAddressDecimalBalance: 14.53,
-    testAddressTwoBalance: 2765725,
-    testAddressTwoDecimalBalance: 27.65725,
+    testAddressBalance: 1900054,
+    testAddressDecimalBalance: 19.00054,
+    testAddressTwoBalance: 2764371,
+    testAddressTwoDecimalBalance: 27.64371,
   },
   wallet: {
     testWif: 'L1z7N5Qkpkz93odzExb8DNyee2CRQAXsqWX3WQb2hpsbGsWAPeb1',

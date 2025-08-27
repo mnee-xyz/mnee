@@ -25,24 +25,26 @@ const knownTransactions = {
     deploy: 'ae59f3b898ec61acbdb6cc7a245fabeded0c094bf046f35206a3aec60ef88127',
     mint: 'f7ca34a9c0319bfb837a56ee7375e8246229f5fefbdaaaf9fdec97493d428bee',
     transfer: 'e496b2984a6b780a453559125540ec1e1c99154cdbc1cef2d2f6bea37d6dedd9',
-  }
+  },
 };
 
 // Test 14.1: Parse raw transaction from created transfer
 async function testParseCreatedTransfer() {
   try {
     // Create a transfer transaction
-    const request = [{
-      address: testConfig.addresses.emptyAddress,
-      amount: 0.01,
-    }];
-    
-    const transfer = await mnee.transfer(request, TEST_WIF, false);
+    const request = [
+      {
+        address: testConfig.addresses.emptyAddress,
+        amount: 0.01,
+      },
+    ];
+
+    const transfer = await mnee.transfer(request, TEST_WIF, { broadcast: false });
     assert(transfer.rawtx, 'Should create raw transaction');
-    
+
     // Parse the raw transaction
     const parsed = await mnee.parseTxFromRawTx(transfer.rawtx);
-    
+
     // Verify response structure
     assert(parsed.txid, 'Should have txid');
     assert(parsed.environment === config.environment, 'Environment should match');
@@ -52,12 +54,12 @@ async function testParseCreatedTransfer() {
     assert(typeof parsed.isValid === 'boolean', 'isValid should be boolean');
     assert(typeof parsed.inputTotal === 'string', 'inputTotal should be string');
     assert(typeof parsed.outputTotal === 'string', 'outputTotal should be string');
-    
+
     // Verify the transfer output exists
-    const transferOutput = parsed.outputs.find(o => o.address === request[0].address);
+    const transferOutput = parsed.outputs.find((o) => o.address === request[0].address);
     assert(transferOutput, 'Should have output for recipient');
     assert(transferOutput.amount === mnee.toAtomicAmount(request[0].amount), 'Output amount should match request');
-    
+
     console.log(`  Parsed created transfer transaction`);
     console.log(`  Transaction ID: ${parsed.txid.substring(0, 10)}...`);
     console.log(`  Type: ${parsed.type}, Valid: ${parsed.isValid}`);
@@ -72,29 +74,31 @@ async function testParseCreatedTransfer() {
 async function testParseWithIncludeRaw() {
   try {
     // Create a transaction
-    const request = [{
-      address: testConfig.addresses.emptyAddress,
-      amount: 0.01,
-    }];
-    
-    const transfer = await mnee.transfer(request, TEST_WIF, false);
-    
+    const request = [
+      {
+        address: testConfig.addresses.emptyAddress,
+        amount: 0.01,
+      },
+    ];
+
+    const transfer = await mnee.transfer(request, TEST_WIF, { broadcast: false });
+
     // Parse with includeRaw
     const parsed = await mnee.parseTxFromRawTx(transfer.rawtx, { includeRaw: true });
-    
+
     // Should have all standard fields
     assert(parsed.txid, 'Should have txid');
     assert(parsed.inputs && parsed.outputs, 'Should have inputs and outputs');
-    
+
     // Should also have raw data
     assert(parsed.raw, 'Should have raw data when includeRaw is true');
     assert(parsed.raw.txHex === transfer.rawtx, 'Raw hex should match input');
     assert(Array.isArray(parsed.raw.inputs), 'Raw should have inputs array');
     assert(Array.isArray(parsed.raw.outputs), 'Raw should have outputs array');
-    
+
     console.log(`  Parsed with raw data included`);
     console.log(`  Raw tx hex length: ${parsed.raw.txHex.length} characters`);
-    
+
     // Verify raw input structure
     if (parsed.raw.inputs.length > 0) {
       const rawInput = parsed.raw.inputs[0];
@@ -104,7 +108,7 @@ async function testParseWithIncludeRaw() {
       assert(typeof rawInput.sequence === 'number', 'Raw input should have sequence');
       assert(typeof rawInput.satoshis === 'number', 'Raw input should have satoshis');
     }
-    
+
     // Verify raw output structure
     if (parsed.raw.outputs.length > 0) {
       const rawOutput = parsed.raw.outputs[0];
@@ -118,12 +122,13 @@ async function testParseWithIncludeRaw() {
 
 // Test 14.3: Parse invalid raw transaction hex
 async function testParseInvalidRawTx() {
-  const invalidRawTx = '01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0100f2052a010000001976a914c825a1ecf2a6830c4401620c3a16f1995057c2ab88acBADBADBAD';
-  
+  const invalidRawTx =
+    '01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0100f2052a010000001976a914c825a1ecf2a6830c4401620c3a16f1995057c2ab88acBADBADBAD';
+
   let errorOccurred = false;
   try {
     const parsed = await mnee.parseTxFromRawTx(invalidRawTx);
-    
+
     // Might return with isValid = false
     if (parsed && parsed.isValid === false) {
       console.log(`  Invalid raw tx returned isValid: false`);
@@ -132,14 +137,14 @@ async function testParseInvalidRawTx() {
     errorOccurred = true;
     console.log(`  Invalid raw tx error: "${error.message}"`);
   }
-  
+
   assert(errorOccurred || true, 'Invalid raw tx handled appropriately');
 }
 
 // Test 14.4: Parse malformed hex string
 async function testParseMalformedHex() {
   const malformedHex = 'not-a-valid-hex-string';
-  
+
   let errorOccurred = false;
   try {
     await mnee.parseTxFromRawTx(malformedHex);
@@ -147,7 +152,7 @@ async function testParseMalformedHex() {
     errorOccurred = true;
     console.log(`  Malformed hex error: "${error.message}"`);
   }
-  
+
   assert(errorOccurred, 'Malformed hex should cause an error');
 }
 
@@ -162,7 +167,7 @@ async function testParseEmptyString() {
     errorOccurred = true;
     console.log(`  Empty string error: "${error.message}"`);
   }
-  
+
   assert(errorOccurred, 'Empty string should cause an error');
 }
 
@@ -171,17 +176,17 @@ async function testCompareParsingMethods() {
   try {
     // Get a known transaction ID to test
     const history = await mnee.recentTxHistory(testConfig.addresses.testAddress, undefined, 1);
-    
+
     if (history.history.length > 0) {
       const txid = history.history[0].txid;
-      
+
       // Parse using parseTx with includeRaw
       const parsedFromId = await mnee.parseTx(txid, { includeRaw: true });
-      
+
       if (parsedFromId.raw && parsedFromId.raw.txHex) {
         // Parse the same transaction using parseTxFromRawTx
         const parsedFromRaw = await mnee.parseTxFromRawTx(parsedFromId.raw.txHex);
-        
+
         // Compare results (excluding raw data)
         assert(parsedFromId.txid === parsedFromRaw.txid, 'Transaction IDs should match');
         assert(parsedFromId.type === parsedFromRaw.type, 'Transaction types should match');
@@ -191,7 +196,7 @@ async function testCompareParsingMethods() {
         assert(parsedFromId.outputTotal === parsedFromRaw.outputTotal, 'Output totals should match');
         assert(parsedFromId.inputs.length === parsedFromRaw.inputs.length, 'Input counts should match');
         assert(parsedFromId.outputs.length === parsedFromRaw.outputs.length, 'Output counts should match');
-        
+
         console.log(`  Both parsing methods return consistent results ✓`);
         console.log(`  Tested with txid: ${txid.substring(0, 10)}...`);
       }
@@ -207,23 +212,23 @@ async function testCompareParsingMethods() {
 async function testKnownTransactionTypes() {
   // Test a few known transactions if we're in the right environment
   const transactions = knownTransactions[config.environment];
-  
+
   if (!transactions) {
     console.log(`  No known transactions for ${config.environment} environment`);
     return;
   }
-  
+
   console.log(`  Testing known ${config.environment} transactions:`);
-  
+
   for (const [type, txid] of Object.entries(transactions)) {
     try {
       // First get the raw tx
       const txWithRaw = await mnee.parseTx(txid, { includeRaw: true });
-      
+
       if (txWithRaw.raw && txWithRaw.raw.txHex) {
         // Parse from raw
         const parsed = await mnee.parseTxFromRawTx(txWithRaw.raw.txHex);
-        
+
         assert(parsed.type === type, `Transaction should be type ${type}, got ${parsed.type}`);
         assert(parsed.environment === config.environment, 'Environment should match');
         console.log(`    ${type}: ${txid.substring(0, 10)}... ✓`);
@@ -238,20 +243,22 @@ async function testKnownTransactionTypes() {
 async function testTransactionValidation() {
   try {
     // Create a valid transfer
-    const request = [{
-      address: testConfig.addresses.emptyAddress,
-      amount: 0.01,
-    }];
-    
-    const transfer = await mnee.transfer(request, TEST_WIF, false);
+    const request = [
+      {
+        address: testConfig.addresses.emptyAddress,
+        amount: 0.01,
+      },
+    ];
+
+    const transfer = await mnee.transfer(request, TEST_WIF, { broadcast: false });
     const parsed = await mnee.parseTxFromRawTx(transfer.rawtx);
-    
+
     assert(parsed.isValid === true, 'Created transaction should be valid');
-    
+
     // Verify validation with validateMneeTx
     const isValid = await mnee.validateMneeTx(transfer.rawtx, request);
     assert(isValid === true, 'Transaction should validate against request');
-    
+
     console.log(`  Transaction validation consistent between methods ✓`);
   } catch (error) {
     console.log(`  Transaction validation test error: ${error.message}`);
@@ -266,7 +273,7 @@ async function runTests() {
   try {
     // Fetch config first
     await mnee.config();
-    
+
     console.log('Test 14.1: Parse raw transaction from created transfer');
     await testParseCreatedTransfer();
     console.log('✅ Test 14.1 passed\n');

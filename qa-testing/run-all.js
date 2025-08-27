@@ -22,6 +22,7 @@ const tests = [
   { file: 'core/transfer.js', description: 'Single-source transfers' },
   { file: 'core/transferMulti.js', description: 'Multi-source transfers' },
   { file: 'core/submitRawTx.js', description: 'Raw transaction submission' },
+  { file: 'core/getTxStatus.js', description: 'Transaction status polling' },
   
   // Utility functions
   { file: 'core/toAtomicAmount.js', description: 'Decimal to atomic conversion' },
@@ -30,6 +31,7 @@ const tests = [
   // History operations
   { file: 'core/recentTxHistory.js', description: 'Single address history' },
   { file: 'core/recentTxHistories.js', description: 'Multiple address histories' },
+  { file: 'core/recentTxHistoriesDuplicates.js', description: 'Duplicate transaction detection' },
   
   // Parsing operations
   { file: 'core/parseTx.js', description: 'Transaction parsing by txid' },

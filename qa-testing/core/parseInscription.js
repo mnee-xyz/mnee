@@ -23,37 +23,37 @@ async function testKnownTransactionInscriptions() {
 
     for (const [type, txInfo] of Object.entries(transactions)) {
       console.log(`  Testing ${type} transaction: ${txInfo.txid}`);
-      
+
       const parsed = await mnee.parseTx(txInfo.txid, { includeRaw: true });
-      
+
       if (parsed.raw && parsed.raw.outputs) {
         let inscriptionCount = 0;
-        
+
         for (const output of parsed.raw.outputs) {
           if (output.scriptPubKey) {
             try {
               const script = Script.fromHex(output.scriptPubKey);
               const inscription = mnee.parseInscription(script);
-              
+
               if (inscription) {
                 inscriptionCount++;
-                
+
                 // Verify inscription structure
                 assert(inscription.file, 'Inscription should have file property');
                 assert(inscription.file.hash, 'File should have hash');
                 assert(typeof inscription.file.size === 'number', 'File should have size');
                 assert(inscription.file.type, 'File should have type');
                 assert(Array.isArray(inscription.file.content), 'File content should be array');
-                
+
                 // For MNEE inscriptions, verify the content
                 if (inscription.file.type === 'application/bsv-20') {
                   const contentStr = Buffer.from(inscription.file.content).toString('utf8');
                   const mneeData = JSON.parse(contentStr);
-                  
+
                   assert(mneeData.p === 'bsv-20', 'Protocol should be bsv-20');
                   assert(mneeData.id, 'Should have token ID');
                   assert(mneeData.op, 'Should have operation');
-                  
+
                   if (type === 'transfer') {
                     assert(mneeData.op === 'transfer', 'Transfer should have transfer op');
                   } else if (type === 'mint') {
@@ -66,7 +66,7 @@ async function testKnownTransactionInscriptions() {
             }
           }
         }
-        
+
         if (txInfo.hasInscriptions) {
           assert(inscriptionCount > 0, `${type} transaction should have inscriptions`);
           console.log(`    Found ${inscriptionCount} inscriptions ✓`);
@@ -86,28 +86,28 @@ async function testKnownTransactionInscriptions() {
 async function testScriptInscriptions() {
   try {
     const testScripts = knownTxs.testScripts;
-    
+
     for (const [name, scriptInfo] of Object.entries(testScripts)) {
       console.log(`  Testing ${name}: ${scriptInfo.description}`);
-      
+
       if (scriptInfo.hex) {
         try {
           const script = Script.fromHex(scriptInfo.hex);
           const inscription = mnee.parseInscription(script);
-          
+
           if (scriptInfo.hasInscription) {
             assert(inscription, `${name} should have inscription`);
-            
+
             // Verify MNEE inscription content
             if (inscription.file && inscription.file.content) {
               const contentStr = Buffer.from(inscription.file.content).toString('utf8');
               const data = JSON.parse(contentStr);
-              
+
               assert(data.p === 'bsv-20', 'Should be BSV-20 protocol');
               assert(data.op === 'transfer', 'Should be transfer operation');
               assert(data.amt, 'Should have amount');
               assert(data.id, 'Should have token ID');
-              
+
               console.log(`    Found MNEE inscription with amount ${data.amt} ✓`);
             }
           } else {
@@ -133,25 +133,25 @@ async function testScriptInscriptions() {
 async function testRawTransactionInscriptions() {
   try {
     const rawTxs = knownTxs.rawTransactions;
-    
+
     for (const [name, txInfo] of Object.entries(rawTxs)) {
       console.log(`  Testing ${name}: ${txInfo.description}`);
-      
+
       const parsed = await mnee.parseTxFromRawTx(txInfo.hex, { includeRaw: true });
-      
+
       if (parsed.raw && parsed.raw.outputs) {
         let inscriptionCount = 0;
         let mneeInscriptionCount = 0;
-        
+
         for (const output of parsed.raw.outputs) {
           if (output.scriptPubKey) {
             try {
               const script = Script.fromHex(output.scriptPubKey);
               const inscription = mnee.parseInscription(script);
-              
+
               if (inscription) {
                 inscriptionCount++;
-                
+
                 if (inscription.file && inscription.file.content) {
                   try {
                     const contentStr = Buffer.from(inscription.file.content).toString('utf8');
@@ -169,11 +169,13 @@ async function testRawTransactionInscriptions() {
             }
           }
         }
-        
+
         if (txInfo.hasInscriptions) {
           assert(inscriptionCount > 0, `${name} should have inscriptions`);
-          assert(inscriptionCount >= txInfo.expectedInscriptions, 
-            `${name} should have at least ${txInfo.expectedInscriptions} inscriptions`);
+          assert(
+            inscriptionCount >= txInfo.expectedInscriptions,
+            `${name} should have at least ${txInfo.expectedInscriptions} inscriptions`,
+          );
           console.log(`    Found ${inscriptionCount} inscriptions (${mneeInscriptionCount} MNEE) ✓`);
         } else {
           assert(inscriptionCount === 0, `${name} should not have inscriptions`);
@@ -195,20 +197,20 @@ async function testInscriptionEdgeCases() {
     const emptyInscription = mnee.parseInscription(emptyScript);
     assert(!emptyInscription, 'Empty script should not have inscription');
     console.log('  Empty script: No inscription ✓');
-    
+
     // Test script with minimal chunks
     const minimalScript = new Script();
     minimalScript.chunks = [];
     const minimalInscription = mnee.parseInscription(minimalScript);
     assert(!minimalInscription, 'Minimal script should not have inscription');
     console.log('  Minimal script: No inscription ✓');
-    
+
     // Test P2PKH script
     const p2pkhScript = Script.fromHex('76a91489abcdefabbaabbaabbaabbaabbaabbaabbaabba88ac');
     const p2pkhInscription = mnee.parseInscription(p2pkhScript);
     assert(!p2pkhInscription, 'P2PKH script should not have inscription');
     console.log('  P2PKH script: No inscription ✓');
-    
+
     // Test OP_RETURN script
     const opReturnScript = Script.fromHex('6a0b48656c6c6f20576f726c64');
     const opReturnInscription = mnee.parseInscription(opReturnScript);
@@ -224,48 +226,52 @@ async function testInscriptionEdgeCases() {
 async function testInscriptionContentParsing() {
   try {
     // Create a transfer to get a fresh MNEE inscription
-    const request = [{
-      address: testConfig.addresses.emptyAddress,
-      amount: 0.00001, // Minimal amount
-    }];
-    
-    const transfer = await mnee.transfer(request, testConfig.wallet.testWif, false);
+    const request = [
+      {
+        address: testConfig.addresses.emptyAddress,
+        amount: 0.00001, // Minimal amount
+      },
+    ];
+
+    const transfer = await mnee.transfer(request, testConfig.wallet.testWif, { broadcast: false });
     const parsed = await mnee.parseTxFromRawTx(transfer.rawtx, { includeRaw: true });
-    
+
     let foundValidMneeInscription = false;
-    
+
     if (parsed.raw && parsed.raw.outputs) {
       for (const output of parsed.raw.outputs) {
         if (output.scriptPubKey) {
           try {
             const script = Script.fromHex(output.scriptPubKey);
             const inscription = mnee.parseInscription(script);
-            
+
             if (inscription && inscription.file && inscription.file.content) {
               // Verify file properties
               assert(inscription.file.hash, 'File should have hash');
               assert(inscription.file.size > 0, 'File should have non-zero size');
               assert(inscription.file.type, 'File should have type');
-              
+
               // Try to parse as MNEE inscription
               try {
                 const contentStr = Buffer.from(inscription.file.content).toString('utf8');
                 const mneeData = JSON.parse(contentStr);
-                
+
                 if (mneeData.p === 'bsv-20') {
                   foundValidMneeInscription = true;
-                  
+
                   // Verify MNEE inscription structure
                   assert(mneeData.p === 'bsv-20', 'Protocol should be bsv-20');
                   assert(mneeData.op === 'transfer', 'Operation should be transfer');
                   assert(mneeData.id, 'Should have token ID');
                   assert(mneeData.amt, 'Should have amount');
                   assert(parseInt(mneeData.amt) > 0, 'Amount should be positive');
-                  
+
                   // Verify file type for MNEE
-                  assert(inscription.file.type === 'application/bsv-20', 
-                    'MNEE inscription should have correct content type');
-                  
+                  assert(
+                    inscription.file.type === 'application/bsv-20',
+                    'MNEE inscription should have correct content type',
+                  );
+
                   console.log(`  Found valid MNEE inscription:`);
                   console.log(`    Protocol: ${mneeData.p}`);
                   console.log(`    Operation: ${mneeData.op}`);
@@ -282,7 +288,7 @@ async function testInscriptionContentParsing() {
         }
       }
     }
-    
+
     assert(foundValidMneeInscription, 'Should find at least one valid MNEE inscription');
     console.log('  ✓ Successfully parsed MNEE inscription content');
   } catch (error) {
@@ -299,7 +305,7 @@ async function runTests() {
   try {
     // Fetch config first
     await mnee.config();
-    
+
     console.log('Test 15.1: Parse inscriptions from known transactions');
     await testKnownTransactionInscriptions();
     console.log('✅ Test 15.1 passed\n');

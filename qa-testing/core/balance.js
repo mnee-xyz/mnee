@@ -23,19 +23,16 @@ const TEST_ADDRESS = testConfig.addresses.testAddress;
 function updateTestConfig(newBalance) {
   const configPath = join(__dirname, '..', 'testConfig.js');
   let configContent = readFileSync(configPath, 'utf8');
-  
+
   // Update testAddressBalance (atomic amount)
-  configContent = configContent.replace(
-    /testAddressBalance:\s*\d+/,
-    `testAddressBalance: ${newBalance.amount}`
-  );
-  
+  configContent = configContent.replace(/testAddressBalance:\s*\d+/, `testAddressBalance: ${newBalance.amount}`);
+
   // Update testAddressDecimalBalance
   configContent = configContent.replace(
     /testAddressDecimalBalance:\s*[\d.]+/,
-    `testAddressDecimalBalance: ${newBalance.decimalAmount}`
+    `testAddressDecimalBalance: ${newBalance.decimalAmount}`,
   );
-  
+
   writeFileSync(configPath, configContent, 'utf8');
   console.log(`  ✓ Updated testConfig.js with new balance values`);
 }
@@ -57,11 +54,15 @@ async function testBalance() {
   console.log(`  Address: ${balance.address}`);
   console.log(`  MNEE Balance (atomic): ${balance.amount}`);
   console.log(`  MNEE Balance (decimal): ${balance.decimalAmount}`);
-  
+
   // Check if balance differs from config and update if needed
-  if (balance.amount !== testConfig.balances.testAddressBalance || 
-      balance.decimalAmount !== testConfig.balances.testAddressDecimalBalance) {
-    console.log(`  ⚠️  Balance changed from config (was ${testConfig.balances.testAddressBalance} atomic, ${testConfig.balances.testAddressDecimalBalance} decimal)`);
+  if (
+    balance.amount !== testConfig.balances.testAddressBalance ||
+    balance.decimalAmount !== testConfig.balances.testAddressDecimalBalance
+  ) {
+    console.log(
+      `  ⚠️  Balance changed from config (was ${testConfig.balances.testAddressBalance} atomic, ${testConfig.balances.testAddressDecimalBalance} decimal)`,
+    );
     updateTestConfig(balance);
   }
 }
@@ -71,6 +72,7 @@ async function testEmptyBalance() {
   // Use empty address from config
   const emptyAddress = testConfig.addresses.emptyAddress;
   const balance = await mnee.balance(emptyAddress);
+  console.log('balance', balance);
 
   // Assertions
   assert(balance !== undefined, 'Balance should not be undefined even for empty address');

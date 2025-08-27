@@ -25,22 +25,27 @@ async function testSubmitValidRawTx() {
 
   try {
     // Create a transaction without broadcasting
-    const createResult = await mnee.transfer(request, TEST_WIF, false);
+    const createResult = await mnee.transfer(request, TEST_WIF, { broadcast: false });
     assert(createResult.rawtx, 'Should create raw transaction');
 
     console.log('  Created test transaction');
     console.log(`  Raw tx length: ${createResult.rawtx.length} characters`);
 
-    // In a real test environment, we would submit this:
+    // Submit the raw transaction
     const submitResult = await mnee.submitRawTx(createResult.rawtx);
-    assert(submitResult.txid, 'Should have txid');
+    assert(submitResult.ticketId, 'Should have ticketId');
     assert(!submitResult.error, 'Should not have error');
-    console.log(`  Submitted txid: ${submitResult.txid}`);
+    console.log(`  Submitted ticketId: ${submitResult.ticketId}`);
 
-    // For testing purposes, we'll test with the pre-configured raw tx
-    // This avoids actually broadcasting and spending funds
-    // console.log('  Note: Not submitting to avoid spending funds in sandbox');
-    // console.log('  In production, submitRawTx would return: { txid: "..." } or { error: "..." }');
+    // Wait a bit for processing
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    // Check the status of the submitted transaction
+    const status = await mnee.getTxStatus(submitResult.ticketId);
+    console.log(`  Transaction status: ${status.status}`);
+    if (status.status === 'SUCCESS') {
+      console.log(`  Transaction ID: ${status.tx_id}`);
+    }
   } catch (error) {
     console.log(`  Valid raw tx test error: ${error.message}`);
   }
@@ -57,7 +62,7 @@ async function testSubmitInvalidRawTx() {
 
     // Should have an error
     assert(result.error, 'Should have error for invalid raw tx');
-    assert(!result.txid, 'Should not have txid when error occurs');
+    assert(!result.ticketId, 'Should not have ticketId when error occurs');
     assert(!result.rawtx, 'Should not return rawtx in response');
 
     console.log(`  Invalid raw tx error: "${result.error}"`);
@@ -75,7 +80,7 @@ async function testSubmitMalformedHex() {
     const result = await mnee.submitRawTx(malformedHex);
 
     assert(result.error, 'Should have error for malformed hex');
-    assert(!result.txid, 'Should not have txid for malformed hex');
+    assert(!result.ticketId, 'Should not have ticketId for malformed hex');
     errorOccurred = true;
     console.log(`  Malformed hex error: "${result.error}"`);
   } catch (error) {
@@ -92,7 +97,7 @@ async function testSubmitEmptyString() {
   try {
     const result = await mnee.submitRawTx('');
 
-    assert(result.error || !result.txid, 'Should fail for empty string');
+    assert(result.error || !result.ticketId, 'Should fail for empty string');
     errorOccurred = true;
     console.log(`  Empty string handled: ${result.error || 'rejected'}`);
   } catch (error) {
@@ -120,19 +125,22 @@ async function testSubmitAlreadyBroadcast() {
       },
     ];
 
-    const createResult = await mnee.transfer(request, TEST_WIF, false);
+    const createResult = await mnee.transfer(request, TEST_WIF, { broadcast: false });
     assert(createResult.rawtx, 'Should create raw transaction');
 
     // First submission would succeed
     const result1 = await mnee.submitRawTx(createResult.rawtx);
-    assert(result1.txid, 'Should have txid');
+    assert(result1.ticketId, 'Should have ticketId');
     assert(!result1.error, 'Should not have error');
-    console.log(`  Submitted txid: ${result1.txid}`);
+    console.log(`  Submitted ticketId: ${result1.ticketId}`);
+
+    // Wait for first submission to process
+    await new Promise((resolve) => setTimeout(resolve, 2000));
 
     // Second submission would fail with "already in mempool" error
     const result2 = await mnee.submitRawTx(createResult.rawtx);
     assert(result2.error, 'Should have error');
-    assert(!result2.txid, 'Should not have txid');
+    assert(!result2.ticketId, 'Should not have ticketId');
     console.log(`  Duplicate submission error: "${result2.error}"`);
   } catch (error) {
     console.log(`  Already broadcast test: ${error.message}`);
@@ -174,8 +182,8 @@ async function testNetworkError() {
 // Run tests
 async function runTests() {
   console.log('Running submitRawTx tests...\n');
-  console.log('Note: These tests avoid actual broadcasting to prevent spending funds.');
-  console.log('In production, submitRawTx broadcasts signed transactions to the network.\n');
+  console.log('Note: These tests submit real transactions to the network.');
+  console.log('submitRawTx now uses the V2 async API and returns ticketId.\n');
 
   try {
     console.log('Test 8.1: Submit valid raw transaction');

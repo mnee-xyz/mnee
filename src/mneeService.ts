@@ -31,10 +31,13 @@ import {
   AddressHistoryParams,
   TxAddressAmount,
   TransferResponse,
+  TransferStatus,
   TxInputResponse,
   ProcessedInput,
   TxOutputResponse,
   ProcessedOutput,
+  TransferOptions,
+  BalanceResponse,
 } from './mnee.types.js';
 import CosignTemplate from './mneeCosignTemplate.js';
 import { applyInscription } from './utils/applyInscription.js';
@@ -63,7 +66,6 @@ import {
   MNEE_DECIMALS,
 } from './constants.js';
 import { RateLimiter } from './batch.js';
-
 
 export class MNEEService {
   private mneeApiKey: string;
@@ -132,23 +134,33 @@ export class MNEEService {
     };
   }
 
-  public async getUtxos(address: string | string[]): Promise<MNEEUtxo[]> {
+  public async getUtxos(
+    address: string | string[],
+    page?: number,
+    size?: number,
+    order?: 'asc' | 'desc',
+  ): Promise<MNEEUtxo[]> {
     try {
       if (!address) {
         throw stacklessError('Address is required');
       }
-      
+
       // Handle single address
       if (typeof address === 'string') {
         if (!validateAddress(address)) {
           throw stacklessError(`Invalid Bitcoin address: ${address}`);
         }
         const arrayAddress = [address];
-        const response = await fetch(`${this.mneeApi}/v1/utxos?auth_token=${this.mneeApiKey}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(arrayAddress),
-        });
+        const response = await fetch(
+          `${this.mneeApi}/v2/utxos?auth_token=${this.mneeApiKey}${page !== undefined ? `&page=${page}` : ''}${
+            size !== undefined ? `&size=${size}` : ''
+          }${order ? `&order=${order}` : ''}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(arrayAddress),
+          },
+        );
         if (response.status === 401 || response.status === 403) {
           throw stacklessError('Invalid API key');
         }
@@ -159,30 +171,31 @@ export class MNEEService {
           ops.includes(utxo.data.bsv21.op.toLowerCase() as 'transfer' | 'burn' | 'deploy+mint'),
         );
       }
-      
+
       // Handle array of addresses - filter out invalid ones
       if (Array.isArray(address)) {
-        const validAddresses = address.filter((addr) => 
-          typeof addr === 'string' && validateAddress(addr)
-        );
-        
+        const validAddresses = address.filter((addr) => typeof addr === 'string' && validateAddress(addr));
+
         if (validAddresses.length === 0) {
           throw stacklessError('No valid Bitcoin addresses provided');
         }
-        
+
         // Log warning about invalid addresses
-        const invalidAddresses = address.filter((addr) => 
-          typeof addr !== 'string' || !validateAddress(addr)
-        );
+        const invalidAddresses = address.filter((addr) => typeof addr !== 'string' || !validateAddress(addr));
         if (invalidAddresses.length > 0) {
           console.warn(`\x1b[33m${invalidAddresses.length} invalid bitcoin addresses will be ignored\x1b[0m`);
         }
-        
-        const response = await fetch(`${this.mneeApi}/v1/utxos?auth_token=${this.mneeApiKey}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(validAddresses),
-        });
+
+        const response = await fetch(
+          `${this.mneeApi}/v2/utxos?auth_token=${this.mneeApiKey}${page !== undefined ? `&page=${page}` : ''}${
+            size !== undefined ? `&size=${size}` : ''
+          }${order ? `&order=${order}` : ''}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(validAddresses),
+          },
+        );
         if (response.status === 401 || response.status === 403) {
           throw stacklessError('Invalid API key');
         }
@@ -193,7 +206,7 @@ export class MNEEService {
           ops.includes(utxo.data.bsv21.op.toLowerCase() as 'transfer' | 'burn' | 'deploy+mint'),
         );
       }
-      
+
       throw stacklessError('Invalid input type for address');
     } catch (error) {
       if (isNetworkError(error)) {
@@ -290,7 +303,11 @@ export class MNEEService {
     }
   }
 
-  public async transfer(request: SendMNEE[], wif: string, broadcast: boolean = true): Promise<TransferResponse> {
+  public async transfer(
+    request: SendMNEE[],
+    wif: string,
+    transferOptions?: TransferOptions,
+  ): Promise<TransferResponse> {
     try {
       const config = this.mneeConfig || (await this.getCosignerConfig());
       if (!config) throw stacklessError('Config not fetched');
@@ -357,14 +374,14 @@ export class MNEEService {
       const signResult = await this.signAllInputs(tx, privateKeys);
       if (signResult.error) throw stacklessError(signResult.error);
 
-      if (!broadcast) {
-        return { rawtx: tx.toHex() };
+      const rawtx = tx.toHex();
+      if (!transferOptions?.broadcast) {
+        return { rawtx };
       }
 
-      const { rawtx, txid, error: broadcastError } = await this.broadcastTransaction(tx);
-      if (broadcastError) throw stacklessError(broadcastError);
-      if (!rawtx || !txid) throw stacklessError('Failed to broadcast transaction');
-      return { rawtx, txid };
+      const { ticketId } = await this.submitRawTx(rawtx, transferOptions);
+      if (!ticketId) throw stacklessError('Failed to broadcast transaction');
+      return { ticketId };
     } catch (error) {
       if (isNetworkError(error)) {
         logNetworkError(error, 'transfer tokens');
@@ -373,19 +390,76 @@ export class MNEEService {
     }
   }
 
-  public async submitRawTx(rawtx: string): Promise<TransferResponse> {
+  public async submitRawTx(
+    rawtx: string,
+    transferOptions: TransferOptions = { broadcast: true, callbackUrl: undefined },
+  ): Promise<TransferResponse> {
     try {
+      if (transferOptions?.callbackUrl && transferOptions?.broadcast !== false) {
+        transferOptions.broadcast = true;
+      }
       if (!rawtx) {
         throw stacklessError('Raw transaction is required');
       }
+
+      // Convert to base64 format for V2 API
       const tx = Transaction.fromHex(rawtx);
-      const response = await this.broadcastTransaction(tx);
-      if (response.error) throw stacklessError(response.error);
-      if (!response.rawtx || !response.txid) throw stacklessError('Failed to submit raw transaction');
-      return { rawtx: response.rawtx, txid: response.txid };
+      if (!transferOptions?.broadcast) {
+        return { rawtx: tx.toHex() };
+      }
+      const base64Tx = Utils.toBase64(tx.toBinary());
+
+      const requestBody = JSON.stringify(
+        transferOptions ? { rawtx: base64Tx, callback_url: transferOptions.callbackUrl } : { rawtx: base64Tx },
+      );
+
+      // Submit to V2 transfer endpoint for async processing
+      const response = await fetch(`${this.mneeApi}/v2/transfer?auth_token=${this.mneeApiKey}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: requestBody,
+      });
+
+      if (!response.ok) {
+        throw stacklessError(`Failed to submit transaction: ${response.status}`);
+      }
+
+      const ticketId = await response.text();
+      console.log('ticketId', ticketId);
+
+      return { ticketId };
     } catch (error) {
       if (isNetworkError(error)) {
         logNetworkError(error, 'submit raw transaction');
+      }
+      throw error;
+    }
+  }
+
+  public async getTxStatus(ticketId: string): Promise<TransferStatus> {
+    try {
+      if (!ticketId) {
+        throw stacklessError('Ticket ID is required');
+      }
+
+      const response = await fetch(`${this.mneeApi}/v2/ticket?ticketID=${ticketId}&auth_token=${this.mneeApiKey}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw stacklessError(`Failed to get transaction status: ${response.status}`);
+      }
+
+      const status: TransferStatus = await response.json();
+      return status;
+    } catch (error) {
+      if (isNetworkError(error)) {
+        logNetworkError(error, 'get transaction status');
       }
       throw error;
     }
@@ -402,15 +476,34 @@ export class MNEEService {
       const config = this.mneeConfig || (await this.getCosignerConfig());
       if (!config) throw stacklessError('Config not fetched');
 
-      const utxos = await this.getUtxos(address);
-      const balance = utxos.reduce((acc, utxo) => {
-        if (utxo.data.bsv21.op === 'transfer') {
-          acc += utxo.data.bsv21.amt;
-        }
-        return acc;
-      }, 0);
-      const decimalAmount = this.fromAtomicAmount(balance);
-      return { address, amount: balance, decimalAmount };
+      const response = await fetch(`${this.mneeApi}/v2/balance?auth_token=${this.mneeApiKey}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify([address]),
+      });
+
+      if (!response.ok) {
+        throw stacklessError(`Failed to get transaction status: ${response.status}`);
+      }
+
+      const balanceData: BalanceResponse = await response.json();
+
+      // Handle empty array response (no balance for address)
+      if (!balanceData || balanceData.length === 0) {
+        return {
+          address: address,
+          amount: 0,
+          decimalAmount: 0,
+        };
+      }
+
+      return {
+        address: balanceData[0].address,
+        amount: balanceData[0].amt,
+        decimalAmount: balanceData[0].precised,
+      };
     } catch (error) {
       if (isNetworkError(error)) {
         logNetworkError(error, 'fetch balance');
@@ -434,18 +527,49 @@ export class MNEEService {
     try {
       const config = this.mneeConfig || (await this.getCosignerConfig());
       if (!config) throw stacklessError('Config not fetched');
+      const response = await fetch(`${this.mneeApi}/v2/balance?auth_token=${this.mneeApiKey}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(validAddresses),
+      });
 
-      const utxos = await this.getUtxos(validAddresses);
+      if (!response.ok) {
+        throw stacklessError(`Failed to get transaction status: ${response.status}`);
+      }
 
+      const balanceData: BalanceResponse = await response.json();
+
+      // If API returns empty array, return all addresses with 0 balance
+      if (!balanceData || balanceData.length === 0) {
+        return validAddresses.map((addr) => ({
+          address: addr,
+          amount: 0,
+          decimalAmount: 0,
+        }));
+      }
+
+      // Create a map of addresses that have balances
+      const balanceMap = new Map();
+      balanceData.forEach((balance) => {
+        balanceMap.set(balance.address, {
+          address: balance.address,
+          amount: balance.amt,
+          decimalAmount: balance.precised,
+        });
+      });
+
+      // Return all requested addresses, with 0 for those not in response
       return validAddresses.map((addr) => {
-        const addressUtxos = utxos.filter((utxo) => utxo.owners.includes(addr));
-        const balance = addressUtxos.reduce((acc, utxo) => {
-          if (utxo.data.bsv21.op === 'transfer') {
-            acc += utxo.data.bsv21.amt;
-          }
-          return acc;
-        }, 0);
-        return { address: addr, amount: balance, decimalAmount: this.fromAtomicAmount(balance) };
+        if (balanceMap.has(addr)) {
+          return balanceMap.get(addr);
+        }
+        return {
+          address: addr,
+          amount: 0,
+          decimalAmount: 0,
+        };
       });
     } catch (error) {
       if (isNetworkError(error)) {
@@ -577,7 +701,7 @@ export class MNEEService {
 
       const txid = tx.id('hex');
       const isDeployTx = txid === config.tokenId.split('_')[0];
-      
+
       // For non-deploy transactions, validate input/output totals
       if (!isDeployTx) {
         const inputData = await this.processTransactionInputs(tx, config);
@@ -599,13 +723,16 @@ export class MNEEService {
 
   private async getMneeSyncs(
     addresses: string | string[],
-    fromScore = 0,
-    limit = 100,
+    fromScore?: number,
+    limit?: number,
+    order?: 'asc' | 'desc',
   ): Promise<{ address: string; syncs: MneeSync[] }[]> {
     try {
       const addressArray = Array.isArray(addresses) ? addresses : [addresses];
       const response = await fetch(
-        `${this.mneeApi}/v1/sync?auth_token=${this.mneeApiKey}&from=${fromScore}&limit=${limit}`,
+        `${this.mneeApi}/v1/sync?auth_token=${this.mneeApiKey}${fromScore ? `&from=${fromScore}` : ''}${
+          limit ? `&limit=${limit}` : ''
+        }${order ? `&order=${order}` : ''}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -633,7 +760,12 @@ export class MNEEService {
     }
   }
 
-  public async getRecentTxHistory(address: string, fromScore?: number, limit?: number): Promise<TxHistoryResponse> {
+  public async getRecentTxHistory(
+    address: string,
+    fromScore?: number,
+    limit?: number,
+    order?: 'asc' | 'desc',
+  ): Promise<TxHistoryResponse> {
     if (!validateAddress(address)) {
       const error = stacklessError(`Invalid Bitcoin address: ${address}`);
       throw error;
@@ -651,11 +783,17 @@ export class MNEEService {
       }
     }
 
+    if (order !== undefined) {
+      if (order !== 'asc' && order !== 'desc') {
+        throw stacklessError(`Invalid order: ${order}. Must be 'asc' or 'desc'`);
+      }
+    }
+
     try {
       const config = this.mneeConfig || (await this.getCosignerConfig());
       if (!config) throw stacklessError('Config not fetched');
 
-      const syncsByAddress = await this.getMneeSyncs(address, fromScore, limit);
+      const syncsByAddress = await this.getMneeSyncs(address, fromScore, limit, order);
       const { syncs } = syncsByAddress[0]; // We're only requesting one address
 
       if (!syncs || syncs.length === 0) return { address, history: [], nextScore: fromScore || 0 };
@@ -695,18 +833,18 @@ export class MNEEService {
     if (!Array.isArray(params)) {
       throw stacklessError('Parameters must be an array');
     }
-    
+
     if (params.length === 0) {
       throw stacklessError('You must pass at least 1 address parameter');
     }
-    
+
     // Filter out invalid addresses and keep only valid ones
     const validParams = params.filter((param) => param && param.address && validateAddress(param.address));
-    
+
     if (validParams.length === 0) {
       throw stacklessError('You must pass at least 1 valid address');
     }
-    
+
     const totalInvalidAddresses = params.length - validParams.length;
     if (totalInvalidAddresses > 0) {
       console.warn(`\x1b[33m${totalInvalidAddresses} invalid bitcoin addresses will be ignored\x1b[0m`);
@@ -715,13 +853,23 @@ export class MNEEService {
     for (const param of validParams) {
       if (param.fromScore !== undefined) {
         if (typeof param.fromScore !== 'number' || param.fromScore < 0 || !Number.isFinite(param.fromScore)) {
-          throw stacklessError(`Invalid fromScore for address ${param.address}: ${param.fromScore}. Must be a positive number or 0`);
+          throw stacklessError(
+            `Invalid fromScore for address ${param.address}: ${param.fromScore}. Must be a positive number or 0`,
+          );
         }
       }
-      
+
       if (param.limit !== undefined) {
         if (typeof param.limit !== 'number' || param.limit <= 0 || !Number.isInteger(param.limit)) {
-          throw stacklessError(`Invalid limit for address ${param.address}: ${param.limit}. Must be a positive integer`);
+          throw stacklessError(
+            `Invalid limit for address ${param.address}: ${param.limit}. Must be a positive integer`,
+          );
+        }
+      }
+
+      if (param.order !== undefined) {
+        if (param.order !== 'asc' && param.order !== 'desc') {
+          throw stacklessError(`Invalid order for address ${param.address}: ${param.order}. Must be 'asc' or 'desc'`);
         }
       }
     }
@@ -730,10 +878,10 @@ export class MNEEService {
       const config = this.mneeConfig || (await this.getCosignerConfig());
       if (!config) throw stacklessError('Config not fetched');
 
-      // Group addressParams by fromScore and limit to batch requests efficiently
+      // Group addressParams by fromScore, limit, and order to batch requests efficiently
       const groupedParams: Record<string, AddressHistoryParams[]> = {};
       validParams.forEach((param) => {
-        const key = `${param.fromScore || 0}:${param.limit || 100}`;
+        const key = `${param.fromScore || 0}:${param.limit || 100}:${param.order || 'default'}`;
         if (!groupedParams[key]) {
           groupedParams[key] = [];
         }
@@ -742,10 +890,13 @@ export class MNEEService {
 
       // Process each group in parallel
       const groupPromises = Object.entries(groupedParams).map(async ([key, addressParams]) => {
-        const [fromScore, limit] = key.split(':').map(Number);
+        const [fromScoreStr, limitStr, orderStr] = key.split(':');
+        const fromScore = Number(fromScoreStr);
+        const limit = Number(limitStr);
+        const order = orderStr === 'default' ? undefined : (orderStr as 'asc' | 'desc');
         const addresses = addressParams.map((p) => p.address);
 
-        const syncsByAddress = await this.getMneeSyncs(addresses, fromScore, limit);
+        const syncsByAddress = await this.getMneeSyncs(addresses, fromScore, limit, order);
 
         // Process each address's syncs
         return syncsByAddress.map(({ address, syncs }) => {
@@ -760,7 +911,7 @@ export class MNEEService {
 
           const txHistory: TxHistory[] = [];
           const seenTxids = new Set<string>();
-          
+
           for (const sync of syncs) {
             const historyItem = parseSyncToTxHistory(sync, address, config);
             if (historyItem && !seenTxids.has(historyItem.txid)) {
@@ -880,10 +1031,7 @@ export class MNEEService {
     return 'transfer';
   }
 
-  private async processTransactionInputs(
-    tx: Transaction,
-    config: MNEEConfig,
-  ): Promise<TxInputResponse> {
+  private async processTransactionInputs(tx: Transaction, config: MNEEConfig): Promise<TxInputResponse> {
     const txid = tx.id('hex');
     const inputs: ProcessedInput[] = new Array(tx.inputs.length);
     let total = BigInt(0);
@@ -967,10 +1115,7 @@ export class MNEEService {
     return { inputs, total, environment, type };
   }
 
-  private processTransactionOutputs(
-    tx: Transaction,
-    config: MNEEConfig,
-  ): TxOutputResponse {
+  private processTransactionOutputs(tx: Transaction, config: MNEEConfig): TxOutputResponse {
     const txid = tx.id('hex');
     const outputs: ProcessedOutput[] = [];
     let total = BigInt(0);
@@ -1402,41 +1547,44 @@ export class MNEEService {
     return {};
   }
 
-  private async broadcastTransaction(tx: Transaction): Promise<{ txid?: string; rawtx?: string; error?: string }> {
-    try {
-      const base64Tx = Utils.toBase64(tx.toBinary());
-      const response = await fetch(`${this.mneeApi}/v1/transfer?auth_token=${this.mneeApiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rawtx: base64Tx }),
-      });
+  // private async broadcastTransaction(tx: Transaction): Promise<{ txid?: string; rawtx?: string; error?: string }> {
+  //   try {
+  //     const base64Tx = Utils.toBase64(tx.toBinary());
+  //     const response = await fetch(`${this.mneeApi}/v1/transfer?auth_token=${this.mneeApiKey}`, {
+  //       method: 'POST',
+  //       headers: { 'Content-Type': 'application/json' },
+  //       body: JSON.stringify({ rawtx: base64Tx }),
+  //     });
 
-      if (response.status === 401 || response.status === 403) {
-        throw stacklessError('Invalid API key');
-      }
+  //     if (response.status === 401 || response.status === 403) {
+  //       throw stacklessError('Invalid API key');
+  //     }
 
-      if (!response.ok) throw stacklessError(`HTTP error! status: ${response.status}`);
+  //     if (!response.ok) throw stacklessError(`HTTP error! status: ${response.status}`);
 
-      const { rawtx: responseRawtx } = await response.json();
-      if (!responseRawtx) throw stacklessError('Failed to broadcast transaction');
+  //     const { rawtx: responseRawtx } = await response.json();
+  //     if (!responseRawtx) throw stacklessError('Failed to broadcast transaction');
 
-      const decodedBase64AsBinary = Utils.toArray(responseRawtx, 'base64');
-      const tx2 = Transaction.fromBinary(decodedBase64AsBinary);
+  //     const decodedBase64AsBinary = Utils.toArray(responseRawtx, 'base64');
+  //     const tx2 = Transaction.fromBinary(decodedBase64AsBinary);
 
-      return { txid: tx2.id('hex'), rawtx: Utils.toHex(decodedBase64AsBinary) };
-    } catch (error) {
-      if (isNetworkError(error)) {
-        logNetworkError(error, 'broadcast transaction');
-      }
-      let errorMessage = 'Transaction broadcast failed';
-      if (error instanceof Error) {
-        errorMessage = error.message;
-      }
-      throw stacklessError(errorMessage);
-    }
-  }
+  //     return { txid: tx2.id('hex'), rawtx: Utils.toHex(decodedBase64AsBinary) };
+  //   } catch (error) {
+  //     if (isNetworkError(error)) {
+  //       logNetworkError(error, 'broadcast transaction');
+  //     }
+  //     let errorMessage = 'Transaction broadcast failed';
+  //     if (error instanceof Error) {
+  //       errorMessage = error.message;
+  //     }
+  //     throw stacklessError(errorMessage);
+  //   }
+  // }
 
-  public async transferMulti(options: TransferMultiOptions, broadcast: boolean = true): Promise<TransferResponse> {
+  public async transferMulti(
+    options: TransferMultiOptions,
+    transferOptions?: TransferOptions,
+  ): Promise<TransferResponse> {
     try {
       const config = this.mneeConfig || (await this.getCosignerConfig());
       if (!config) throw stacklessError('Config not fetched');
@@ -1512,15 +1660,16 @@ export class MNEEService {
       const conservationResult = this.validateTokenConservation(tx, tokensIn);
       if (conservationResult.error) throw stacklessError(conservationResult.error);
 
-      if (!broadcast) {
-        return { rawtx: tx.toHex() };
+      const rawtx = tx.toHex();
+
+      if (!transferOptions?.broadcast) {
+        return { rawtx };
       }
 
-      const { rawtx, txid, error: broadcastError } = await this.broadcastTransaction(tx);
-      if (broadcastError) throw stacklessError(broadcastError);
-      if (!rawtx || !txid) throw stacklessError('Failed to broadcast transaction');
+      const { ticketId } = await this.submitRawTx(rawtx, transferOptions);
+      if (!ticketId) throw stacklessError('Failed to broadcast transaction');
 
-      return { rawtx, txid };
+      return { ticketId };
     } catch (error) {
       if (isNetworkError(error)) {
         logNetworkError(error, 'multi-source transfer');
