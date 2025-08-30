@@ -51,7 +51,7 @@ const recipients = [{ address: 'recipient-address', amount: 10 }];
 // Provide webhook URL for async status updates
 const response = await mnee.transfer(recipients, wif, {
   broadcast: true,
-  callbackUrl: 'https://your-api.com/webhook/mnee'
+  callbackUrl: 'https://your-api.com/webhook/mnee',
 });
 
 console.log('Ticket ID:', response.ticketId);
@@ -200,34 +200,32 @@ The transfer method can throw several specific errors:
 try {
   const response = await mnee.transfer(recipients, wif);
 } catch (error) {
-  switch (error.message) {
-    case 'Config not fetched':
+  switch (true) {
+    case error.message('Config not fetched'):
       console.error('Failed to fetch cosigner configuration');
       break;
-    case 'Invalid transfer options':
+    case error.message('Invalid transfer options'):
       console.error('Invalid recipients or amounts');
       break;
-    case 'Private key not found':
+    case error.message('Private key not found'):
       console.error('Invalid WIF private key');
       break;
-    case 'Invalid amount':
+    case error.message('Invalid amount'):
       console.error('Amount must be greater than 0');
       break;
-    case 'Insufficient MNEE balance':
+    case error.message('Insufficient MNEE balance'):
       console.error('Not enough MNEE tokens');
       break;
-    case 'Failed to broadcast transaction':
+    case error.message('Failed to broadcast transaction'):
       console.error('Cosigner rejected the transaction');
       break;
-    case 'Invalid API key':
+    case error.message('Invalid API key'):
       console.error('API key authentication failed (401/403)');
+    case error.message.includes('HTTP error! status:'):
+      console.error('API request failed:', error.message);
       break;
     default:
-      if (error.message.includes('HTTP error! status:')) {
-        console.error('API request failed:', error.message);
-      } else {
-        console.error('Transfer failed:', error.message);
-      }
+      console.error('Transfer failed:', error.message);
   }
 }
 ```

@@ -27,6 +27,8 @@ export interface MneeInterface {
   balance(address: string): Promise<MNEEBalance>;
   balances(addresses: string[]): Promise<MNEEBalance[]>;
   getUtxos(address: string | string[], page?: number, size?: number, order?: 'asc' | 'desc'): Promise<MNEEUtxo[]>;
+  getEnoughUtxos(address: string, totalAtomicTokenAmount: number): Promise<MNEEUtxo[]>;
+  getAllUtxos(address: string): Promise<MNEEUtxo[]>;
   validateMneeTx(rawTxHex: string, request?: SendMNEE[]): Promise<boolean>;
   transfer(request: SendMNEE[], wif: string, transferOptions?: TransferOptions): Promise<TransferResponse>;
   transferMulti(options: TransferMultiOptions, transferOptions?: TransferOptions): Promise<TransferResponse>;
@@ -34,7 +36,12 @@ export interface MneeInterface {
   getTxStatus(ticketId: string): Promise<TransferStatus>;
   toAtomicAmount(amount: number): number;
   fromAtomicAmount(amount: number): number;
-  recentTxHistory(address: string, fromScore?: number, limit?: number, order?: 'asc' | 'desc'): Promise<TxHistoryResponse>;
+  recentTxHistory(
+    address: string,
+    fromScore?: number,
+    limit?: number,
+    order?: 'asc' | 'desc',
+  ): Promise<TxHistoryResponse>;
   recentTxHistories(params: AddressHistoryParams[]): Promise<TxHistoryResponse[]>;
   parseTx(txid: string, options?: ParseOptions): Promise<ParseTxResponse | ParseTxExtendedResponse>;
   parseTxFromRawTx(rawTxHex: string, options?: ParseOptions): Promise<ParseTxResponse | ParseTxExtendedResponse>;
@@ -149,6 +156,27 @@ export default class Mnee implements MneeInterface {
   }
 
   /**
+   * Retrieves the UTXOs for a given address that have enough balance to cover the total atomic token amount.
+   *
+   * @param address - The address to retrieve the UTXOs for.
+   * @param totalAtomicTokenAmount - The total atomic token amount to cover.
+   * @returns A promise that resolves to an array of `MNEEUtxo` objects containing the UTXO details.
+   */
+  async getEnoughUtxos(address: string, totalAtomicTokenAmount: number): Promise<MNEEUtxo[]> {
+    return this.service.getEnoughUtxos(address, totalAtomicTokenAmount);
+  }
+
+  /**
+   * Retrieves all UTXOs for a given address.
+   *
+   * @param address - The address to retrieve the UTXOs for.
+   * @returns A promise that resolves to an array of `MNEEUtxo` objects containing the UTXO details.
+   */
+  async getAllUtxos(address: string): Promise<MNEEUtxo[]> {
+    return this.service.getAllUtxos(address);
+  }
+
+  /**
    * Transfers the specified MNEE tokens using the provided WIF (Wallet Import Format) key.
    *
    * @param {SendMNEE[]} request - An array of SendMNEE objects representing the transfer details.
@@ -198,7 +226,12 @@ export default class Mnee implements MneeInterface {
    * @returns A promise that resolves to a TxHistoryResponse object containing the transaction
    * history and the next score to retrieve additional transactions.
    */
-  async recentTxHistory(address: string, fromScore?: number, limit?: number, order?: 'asc' | 'desc'): Promise<TxHistoryResponse> {
+  async recentTxHistory(
+    address: string,
+    fromScore?: number,
+    limit?: number,
+    order?: 'asc' | 'desc',
+  ): Promise<TxHistoryResponse> {
     return this.service.getRecentTxHistory(address, fromScore, limit, order);
   }
 

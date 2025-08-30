@@ -155,7 +155,7 @@ const payments = [
 try {
   const result = await mnee.transfer(payments, payerWif);
   console.log('Payments sent, ticket:', result.ticketId);
-  
+
   // Wait for confirmation
   const status = await mnee.getTxStatus(result.ticketId);
   console.log('Transaction confirmed:', status.tx_id);
@@ -201,14 +201,14 @@ The SDK provides detailed error messages for common scenarios:
 try {
   const result = await mnee.transfer(recipients, wif);
 } catch (error) {
-  switch (error.message) {
-    case 'Insufficient MNEE balance':
+  switch (true) {
+    case error.message.includes('Insufficient MNEE balance'):
       console.error('Not enough tokens');
       break;
-    case 'Invalid API key':
+    case error.menssage.includes('Invalid API key'):
       console.error('Authentication failed');
       break;
-    case 'Failed to broadcast transaction':
+    case error.message.includes('Failed to broadcast transaction'):
       console.error('Transaction rejected by network');
       break;
     default:

@@ -21,8 +21,7 @@ export type MNEEConfig = {
   tokenId: string;
 };
 
-export type MNEEOperation = 'transfer' | 'burn' | 'deploy+mint';
-export type TxOperation = 'transfer' | 'burn' | 'deploy' | 'mint';
+export type TxOperation = 'transfer' | 'burn' | 'deploy' | 'mint' | 'redeem';
 
 export type MNEEUtxo = {
   data: {
@@ -94,6 +93,10 @@ export type MneeInscription = {
   op: string;
   id: string;
   amt: string;
+  metadata?: {
+    action?: 'mint' | 'redeem';
+    [key: string]: any; // Allow other metadata fields in the future
+  };
 };
 
 export type ParsedCosigner = {

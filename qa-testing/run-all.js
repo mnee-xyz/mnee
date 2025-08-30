@@ -9,39 +9,41 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const tests = [
   // Core configuration
   { file: 'core/config.js', description: 'Configuration management' },
-  
+
   // Balance operations
   { file: 'core/balance.js', description: 'Single address balance queries' },
   { file: 'core/balances.js', description: 'Multiple address balance queries' },
-  
+
   // UTXO management
-  { file: 'core/getUtxos.js', description: 'UTXO retrieval' },
-  
+  { file: 'core/getUtxos.js', description: 'UTXO retrieval with pagination' },
+  { file: 'core/getEnoughUtxos.js', description: 'Efficient UTXO retrieval for transfers' },
+  { file: 'core/getAllUtxos.js', description: 'Complete UTXO retrieval for wallets' },
+
   // Transaction operations
   { file: 'core/validateMneeTx.js', description: 'Transaction validation' },
   { file: 'core/transfer.js', description: 'Single-source transfers' },
   { file: 'core/transferMulti.js', description: 'Multi-source transfers' },
   { file: 'core/submitRawTx.js', description: 'Raw transaction submission' },
   { file: 'core/getTxStatus.js', description: 'Transaction status polling' },
-  
+
   // Utility functions
   { file: 'core/toAtomicAmount.js', description: 'Decimal to atomic conversion' },
   { file: 'core/fromAtomicAmount.js', description: 'Atomic to decimal conversion' },
-  
+
   // History operations
   { file: 'core/recentTxHistory.js', description: 'Single address history' },
   { file: 'core/recentTxHistories.js', description: 'Multiple address histories' },
   { file: 'core/recentTxHistoriesDuplicates.js', description: 'Duplicate transaction detection' },
-  
+
   // Parsing operations
   { file: 'core/parseTx.js', description: 'Transaction parsing by txid' },
   { file: 'core/parseTxFromRawTx.js', description: 'Transaction parsing from raw hex' },
   { file: 'core/parseInscription.js', description: 'Inscription detection' },
   { file: 'core/parseCosignerScripts.js', description: 'Cosigner script parsing' },
-  
+
   // Advanced features
   { file: 'core/hdWallet.js', description: 'HD wallet functionality' },
-  { file: 'core/batch.js', description: 'Batch operations (includes 9 subtests)' }
+  { file: 'core/batch.js', description: 'Batch operations (includes 9 subtests)' },
 ];
 
 // Note: batch.js already runs all 9 batch subtests internally,
@@ -56,7 +58,7 @@ const colors = {
   green: '\x1b[32m',
   yellow: '\x1b[33m',
   blue: '\x1b[34m',
-  cyan: '\x1b[36m'
+  cyan: '\x1b[36m',
 };
 
 function formatTime(seconds) {
@@ -66,7 +68,7 @@ function formatTime(seconds) {
 }
 
 async function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function showCooldown(seconds) {
@@ -79,18 +81,22 @@ async function showCooldown(seconds) {
 
 async function runTest(testPath, testName, index, total) {
   const startTime = Date.now();
-  
+
   console.log(`\n${colors.bright}[${index}/${total}] Running: ${testName}${colors.reset}`);
   console.log(`${colors.dim}File: ${testPath}${colors.reset}`);
-  
+
   try {
     execSync(`node ${join(__dirname, testPath)}`, { stdio: 'inherit' });
     const duration = Math.round((Date.now() - startTime) / 1000);
-    console.log(`\n${colors.green}✅ ${testName} passed${colors.reset} ${colors.dim}(${formatTime(duration)})${colors.reset}`);
+    console.log(
+      `\n${colors.green}✅ ${testName} passed${colors.reset} ${colors.dim}(${formatTime(duration)})${colors.reset}`,
+    );
     return { success: true, duration };
   } catch (error) {
     const duration = Math.round((Date.now() - startTime) / 1000);
-    console.error(`\n${colors.red}❌ ${testName} failed${colors.reset} ${colors.dim}(${formatTime(duration)})${colors.reset}`);
+    console.error(
+      `\n${colors.red}❌ ${testName} failed${colors.reset} ${colors.dim}(${formatTime(duration)})${colors.reset}`,
+    );
     return { success: false, duration };
   }
 }
@@ -111,12 +117,12 @@ async function runAllTests() {
   for (const test of tests) {
     const result = await runTest(test.file, test.description, currentIndex, totalTests);
     results.push({ ...test, ...result });
-    
+
     if (!result.success) {
       console.log(`\n${colors.red}Stopping test suite due to failure${colors.reset}`);
       break;
     }
-    
+
     // Show cooldown if not the last test
     if (currentIndex < totalTests) {
       await showCooldown(5);
@@ -126,28 +132,32 @@ async function runAllTests() {
 
   // Summary
   const totalDuration = Math.round((Date.now() - startTime) / 1000);
-  const passed = results.filter(r => r.success).length;
-  const failed = results.filter(r => !r.success).length;
+  const passed = results.filter((r) => r.success).length;
+  const failed = results.filter((r) => !r.success).length;
 
   console.log('\n' + '═'.repeat(60));
   console.log(`${colors.bright}📊 Test Summary${colors.reset}`);
   console.log('─'.repeat(60));
-  
+
   if (failed === 0) {
     console.log(`${colors.green}${colors.bright}✅ All ${passed} tests passed!${colors.reset}`);
   } else {
     console.log(`${colors.green}✅ Passed: ${passed}${colors.reset}`);
     console.log(`${colors.red}❌ Failed: ${failed}${colors.reset}`);
-    
+
     console.log(`\n${colors.red}Failed tests:${colors.reset}`);
-    results.filter(r => !r.success).forEach(test => {
-      console.log(`  ${colors.red}•${colors.reset} ${test.description} (${test.file})`);
-    });
+    results
+      .filter((r) => !r.success)
+      .forEach((test) => {
+        console.log(`  ${colors.red}•${colors.reset} ${test.description} (${test.file})`);
+      });
   }
-  
+
   console.log(`\n${colors.dim}Total time: ${formatTime(totalDuration)}${colors.reset}`);
-  console.log(`${colors.dim}Average time per test: ${formatTime(Math.round(totalDuration / results.length))}${colors.reset}`);
-  
+  console.log(
+    `${colors.dim}Average time per test: ${formatTime(Math.round(totalDuration / results.length))}${colors.reset}`,
+  );
+
   // Exit with appropriate code
   process.exit(failed > 0 ? 1 : 0);
 }
@@ -159,7 +169,7 @@ process.on('SIGINT', () => {
 });
 
 // Run the test suite
-runAllTests().catch(error => {
+runAllTests().catch((error) => {
   console.error(`\n${colors.red}Unexpected error:${colors.reset}`, error);
   process.exit(1);
 });

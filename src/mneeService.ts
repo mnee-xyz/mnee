@@ -216,24 +216,42 @@ export class MNEEService {
     }
   }
 
-  private async fetchRawTx(txid: string): Promise<Transaction | undefined> {
-    try {
-      const resp = await fetch(`${this.mneeApi}/v1/tx/${txid}?auth_token=${this.mneeApiKey}`);
-      if (resp.status === 404) throw stacklessError('Transaction not found');
-      if (resp.status === 401 || resp.status === 403) {
-        throw stacklessError('Invalid API key');
+  private async fetchRawTx(txid: string, retries: number = 3): Promise<Transaction | undefined> {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const resp = await fetch(`${this.mneeApi}/v1/tx/${txid}?auth_token=${this.mneeApiKey}`);
+
+        if (resp.status === 404) throw stacklessError('Transaction not found');
+        if (resp.status === 401 || resp.status === 403) {
+          throw stacklessError('Invalid API key');
+        }
+
+        // Handle rate limiting with retry
+        if (resp.status === 429 && attempt < retries) {
+          // For rate limiting, use longer delay with exponential backoff
+          const delay = Math.min(500 * Math.pow(2, attempt), 2000); // 500ms, 1s, 2s max
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          continue;
+        }
+
+        if (resp.status !== 200) {
+          throw stacklessError(`${resp.status} - Failed to fetch rawtx for txid: ${txid}`);
+        }
+
+        const { rawtx } = await resp.json();
+        return Transaction.fromHex(Buffer.from(rawtx, 'base64').toString('hex'));
+      } catch (error) {
+        if (attempt === retries) {
+          if (isNetworkError(error)) {
+            logNetworkError(error, 'fetch transaction');
+          }
+          return undefined;
+        }
+        // For network errors, use a shorter fixed delay
+        await new Promise((resolve) => setTimeout(resolve, 200));
       }
-      if (resp.status !== 200) {
-        throw stacklessError(`${resp.status} - Failed to fetch rawtx for txid: ${txid}`);
-      }
-      const { rawtx } = await resp.json();
-      return Transaction.fromHex(Buffer.from(rawtx, 'base64').toString('hex'));
-    } catch (error) {
-      if (isNetworkError(error)) {
-        logNetworkError(error, 'fetch transaction');
-      }
-      return undefined;
     }
+    return undefined;
   }
 
   private async getSignatures(
@@ -303,6 +321,52 @@ export class MNEEService {
     }
   }
 
+  public async getEnoughUtxos(address: string, totalAtomicTokenAmount: number): Promise<MNEEUtxo[]> {
+    // use pagination to loop through and get enough utxos
+    let page = 1;
+    let size = 25;
+    let utxos: MNEEUtxo[] = [];
+    let totalUtxoAmount = 0;
+
+    while (totalUtxoAmount < totalAtomicTokenAmount) {
+      const pageUtxos = await this.getUtxos(address, page, size);
+      if (pageUtxos.length === 0) {
+        // No more UTXOs available, check if we have enough
+        throw stacklessError(
+          `Insufficient MNEE balance. Max transfer amount: ${this.fromAtomicAmount(totalUtxoAmount)}`,
+        );
+      }
+
+      const sortedHighestToLowest = pageUtxos.sort((a, b) => b.data.bsv21.amt - a.data.bsv21.amt);
+
+      for (const utxo of sortedHighestToLowest) {
+        utxos.push(utxo);
+        totalUtxoAmount += utxo.data.bsv21.amt;
+        if (totalUtxoAmount >= totalAtomicTokenAmount) {
+          return utxos; // We have enough, return immediately without fetching more pages
+        }
+      }
+
+      page++;
+    }
+
+    return utxos;
+  }
+
+  public async getAllUtxos(address: string): Promise<MNEEUtxo[]> {
+    // loop through and get all utxos
+    let page = 1;
+    let size = 100;
+    let utxos: MNEEUtxo[] = [];
+    while (true) {
+      const pageUtxos = await this.getUtxos(address, page, size);
+      if (pageUtxos.length === 0) break;
+      utxos.push(...pageUtxos);
+      page++;
+    }
+    return utxos;
+  }
+
   public async transfer(
     request: SendMNEE[],
     wif: string,
@@ -320,11 +384,8 @@ export class MNEEService {
       const totalAtomicTokenAmount = this.toAtomicAmount(totalAmount);
 
       const address = privateKey.toAddress();
-      const utxos = await this.getUtxos(address);
+      const utxos = await this.getEnoughUtxos(address, totalAtomicTokenAmount);
       const totalUtxoAmount = utxos.reduce((sum, utxo) => sum + (utxo.data.bsv21.amt || 0), 0);
-      if (totalUtxoAmount < totalAtomicTokenAmount) {
-        throw stacklessError('Insufficient MNEE balance');
-      }
 
       const fee =
         request.find((req) => req.address === config.burnAddress) !== undefined
@@ -341,7 +402,10 @@ export class MNEEService {
 
       while (tokensIn < totalAtomicTokenAmount + fee) {
         const utxo = utxos.shift();
-        if (!utxo) throw stacklessError('Insufficient MNEE balance');
+        if (!utxo)
+          throw stacklessError(
+            'Insufficient MNEE balance. Max transfer amount is ' + this.fromAtomicAmount(totalUtxoAmount),
+          );
 
         const sourceTransaction = await this.fetchRawTx(utxo.txid);
         if (!sourceTransaction) throw stacklessError('Failed to fetch source transaction');
@@ -375,7 +439,7 @@ export class MNEEService {
       if (signResult.error) throw stacklessError(signResult.error);
 
       const rawtx = tx.toHex();
-      
+
       if (transferOptions?.broadcast === false) {
         return { rawtx };
       }
@@ -653,10 +717,16 @@ export class MNEEService {
       const operations = new Set(mneeInscriptions.map((o) => (o.inscription as MneeInscription).op));
       const hasTransfer = operations.has('transfer');
       const hasBurn = operations.has('burn');
+      
+      // Check for redeem operations (transfer with redeem metadata)
+      const hasRedeem = mneeInscriptions.some(
+        (o) => (o.inscription as MneeInscription).op === 'transfer' && 
+               (o.inscription as MneeInscription).metadata?.action === 'redeem'
+      );
 
-      // Require cosigner for transfer and burn operations
-      if ((hasTransfer || hasBurn) && !hasCosigner) {
-        throw stacklessError('Cosigner not found in transaction with transfer/burn operation');
+      // Require cosigner for transfer, burn, and redeem operations
+      if ((hasTransfer || hasBurn || hasRedeem) && !hasCosigner) {
+        throw stacklessError('Cosigner not found in transaction with transfer/burn/redeem operation');
       }
 
       const mneeOutputsForValidation = mneeInscriptions.filter((output) => {
@@ -1180,6 +1250,7 @@ export class MNEEService {
     const isValidMnee = this.processMneeValidation(tx, config);
     if (!isValidMnee) return false;
     if (type === 'deploy') return true;
+    // Redeem transactions follow the same balance rules as transfers
     return inputTotal === outputTotal;
   }
 
@@ -1273,6 +1344,15 @@ export class MNEEService {
 
       if (hasMintInputAddress) {
         type = 'mint';
+      }
+      
+      // Check if any output has redeem metadata
+      const hasRedeemOutput = outputData.outputs.some(
+        (output) => output.inscription?.metadata?.action === 'redeem'
+      );
+      
+      if (hasRedeemOutput) {
+        type = 'redeem';
       }
     }
 

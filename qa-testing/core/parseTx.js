@@ -246,9 +246,12 @@ async function testDifferentTransactionTypes() {
       try {
         const parsed = await mnee.parseTx(tx.txid);
 
+        // Log transaction details for debugging
+        console.log(`  TX ${tx.txid.substring(0, 10)}...: type=${parsed.type}, isValid=${parsed.isValid}`);
+
         // Verify parsed transaction structure
         assert(parsed.txid === tx.txid, 'Parsed txid should match');
-        assert(['transfer', 'burn', 'deploy', 'mint'].includes(parsed.type), `Type ${parsed.type} should be valid`);
+        assert(['transfer', 'burn', 'deploy', 'mint', 'redeem'].includes(parsed.type), `Type ${parsed.type} should be valid`);
         assert(parsed.environment === config.environment, 'Environment should match config');
         assert(typeof parsed.isValid === 'boolean', 'isValid should be boolean');
 
@@ -271,6 +274,13 @@ async function testDifferentTransactionTypes() {
     }
 
     // Verify all parsed transactions are valid
+    const invalidTxs = parsedTransactions.filter((tx) => !tx.isValid);
+    if (invalidTxs.length > 0) {
+      console.log(`  Found ${invalidTxs.length} invalid transactions:`);
+      for (const tx of invalidTxs) {
+        console.log(`    - ${tx.txid}: type=${tx.type}, inputs=${tx.inputs.length}, outputs=${tx.outputs.length}`);
+      }
+    }
     const allValid = parsedTransactions.every((tx) => tx.isValid);
     assert(allValid, 'All parsed transactions should be valid');
 

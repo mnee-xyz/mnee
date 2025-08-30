@@ -19,17 +19,17 @@ This document provides comprehensive documentation for the MNEE SDK, designed to
 import Mnee from 'mnee';
 
 // Initialize MNEE SDK
-const mnee = new Mnee({ 
+const mnee = new Mnee({
   environment: 'production', // or 'sandbox' (required)
-  apiKey: 'your-api-key'     // optional but recommended
+  apiKey: 'your-api-key', // optional but recommended
 });
 
 // All types are also exported from the main module
-import { 
-  MNEEBalance, 
-  MNEEUtxo, 
+import {
+  MNEEBalance,
+  MNEEUtxo,
   TransferResponse,
-  HDWallet 
+  HDWallet,
   // ... and more
 } from 'mnee';
 ```
@@ -55,17 +55,17 @@ const config = await mnee.config();
 
 ```typescript
 interface MNEEConfig {
-  approver: string;      // Cosigner public key
-  feeAddress: string;    // Fee collection address
-  burnAddress: string;   // Burn operations address
-  mintAddress: string;   // Mint operations address
-  fees: FeeTier[];       // Fee structure tiers
+  approver: string; // Cosigner public key
+  feeAddress: string; // Fee collection address
+  burnAddress: string; // Burn operations address
+  mintAddress: string; // Mint operations address
+  fees: FeeTier[]; // Fee structure tiers
 }
 
 interface FeeTier {
-  min: number;    // Minimum amount (atomic units)
-  max: number;    // Maximum amount (atomic units)
-  fee: number;    // Fee amount (atomic units)
+  min: number; // Minimum amount (atomic units)
+  max: number; // Maximum amount (atomic units)
+  fee: number; // Fee amount (atomic units)
 }
 ```
 
@@ -100,6 +100,15 @@ const utxos = await mnee.getUtxos('address', 0, 100, 'desc');
 // Multiple addresses
 const utxos = await mnee.getUtxos(['address1', 'address2'], 0, 50);
 // Returns: MNEEUtxo[]
+
+// Get just enough UTXOs for a specific amount (optimized for transfers)
+const requiredAmount = mnee.toAtomicAmount(5.0); // Convert 5 MNEE to atomic units
+const enoughUtxos = await mnee.getEnoughUtxos('address', requiredAmount);
+// Returns: MNEEUtxo[] - stops fetching once sufficient amount is reached
+
+// Get ALL UTXOs for an address (comprehensive wallet view)
+const allUtxos = await mnee.getAllUtxos('address');
+// Returns: MNEEUtxo[] - fetches every UTXO for the address
 ```
 
 #### UTXO Structure (BSV21)
@@ -108,7 +117,7 @@ const utxos = await mnee.getUtxos(['address1', 'address2'], 0, 50);
 interface MNEEUtxo {
   txid: string;
   vout: number;
-  outpoint: string;  // "txid:vout"
+  outpoint: string; // "txid_vout"
   satoshis: number;
   accSats: number;
   script: string;
@@ -138,13 +147,13 @@ interface MNEEUtxo {
     };
     bsv20: { [key: string]: any };
     bsv21: {
-      id: string;    // Token ID
-      p: string;     // Protocol
-      op: string;    // Operation
-      amt: number;   // Amount in atomic units
-      sym: string;   // Symbol
-      icon: string;  // Icon URL
-      dec: number;   // Decimals
+      id: string; // Token ID
+      p: string; // Protocol
+      op: string; // Operation
+      amt: number; // Amount in atomic units
+      sym: string; // Symbol
+      icon: string; // Icon URL
+      dec: number; // Decimals
     };
   };
 }
@@ -157,13 +166,13 @@ interface MNEEUtxo {
 ```typescript
 const recipients: SendMNEE[] = [
   { address: 'recipient1', amount: 10.5 },
-  { address: 'recipient2', amount: 5.25 }
+  { address: 'recipient2', amount: 5.25 },
 ];
 
 const response = await mnee.transfer(
-  recipients, 
+  recipients,
   'sender-private-key-wif',
-  { broadcast: true, callbackUrl: 'https://your-api.com/webhook' }  // optional
+  { broadcast: true, callbackUrl: 'https://your-api.com/webhook' }, // optional
 );
 // Returns: TransferResponse
 
@@ -178,13 +187,13 @@ console.log('Transaction ID:', status.tx_id);
 const options: TransferMultiOptions = {
   inputs: [
     { txid: 'txid1', vout: 0, wif: 'wif1' },
-    { txid: 'txid2', vout: 1, wif: 'wif2' }
+    { txid: 'txid2', vout: 1, wif: 'wif2' },
   ],
   recipients: [
     { address: 'recipient1', amount: 15.75 },
-    { address: 'recipient2', amount: 8.50 }
+    { address: 'recipient2', amount: 8.5 },
   ],
-  changeAddress: 'change-address' // optional
+  changeAddress: 'change-address', // optional
 };
 
 const response = await mnee.transferMulti(options, { broadcast: true });
@@ -199,8 +208,8 @@ console.log('Transaction ID:', status.tx_id);
 
 ```typescript
 interface TransferResponse {
-  ticketId?: string;  // Ticket ID for tracking (only if broadcast is true)
-  rawtx?: string;     // The raw transaction hex (only if broadcast is false)
+  ticketId?: string; // Ticket ID for tracking (only if broadcast is true)
+  rawtx?: string; // The raw transaction hex (only if broadcast is false)
 }
 ```
 
@@ -236,7 +245,7 @@ const isValid = await mnee.validateMneeTx(rawTxHex, recipients);
 ```typescript
 const response = await mnee.submitRawTx(rawTxHex, {
   broadcast: true,
-  callbackUrl: 'https://your-api.com/webhook'  // optional
+  callbackUrl: 'https://your-api.com/webhook', // optional
 });
 // Returns: TransferResponse with ticketId
 
@@ -249,10 +258,10 @@ console.log('Transaction ID:', status.tx_id);
 
 ```typescript
 // Convert MNEE to atomic units (1 MNEE = 100,000 atomic)
-const atomic = mnee.toAtomicAmount(1.5);  // Returns: 150000
+const atomic = mnee.toAtomicAmount(1.5); // Returns: 150000
 
 // Convert atomic units to MNEE
-const mneeAmount = mnee.fromAtomicAmount(150000);  // Returns: 1.5
+const mneeAmount = mnee.fromAtomicAmount(150000); // Returns: 1.5
 ```
 
 ### Transaction History
@@ -269,7 +278,7 @@ const history = await mnee.recentTxHistory(address, fromScore, limit);
 ```typescript
 const params: AddressHistoryParams[] = [
   { address: 'address1', limit: 100 },
-  { address: 'address2', fromScore: 850000, limit: 50 }
+  { address: 'address2', fromScore: 850000, limit: 50 },
 ];
 const histories = await mnee.recentTxHistories(params);
 // Returns: TxHistoryResponse[]
@@ -286,13 +295,13 @@ interface TxHistoryResponse {
 
 interface TxHistory {
   txid: string;
-  height: number;          // 0 for unconfirmed
+  height: number; // 0 for unconfirmed
   status: 'confirmed' | 'unconfirmed';
   type: 'send' | 'receive';
-  amount: number;          // Atomic units
+  amount: number; // Atomic units
   counterparties: Array<{ address: string; amount: number }>;
   fee: number;
-  score: number;           // For pagination
+  score: number; // For pagination
 }
 ```
 
@@ -321,12 +330,12 @@ const parsed = await mnee.parseTxFromRawTx(rawTxHex, { includeRaw: true });
 interface ParseTxResponse {
   txid: string;
   environment: 'production' | 'sandbox';
-  type: string;  // 'transfer', 'burn', etc.
+  type: string; // 'transfer', 'burn', etc.
   inputs: Array<{ address: string; amount: number }>;
   outputs: Array<{ address: string; amount: number }>;
   isValid: boolean;
-  inputTotal: string;   // String to preserve precision
-  outputTotal: string;  // String to preserve precision
+  inputTotal: string; // String to preserve precision
+  outputTotal: string; // String to preserve precision
 }
 
 interface ParseTxExtendedResponse extends ParseTxResponse {
@@ -390,8 +399,8 @@ interface Inscription {
 }
 
 interface ParsedCosigner {
-  cosigner: string;  // Public key
-  address: string;   // Bitcoin address
+  cosigner: string; // Public key
+  address: string; // Bitcoin address
 }
 ```
 
@@ -407,11 +416,11 @@ const batch = mnee.batch();
 
 ```typescript
 interface BatchOptions {
-  chunkSize?: number;         // Max items per API call (default: 20)
+  chunkSize?: number; // Max items per API call (default: 20)
   requestsPerSecond?: number; // Rate limit (default: 3)
-  continueOnError?: boolean;  // Continue on error (default: false)
-  maxRetries?: number;        // Max retries per chunk (default: 3)
-  retryDelay?: number;        // Retry delay in ms (default: 1000)
+  continueOnError?: boolean; // Continue on error (default: false)
+  maxRetries?: number; // Max retries per chunk (default: 3)
+  retryDelay?: number; // Retry delay in ms (default: 1000)
   onProgress?: (completed: number, total: number, errors: number) => void;
 }
 ```
@@ -435,7 +444,7 @@ const result = await batch.getBalances(addresses, options);
 #### Get Transaction Histories
 
 ```typescript
-const params = addresses.map(addr => ({ address: addr, limit: 100 }));
+const params = addresses.map((addr) => ({ address: addr, limit: 100 }));
 const result = await batch.getTxHistories(params, options);
 // Returns: BatchResult<TxHistoryResponse>
 ```
@@ -445,7 +454,7 @@ const result = await batch.getTxHistories(params, options);
 ```typescript
 const result = await batch.parseTx(txids, {
   parseOptions: { includeRaw: true },
-  ...batchOptions
+  ...batchOptions,
 });
 // Returns: BatchResult<BatchParseTxResult>
 ```
@@ -487,9 +496,9 @@ interface BatchParseTxResult {
 ```typescript
 import Mnee, { HDWallet } from 'mnee';
 
-const mnee = new Mnee({ 
-  environment: 'production',  // required
-  apiKey: 'your-api-key'      // optional but recommended
+const mnee = new Mnee({
+  environment: 'production', // required
+  apiKey: 'your-api-key', // optional but recommended
 });
 ```
 
@@ -514,8 +523,8 @@ const isValid = Mnee.HDWallet.isValidMnemonic(mnemonic);
 
 ```typescript
 const hdWallet = mnee.HDWallet(mnemonic, {
-  derivationPath: "m/44'/236'/0'",  // BIP44 path
-  cacheSize: 1000                    // Optional cache size
+  derivationPath: "m/44'/236'/0'", // BIP44 path
+  cacheSize: 1000, // Optional cache size
 });
 ```
 
@@ -531,9 +540,9 @@ const changeInfo = hdWallet.deriveAddress(0, true);
 
 // AddressInfo structure
 {
-  address: string;      // Bitcoin address
-  privateKey: string;   // WIF format
-  path: string;         // Full derivation path
+  address: string; // Bitcoin address
+  privateKey: string; // WIF format
+  path: string; // Full derivation path
 }
 ```
 
@@ -551,7 +560,7 @@ const addresses = await hdWallet.deriveAddresses(0, 10, false);
 const result = hdWallet.getPrivateKeysForAddresses(addresses, {
   maxScanReceive: 10000,
   maxScanChange: 10000,
-  scanStrategy: 'parallel'  // or 'sequential'
+  scanStrategy: 'parallel', // or 'sequential'
 });
 // Returns: { privateKeys: {}, paths: {} }
 
@@ -568,14 +577,11 @@ const checkAddressUsed = async (address) => {
   return balance.amount > 0;
 };
 
-const discovered = await hdWallet.scanAddressesWithGapLimit(
-  checkAddressUsed,
-  {
-    gapLimit: 20,
-    scanChange: true,
-    maxScan: 10000
-  }
-);
+const discovered = await hdWallet.scanAddressesWithGapLimit(checkAddressUsed, {
+  gapLimit: 20,
+  scanChange: true,
+  maxScan: 10000,
+});
 // Returns: { receive: AddressInfo[], change: AddressInfo[] }
 ```
 
@@ -589,12 +595,14 @@ const cacheSize = hdWallet.getCacheSize();
 ## Important Notes
 
 ### Unit System
+
 - 1 MNEE = 100,000 atomic units
 - All blockchain operations use atomic units
 - User-facing amounts should be in MNEE (decimal)
 - SDK methods expecting amounts use MNEE values (not atomic)
 
 ### Address Validation
+
 - Bitcoin addresses starting with 1, 3, or bc1
 - Invalid addresses in batch operations are handled based on `continueOnError` setting
 
@@ -603,27 +611,32 @@ const cacheSize = hdWallet.getCacheSize();
 The SDK throws standard JavaScript Error objects with descriptive messages. Common error scenarios:
 
 #### Initialization Errors
+
 - `"Invalid environment. Must be either 'production' or 'sandbox'"` - Invalid environment parameter
 - `"MNEE API key cannot be an empty string"` - Empty API key provided
 - `"Invalid API key"` - API key authentication failed
 
 #### Validation Errors
+
 - `"Invalid Bitcoin address: <address>"` - Address format validation failed
 - `"No valid Bitcoin addresses provided"` - No valid addresses in batch
 - `"Invalid transaction ID: empty or not a string"` - Invalid transaction ID format
 - `"Invalid transaction ID format: <txid>"` - Transaction ID not 64 hex characters
 
 #### Batch Operation Errors
+
 - `"Input must be an array of addresses"` - Non-array input to batch methods
 - `"Input must be an array of transaction IDs"` - Non-array input to parseTx
 - `"Max retries exceeded"` - Batch operation failed after all retries
 
 #### HD Wallet Errors
+
 - `"Invalid mnemonic phrase"` - Invalid BIP39 mnemonic
 - `"Failed to derive private key for path: <path>"` - Derivation failure
 - `"Could not find private keys for <n> address(es)"` - Address not found in HD wallet scan
 
 #### Transfer/Submit Errors (POST methods)
+
 - `"Config not fetched"` - Failed to get cosigner configuration
 - `"Insufficient MNEE balance"` - Not enough tokens for transfer
 - `"Failed to broadcast transaction"` - Cosigner rejected transaction
@@ -641,12 +654,12 @@ try {
 
 // Batch operations with continueOnError
 const result = await batch.getBalances(addresses, {
-  continueOnError: true  // Continue processing on errors
+  continueOnError: true, // Continue processing on errors
 });
 
 // Check for partial failures
 if (result.errors.length > 0) {
-  result.errors.forEach(error => {
+  result.errors.forEach((error) => {
     console.log(`Failed addresses: ${error.items.join(', ')}`);
     console.log(`Error: ${error.error.message}`);
   });
@@ -674,15 +687,15 @@ Transactions can be tracked via webhook callbacks for real-time status updates.
 
 ```typescript
 interface TransferWebhookResponse {
-  id: string;              // The ticket ID
-  tx_id: string;           // The blockchain transaction ID
-  tx_hex: string;          // The raw transaction hex
-  action_requested: 'transfer';  // Always 'transfer' for MNEE transactions
-  callback_url: string;    // Your webhook URL (for verification)
+  id: string; // The ticket ID
+  tx_id: string; // The blockchain transaction ID
+  tx_hex: string; // The raw transaction hex
+  action_requested: 'transfer'; // Always 'transfer' for MNEE transactions
+  callback_url: string; // Your webhook URL (for verification)
   status: 'BROADCASTING' | 'SUCCESS' | 'MINED' | 'FAILED';
-  createdAt: string;       // ISO timestamp when ticket was created
-  updatedAt: string;       // ISO timestamp of this update
-  errors: string | null;   // Error details if status is FAILED
+  createdAt: string; // ISO timestamp when ticket was created
+  updatedAt: string; // ISO timestamp of this update
+  errors: string | null; // Error details if status is FAILED
 }
 ```
 
@@ -692,19 +705,19 @@ interface TransferWebhookResponse {
 // Transfer with webhook
 const response = await mnee.transfer(recipients, wif, {
   broadcast: true,
-  callbackUrl: 'https://your-api.com/webhook'
+  callbackUrl: 'https://your-api.com/webhook',
 });
 
 // TransferMulti with webhook
 const response = await mnee.transferMulti(options, {
   broadcast: true,
-  callbackUrl: 'https://your-api.com/webhook'
+  callbackUrl: 'https://your-api.com/webhook',
 });
 
 // Submit raw transaction with webhook
 const response = await mnee.submitRawTx(rawTxHex, {
   broadcast: true,
-  callbackUrl: 'https://your-api.com/webhook'
+  callbackUrl: 'https://your-api.com/webhook',
 });
 ```
 
@@ -716,12 +729,14 @@ const response = await mnee.submitRawTx(rawTxHex, {
 - **FAILED** → Transaction failed (check `errors` field for details)
 
 ### Performance
+
 - Batch operations automatically chunk requests
 - Rate limiting prevents API throttling
 - Progress callbacks report chunk completion, not individual items
 - HD wallet caches derived addresses for performance
 
 ### Security
+
 - Never store private keys or mnemonics in plain text
 - Use WIF format for private keys
 - HD wallet follows BIP32/BIP44 standards

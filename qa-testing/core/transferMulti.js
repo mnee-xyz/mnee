@@ -697,29 +697,21 @@ async function testInvalidChangeAddress() {
 async function testTransferMultiWithBroadcast() {
   console.log('  Testing transferMulti with actual broadcast to the network!');
 
-  const utxos = await mnee.getUtxos(TEST_ADDRESS);
+  const utxos = await mnee.getEnoughUtxos(TEST_ADDRESS, 5000);
 
   if (utxos.length === 0) {
     console.log('  ⚠️  No UTXOs available for broadcast test, skipping');
     return;
   }
 
-  // find a utxo that has enough balance
-  const utxo = utxos.find((u) => u.data.bsv21.amt >= 1500);
-
-  if (!utxo) {
-    console.log('  ⚠️  No UTXO with sufficient balance for broadcast test, skipping');
-    return;
-  }
+  const inputs = utxos.map((u) => ({
+    txid: u.txid,
+    vout: u.vout,
+    wif: TEST_WIF,
+  }));
 
   const options = {
-    inputs: [
-      {
-        txid: utxo.txid,
-        vout: utxo.vout,
-        wif: TEST_WIF,
-      },
-    ],
+    inputs,
     recipients: [
       {
         address: '1525VDfA8swjDMLHjLRCCmPFsTJToarrA2',
