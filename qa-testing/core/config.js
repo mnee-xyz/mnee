@@ -22,9 +22,7 @@ async function testConfig() {
   assert(config.decimals >= 0, 'Config should have valid decimals');
 
   // Display key config values
-  console.log(`  Token ID: ${config.tokenId}`);
-  console.log(`  Decimals: ${config.decimals}`);
-  console.log(`  Mint Address: ${config.mintAddress}`);
+  console.log(config);
 }
 
 // Run tests

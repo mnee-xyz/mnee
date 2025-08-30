@@ -328,13 +328,20 @@ export class MNEEService {
     let utxos: MNEEUtxo[] = [];
     let totalUtxoAmount = 0;
 
-    while (totalUtxoAmount < totalAtomicTokenAmount) {
+    const config = this.mneeConfig || (await this.getCosignerConfig());
+    if (!config) throw stacklessError('Config not fetched');
+    const fees = config.fees;
+    const fee = fees.find((f) => totalAtomicTokenAmount >= f.min && totalAtomicTokenAmount <= f.max);
+    if (!fee) throw stacklessError('Fee not found');
+    const feeAmount = fee.fee;
+
+    while (totalUtxoAmount < totalAtomicTokenAmount + feeAmount) {
       const pageUtxos = await this.getUtxos(address, page, size);
       if (pageUtxos.length === 0) {
         // No more UTXOs available, check if we have enough
-        throw stacklessError(
-          `Insufficient MNEE balance. Max transfer amount: ${this.fromAtomicAmount(totalUtxoAmount)}`,
-        );
+        const balance = await this.getBalance(address);
+        const maxTransferAmount = this.fromAtomicAmount(balance.amount - feeAmount);
+        throw stacklessError(`Insufficient MNEE balance. Max transfer amount: ${maxTransferAmount}`);
       }
 
       const sortedHighestToLowest = pageUtxos.sort((a, b) => b.data.bsv21.amt - a.data.bsv21.amt);
@@ -342,8 +349,8 @@ export class MNEEService {
       for (const utxo of sortedHighestToLowest) {
         utxos.push(utxo);
         totalUtxoAmount += utxo.data.bsv21.amt;
-        if (totalUtxoAmount >= totalAtomicTokenAmount) {
-          return utxos; // We have enough, return immediately without fetching more pages
+        if (totalUtxoAmount >= totalAtomicTokenAmount + feeAmount) {
+          return utxos;
         }
       }
 
@@ -385,7 +392,6 @@ export class MNEEService {
 
       const address = privateKey.toAddress();
       const utxos = await this.getEnoughUtxos(address, totalAtomicTokenAmount);
-      const totalUtxoAmount = utxos.reduce((sum, utxo) => sum + (utxo.data.bsv21.amt || 0), 0);
 
       const fee =
         request.find((req) => req.address === config.burnAddress) !== undefined
@@ -402,10 +408,11 @@ export class MNEEService {
 
       while (tokensIn < totalAtomicTokenAmount + fee) {
         const utxo = utxos.shift();
-        if (!utxo)
-          throw stacklessError(
-            'Insufficient MNEE balance. Max transfer amount is ' + this.fromAtomicAmount(totalUtxoAmount),
-          );
+        if (!utxo) {
+          const balance = await this.getBalance(address);
+          const maxTransferAmount = this.fromAtomicAmount(balance.amount - fee);
+          throw stacklessError('Insufficient MNEE balance. Max transfer amount is ' + maxTransferAmount);
+        }
 
         const sourceTransaction = await this.fetchRawTx(utxo.txid);
         if (!sourceTransaction) throw stacklessError('Failed to fetch source transaction');
@@ -1458,7 +1465,7 @@ export class MNEEService {
     return { tokensIn };
   }
 
-  private calculateTransferFee(
+  private calculateTransferMultiFee(
     tokensIn: number,
     totalAtomicTokenAmount: number,
     changeAddress: TransferMultiOptions['changeAddress'],
@@ -1703,7 +1710,7 @@ export class MNEEService {
         inputAddresses.add(privKey.toAddress());
       }
 
-      const feeResult = this.calculateTransferFee(
+      const feeResult = this.calculateTransferMultiFee(
         tokensIn,
         totalAtomicTokenAmount,
         options.changeAddress,
