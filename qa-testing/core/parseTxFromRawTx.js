@@ -20,6 +20,7 @@ const knownTransactions = {
     mint: '9b42a339a97df37c8756a3425d4200ae2a592fd751c50e1d5ce0a1ddcab06b81',
     transfer: 'baa78cb903e0bf7af6e5fc5a27de59d587fc5ff4f08ed5e7886ab1a7d2741c5b',
     burn: 'e2421bb58ecb606c04e81a20943ea32eeac6c5c374d77d6dba7d46a2ddbad483',
+    redeem: 'ebef149590fb45f080e372152fdb475cbba5a9c6f43374b48b02d063261848f3',
   },
   production: {
     deploy: 'ae59f3b898ec61acbdb6cc7a245fabeded0c094bf046f35206a3aec60ef88127',
@@ -208,7 +209,46 @@ async function testCompareParsingMethods() {
   }
 }
 
-// Test 14.7: Test known transaction types
+// Test 14.7: Test redeem transaction parsing
+async function testRedeemTransaction() {
+  const redeemTxId = knownTransactions[config.environment]?.redeem;
+  
+  if (!redeemTxId) {
+    console.log(`  No redeem transaction available for ${config.environment} environment`);
+    return;
+  }
+  
+  try {
+    // Get the raw transaction hex first
+    const txWithRaw = await mnee.parseTx(redeemTxId, { includeRaw: true });
+    assert(txWithRaw.raw && txWithRaw.raw.txHex, 'Should get raw transaction hex');
+    
+    // Parse the raw transaction
+    const parsed = await mnee.parseTxFromRawTx(txWithRaw.raw.txHex);
+    
+    // Verify it's detected as redeem type
+    assert(parsed.type === 'redeem', `Transaction should be type 'redeem', got '${parsed.type}'`);
+    assert(parsed.isValid === true, 'Redeem transaction should be valid');
+    assert(parsed.environment === config.environment, `Environment should be ${config.environment}`);
+    
+    console.log(`  Parsed redeem transaction from raw: ${redeemTxId.substring(0, 10)}...`);
+    console.log(`  Type: ${parsed.type}`);
+    console.log(`  Valid: ${parsed.isValid}`);
+    console.log(`  Inputs: ${parsed.inputs.length}, Outputs: ${parsed.outputs.length}`);
+    
+    // Parse again with includeRaw to verify metadata
+    const parsedWithRaw = await mnee.parseTxFromRawTx(txWithRaw.raw.txHex, { includeRaw: true });
+    if (parsedWithRaw.raw) {
+      console.log(`  Raw data included for metadata inspection`);
+      // The metadata would be in the inscription of the outputs
+    }
+  } catch (error) {
+    console.log(`  Redeem transaction test error: ${error.message}`);
+    throw error;
+  }
+}
+
+// Test 14.8: Test known transaction types
 async function testKnownTransactionTypes() {
   // Test a few known transactions if we're in the right environment
   const transactions = knownTransactions[config.environment];
@@ -298,13 +338,17 @@ async function runTests() {
     await testCompareParsingMethods();
     console.log('✅ Test 14.6 passed\n');
 
-    console.log('Test 14.7: Test known transaction types');
-    await testKnownTransactionTypes();
+    console.log('Test 14.7: Test redeem transaction parsing');
+    await testRedeemTransaction();
     console.log('✅ Test 14.7 passed\n');
 
-    console.log('Test 14.8: Test transaction validation');
-    await testTransactionValidation();
+    console.log('Test 14.8: Test known transaction types');
+    await testKnownTransactionTypes();
     console.log('✅ Test 14.8 passed\n');
+
+    console.log('Test 14.9: Test transaction validation');
+    await testTransactionValidation();
+    console.log('✅ Test 14.9 passed\n');
 
     console.log('All tests passed! ✅');
   } catch (error) {

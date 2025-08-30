@@ -33,6 +33,14 @@ export default {
       expectedCosigners: 1,
       description: 'MNEE token burn transaction',
     },
+    redeem: {
+      txid: 'ebef149590fb45f080e372152fdb475cbba5a9c6f43374b48b02d063261848f3',
+      hasInscriptions: true,
+      hasCosigners: true,
+      expectedInscriptions: 1,
+      expectedCosigners: 1,
+      description: 'MNEE token redeem transaction',
+    },
   },
   production: {
     deploy: {

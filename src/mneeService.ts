@@ -715,17 +715,24 @@ export class MNEEService {
 
       // Check what operations we have
       const operations = new Set(mneeInscriptions.map((o) => (o.inscription as MneeInscription).op));
-      const hasTransfer = operations.has('transfer');
       const hasBurn = operations.has('burn');
-      
+
       // Check for redeem operations (transfer with redeem metadata)
       const hasRedeem = mneeInscriptions.some(
-        (o) => (o.inscription as MneeInscription).op === 'transfer' && 
-               (o.inscription as MneeInscription).metadata?.action === 'redeem'
+        (o) =>
+          (o.inscription as MneeInscription).op === 'transfer' &&
+          (o.inscription as MneeInscription).metadata?.action === 'redeem',
       );
 
-      // Require cosigner for transfer, burn, and redeem operations
-      if ((hasTransfer || hasBurn || hasRedeem) && !hasCosigner) {
+      // Check if this is a redeem from mint address (which doesn't require cosigner)
+      const isRedeemFromMint =
+        hasRedeem && outputDetails.some((o) => o.address === SANDBOX_MINT_ADDRESS || o.address === PROD_MINT_ADDRESS);
+
+      // Check for regular transfers (not redeems)
+      const hasRegularTransfer = operations.has('transfer') && !hasRedeem;
+
+      // Require cosigner for regular transfers, burns, and non-mint redeems
+      if ((hasRegularTransfer || hasBurn || (hasRedeem && !isRedeemFromMint)) && !hasCosigner) {
         throw stacklessError('Cosigner not found in transaction with transfer/burn/redeem operation');
       }
 
@@ -1345,12 +1352,13 @@ export class MNEEService {
       if (hasMintInputAddress) {
         type = 'mint';
       }
-      
-      // Check if any output has redeem metadata
-      const hasRedeemOutput = outputData.outputs.some(
-        (output) => output.inscription?.metadata?.action === 'redeem'
-      );
-      
+    }
+
+    // Check if any output has redeem metadata (check this for any transfer-like operation)
+    // This should override mint/transfer types as redeem is a special operation marked by metadata
+    if (type === 'transfer' || type === 'mint') {
+      const hasRedeemOutput = outputData.outputs.some((output) => output.inscription?.metadata?.action === 'redeem');
+
       if (hasRedeemOutput) {
         type = 'redeem';
       }

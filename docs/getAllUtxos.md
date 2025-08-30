@@ -80,7 +80,7 @@ try {
 ## Performance Considerations
 
 - **Complete Fetch**: Retrieves ALL UTXOs for the address, which may take longer for addresses with many UTXOs
-- **Automatic Pagination**: Uses 25 UTXOs per page and automatically continues until all are fetched
+- **Automatic Pagination**: Uses 100 UTXOs per page and automatically continues until all are fetched
 - **Memory Usage**: Stores all UTXOs in memory - consider using `getUtxos` with pagination for very large UTXO sets
 - **Network Intensive**: Makes multiple API calls for addresses with many UTXOs
 
