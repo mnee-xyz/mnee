@@ -322,42 +322,61 @@ export class MNEEService {
   }
 
   public async getEnoughUtxos(address: string, totalAtomicTokenAmount: number): Promise<MNEEUtxo[]> {
-    // use pagination to loop through and get enough utxos
-    let page = 1;
-    let size = 25;
-    let utxos: MNEEUtxo[] = [];
-    let totalUtxoAmount = 0;
-
     const config = this.mneeConfig || (await this.getCosignerConfig());
     if (!config) throw stacklessError('Config not fetched');
     const fees = config.fees;
     const fee = fees.find((f) => totalAtomicTokenAmount >= f.min && totalAtomicTokenAmount <= f.max);
     if (!fee) throw stacklessError('Fee not found');
     const feeAmount = fee.fee;
+    const requiredAmount = totalAtomicTokenAmount + feeAmount;
 
-    while (totalUtxoAmount < totalAtomicTokenAmount + feeAmount) {
+    // Check balance upfront to avoid unnecessary pagination
+    const balance = await this.getBalance(address);
+    if (balance.amount < requiredAmount) {
+      const maxTransferAmount = this.fromAtomicAmount(balance.amount - feeAmount);
+      throw stacklessError(`Insufficient MNEE balance. Max transfer amount: ${maxTransferAmount}`);
+    }
+
+    let page = 1;
+    let size = 25;
+    let allUtxos: MNEEUtxo[] = [];
+    let totalUtxoAmount = 0;
+
+    // Collect UTXOs until we have enough
+    while (totalUtxoAmount < requiredAmount) {
       const pageUtxos = await this.getUtxos(address, page, size);
       if (pageUtxos.length === 0) {
-        // No more UTXOs available, check if we have enough
-        const balance = await this.getBalance(address);
-        const maxTransferAmount = this.fromAtomicAmount(balance.amount - feeAmount);
+        // This shouldn't happen given we checked balance, but handle gracefully
+        const maxTransferAmount = this.fromAtomicAmount(totalUtxoAmount - feeAmount);
         throw stacklessError(`Insufficient MNEE balance. Max transfer amount: ${maxTransferAmount}`);
       }
 
-      const sortedHighestToLowest = pageUtxos.sort((a, b) => b.data.bsv21.amt - a.data.bsv21.amt);
-
-      for (const utxo of sortedHighestToLowest) {
-        utxos.push(utxo);
-        totalUtxoAmount += utxo.data.bsv21.amt;
-        if (totalUtxoAmount >= totalAtomicTokenAmount + feeAmount) {
-          return utxos;
-        }
+      allUtxos.push(...pageUtxos);
+      totalUtxoAmount = allUtxos.reduce((sum, utxo) => sum + utxo.data.bsv21.amt, 0);
+      
+      if (totalUtxoAmount >= requiredAmount) {
+        break;
       }
-
+      
       page++;
     }
 
-    return utxos;
+    // Sort all collected UTXOs by amount (highest first) for optimal selection
+    allUtxos.sort((a, b) => b.data.bsv21.amt - a.data.bsv21.amt);
+
+    // Select only the UTXOs we need
+    let selectedUtxos: MNEEUtxo[] = [];
+    let selectedAmount = 0;
+    
+    for (const utxo of allUtxos) {
+      selectedUtxos.push(utxo);
+      selectedAmount += utxo.data.bsv21.amt;
+      if (selectedAmount >= requiredAmount) {
+        break;
+      }
+    }
+
+    return selectedUtxos;
   }
 
   public async getAllUtxos(address: string): Promise<MNEEUtxo[]> {
