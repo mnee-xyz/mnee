@@ -7,6 +7,7 @@ The MNEE TypeScript SDK provides a comprehensive and efficient way to interact w
 📚 **Full documentation is available at [https://docs.mnee.io](https://docs.mnee.io)**
 
 For detailed API references and advanced usage, see the [docs](./docs) directory:
+
 - [Configuration](./docs/config.md)
 - [Balance Operations](./docs/balance.md)
 - [Transfers](./docs/transfer.md) & [Multi-source Transfers](./docs/transferMulti.md)
@@ -31,7 +32,7 @@ import Mnee from 'mnee';
 // Initialize the SDK
 const mnee = new Mnee({
   environment: 'production', // or 'sandbox'
-  apiKey: 'your-api-key'     // optional but recommended
+  apiKey: 'your-api-key', // optional but recommended
 });
 ```
 
@@ -51,11 +52,15 @@ const balances = await mnee.balances(['address1', 'address2']);
 ```typescript
 const recipients = [
   { address: '1RecipientAddress...', amount: 10.5 },
-  { address: '1AnotherAddress...', amount: 5.25 }
+  { address: '1AnotherAddress...', amount: 5.25 },
 ];
 
 const response = await mnee.transfer(recipients, 'your-private-key-wif');
-console.log('Transaction ID:', response.txid);
+console.log('Ticket ID:', response.ticketId);
+
+// Get transaction ID after broadcast
+const status = await mnee.getTxStatus(response.ticketId);
+console.log('Transaction ID:', status.tx_id);
 ```
 
 ### HD Wallet
@@ -66,7 +71,7 @@ import { HDWallet } from 'mnee';
 // Generate a new wallet
 const mnemonic = HDWallet.generateMnemonic();
 const hdWallet = mnee.HDWallet(mnemonic, {
-  derivationPath: "m/44'/236'/0'"
+  derivationPath: "m/44'/236'/0'",
 });
 
 // Derive addresses
@@ -88,7 +93,7 @@ const result = await batch.getBalances(addresses, {
   continueOnError: true,
   onProgress: (completed, total, errors) => {
     console.log(`Progress: ${completed}/${total} chunks, Errors: ${errors}`);
-  }
+  },
 });
 
 console.log(`Successfully processed ${result.results.length} addresses`);
@@ -98,22 +103,27 @@ console.log(`Errors: ${result.errors.length}`);
 ## Key Features
 
 ### 🔐 **HD Wallet Support**
+
 Full BIP32/BIP44 hierarchical deterministic wallet implementation for managing multiple addresses from a single seed.
 
 ### ⚡ **Batch Processing**
+
 High-performance batch operations with automatic chunking, rate limiting, and error recovery.
 
 ### 💸 **Flexible Transfers**
+
 - Simple transfers with automatic UTXO selection
 - Multi-source transfers for complex scenarios
 - Support for multiple change addresses
 
 ### 🔍 **Transaction Analysis**
+
 - Parse transactions by ID or raw hex
 - Validate transactions before broadcasting
 - Extract inscription and cosigner data
 
 ### 📊 **Comprehensive Data Access**
+
 - Real-time balance queries
 - UTXO management
 - Transaction history with pagination
@@ -137,14 +147,18 @@ console.log(`Total portfolio: ${total} MNEE`);
 ```typescript
 // Send payments to multiple recipients
 const payments = [
-  { address: 'employee1', amount: 1000 },
-  { address: 'employee2', amount: 1500 },
-  { address: 'contractor1', amount: 750 }
+  { address: '1Employee1Address...', amount: 1000 },
+  { address: '1Employee2Address...', amount: 1500 },
+  { address: '1ContractorAddress...', amount: 750 },
 ];
 
 try {
   const result = await mnee.transfer(payments, payerWif);
-  console.log('Payments sent:', result.txid);
+  console.log('Payments sent, ticket:', result.ticketId);
+
+  // Wait for confirmation
+  const status = await mnee.getTxStatus(result.ticketId);
+  console.log('Transaction confirmed:', status.tx_id);
 } catch (error) {
   console.error('Payment failed:', error.message);
 }
@@ -154,25 +168,29 @@ try {
 
 ```typescript
 // Consolidate UTXOs from multiple addresses
-const utxos = await mnee.getUtxos(['address1', 'address2']);
-const inputs = utxos.map(utxo => ({
+// Note: getUtxos defaults to 10, specify larger size or use pagination
+const utxos = await mnee.getUtxos(['1Address1...', '1Address2...'], 0, 1000);
+const inputs = utxos.map((utxo) => ({
   txid: utxo.outpoint.split(':')[0],
   vout: parseInt(utxo.outpoint.split(':')[1]),
-  wif: getWifForAddress(utxo.owners[0])
+  wif: getWifForAddress(utxo.owners[0]),
 }));
 
-const totalAmount = utxos.reduce(
-  (sum, utxo) => sum + mnee.fromAtomicAmount(utxo.data.bsv21.amt), 
-  0
-);
+const totalAmount = utxos.reduce((sum, utxo) => sum + mnee.fromAtomicAmount(utxo.data.bsv21.amt), 0);
 
 const result = await mnee.transferMulti({
   inputs,
-  recipients: [{ 
-    address: 'consolidation-address', 
-    amount: totalAmount - 0.01 // Leave room for fees
-  }]
+  recipients: [
+    {
+      address: '1ConsolidationAddress...',
+      amount: totalAmount - 0.01, // Leave room for fees
+    },
+  ],
 });
+
+// Get transaction ID after broadcast
+const status = await mnee.getTxStatus(result.ticketId);
+console.log('Consolidation transaction:', status.tx_id);
 ```
 
 ## Error Handling
@@ -183,14 +201,14 @@ The SDK provides detailed error messages for common scenarios:
 try {
   const result = await mnee.transfer(recipients, wif);
 } catch (error) {
-  switch (error.message) {
-    case 'Insufficient MNEE balance':
+  switch (true) {
+    case error.message.includes('Insufficient MNEE balance'):
       console.error('Not enough tokens');
       break;
-    case 'Invalid API key':
+    case error.menssage.includes('Invalid API key'):
       console.error('Authentication failed');
       break;
-    case 'Failed to broadcast transaction':
+    case error.message.includes('Failed to broadcast transaction'):
       console.error('Transaction rejected by network');
       break;
     default:
@@ -205,15 +223,16 @@ MNEE uses atomic units internally (1 MNEE = 100,000 atomic units):
 
 ```typescript
 // Convert to atomic units for precise calculations
-const atomic = mnee.toAtomicAmount(1.5);  // Returns: 150000
+const atomic = mnee.toAtomicAmount(1.5); // Returns: 150000
 
 // Convert from atomic to MNEE for display
-const mneeAmount = mnee.fromAtomicAmount(150000);  // Returns: 1.5
+const mneeAmount = mnee.fromAtomicAmount(150000); // Returns: 1.5
 ```
 
 ## Advanced Features
 
 For advanced usage including:
+
 - Transaction validation with custom rules
 - Multi-signature support
 - Custom change address strategies

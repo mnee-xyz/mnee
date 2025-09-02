@@ -8,12 +8,14 @@ import {
   ParseOptions,
   SendMNEE,
   TransferResponse,
+  TransferStatus,
   TransferMultiOptions,
   TxHistoryResponse,
   AddressHistoryParams,
   Inscription,
   ParsedCosigner,
   MNEEUtxo,
+  TransferOptions,
 } from './mnee.types.js';
 import { Script } from '@bsv/sdk';
 import { HDWallet, HDWalletOptions } from './hdWallet.js';
@@ -24,14 +26,22 @@ export interface MneeInterface {
   config(): Promise<MNEEConfig>;
   balance(address: string): Promise<MNEEBalance>;
   balances(addresses: string[]): Promise<MNEEBalance[]>;
-  getUtxos(address: string | string[]): Promise<MNEEUtxo[]>;
+  getUtxos(address: string | string[], page?: number, size?: number, order?: 'asc' | 'desc'): Promise<MNEEUtxo[]>;
+  getEnoughUtxos(address: string, totalAtomicTokenAmount: number): Promise<MNEEUtxo[]>;
+  getAllUtxos(address: string): Promise<MNEEUtxo[]>;
   validateMneeTx(rawTxHex: string, request?: SendMNEE[]): Promise<boolean>;
-  transfer(request: SendMNEE[], wif: string, broadcast?: boolean): Promise<TransferResponse>;
-  transferMulti(options: TransferMultiOptions, broadcast?: boolean): Promise<TransferResponse>;
+  transfer(request: SendMNEE[], wif: string, transferOptions?: TransferOptions): Promise<TransferResponse>;
+  transferMulti(options: TransferMultiOptions, transferOptions?: TransferOptions): Promise<TransferResponse>;
   submitRawTx(rawTxHex: string): Promise<TransferResponse>;
+  getTxStatus(ticketId: string): Promise<TransferStatus>;
   toAtomicAmount(amount: number): number;
   fromAtomicAmount(amount: number): number;
-  recentTxHistory(address: string, fromScore?: number, limit?: number): Promise<TxHistoryResponse>;
+  recentTxHistory(
+    address: string,
+    fromScore?: number,
+    limit?: number,
+    order?: 'asc' | 'desc',
+  ): Promise<TxHistoryResponse>;
   recentTxHistories(params: AddressHistoryParams[]): Promise<TxHistoryResponse[]>;
   parseTx(txid: string, options?: ParseOptions): Promise<ParseTxResponse | ParseTxExtendedResponse>;
   parseTxFromRawTx(rawTxHex: string, options?: ParseOptions): Promise<ParseTxResponse | ParseTxExtendedResponse>;
@@ -136,8 +146,34 @@ export default class Mnee implements MneeInterface {
    * @param address - The address to retrieve the UTXOs for.
    * @returns A promise that resolves to an array of `MNEEUtxo` objects containing the UTXO details.
    */
-  async getUtxos(address: string | string[]): Promise<MNEEUtxo[]> {
-    return this.service.getUtxos(address);
+  async getUtxos(
+    address: string | string[],
+    page?: number,
+    size?: number,
+    order?: 'asc' | 'desc',
+  ): Promise<MNEEUtxo[]> {
+    return this.service.getUtxos(address, page, size, order);
+  }
+
+  /**
+   * Retrieves the UTXOs for a given address that have enough balance to cover the total atomic token amount.
+   *
+   * @param address - The address to retrieve the UTXOs for.
+   * @param totalAtomicTokenAmount - The total atomic token amount to cover.
+   * @returns A promise that resolves to an array of `MNEEUtxo` objects containing the UTXO details.
+   */
+  async getEnoughUtxos(address: string, totalAtomicTokenAmount: number): Promise<MNEEUtxo[]> {
+    return this.service.getEnoughUtxos(address, totalAtomicTokenAmount);
+  }
+
+  /**
+   * Retrieves all UTXOs for a given address.
+   *
+   * @param address - The address to retrieve the UTXOs for.
+   * @returns A promise that resolves to an array of `MNEEUtxo` objects containing the UTXO details.
+   */
+  async getAllUtxos(address: string): Promise<MNEEUtxo[]> {
+    return this.service.getAllUtxos(address);
   }
 
   /**
@@ -147,8 +183,8 @@ export default class Mnee implements MneeInterface {
    * @param {string} wif - The Wallet Import Format key used to authorize the transfer.
    * @returns {Promise<TransferResponse>} A promise that resolves to a TransferResponse object containing the result of the transfer.
    */
-  async transfer(request: SendMNEE[], wif: string, broadcast?: boolean): Promise<TransferResponse> {
-    return this.service.transfer(request, wif, broadcast);
+  async transfer(request: SendMNEE[], wif: string, transferOptions?: TransferOptions): Promise<TransferResponse> {
+    return this.service.transfer(request, wif, transferOptions);
   }
 
   /**
@@ -157,8 +193,8 @@ export default class Mnee implements MneeInterface {
    * @param options - The transfer options including inputs, recipients, and optional change address.
    * @returns A promise that resolves to a TransferResponse object containing the result of the transfer.
    */
-  async transferMulti(options: TransferMultiOptions, broadcast?: boolean): Promise<TransferResponse> {
-    return this.service.transferMulti(options, broadcast);
+  async transferMulti(options: TransferMultiOptions, transferOptions?: TransferOptions): Promise<TransferResponse> {
+    return this.service.transferMulti(options, transferOptions);
   }
 
   /**
@@ -167,8 +203,18 @@ export default class Mnee implements MneeInterface {
    * @param rawTxHex - The raw transaction hex string to submit.
    * @returns A promise that resolves to a TransferResponse object containing the result of the transfer.
    */
-  async submitRawTx(rawTxHex: string): Promise<TransferResponse> {
-    return this.service.submitRawTx(rawTxHex);
+  async submitRawTx(rawTxHex: string, transferOptions?: TransferOptions): Promise<TransferResponse> {
+    return this.service.submitRawTx(rawTxHex, transferOptions);
+  }
+
+  /**
+   * Gets the status of a transfer transaction using its ticket ID.
+   *
+   * @param ticketId - The ticket ID returned from submitRawTx or V2 transfer endpoint.
+   * @returns A promise that resolves to a TransferStatus object containing the current status of the transfer.
+   */
+  async getTxStatus(ticketId: string): Promise<TransferStatus> {
+    return this.service.getTxStatus(ticketId);
   }
 
   /**
@@ -180,8 +226,13 @@ export default class Mnee implements MneeInterface {
    * @returns A promise that resolves to a TxHistoryResponse object containing the transaction
    * history and the next score to retrieve additional transactions.
    */
-  async recentTxHistory(address: string, fromScore?: number, limit?: number): Promise<TxHistoryResponse> {
-    return this.service.getRecentTxHistory(address, fromScore, limit);
+  async recentTxHistory(
+    address: string,
+    fromScore?: number,
+    limit?: number,
+    order?: 'asc' | 'desc',
+  ): Promise<TxHistoryResponse> {
+    return this.service.getRecentTxHistory(address, fromScore, limit, order);
   }
 
   /**

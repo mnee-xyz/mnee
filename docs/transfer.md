@@ -7,13 +7,11 @@ The `transfer` method creates and optionally broadcasts MNEE token transfers. It
 ### Basic Transfer
 
 ```typescript
-const recipients = [
-  { address: 'recipient-address', amount: 2.55 }
-];
+const recipients = [{ address: 'recipient-address', amount: 2.55 }];
 const wif = 'sender-wif-key';
 
 const response = await mnee.transfer(recipients, wif);
-console.log('Transfer Response:', response);
+console.log('Ticket ID:', response.ticketId);
 ```
 
 ### Multiple Recipients
@@ -22,25 +20,42 @@ console.log('Transfer Response:', response);
 const recipients = [
   { address: 'recipient-1-address', amount: 2.55 },
   { address: 'recipient-2-address', amount: 5 },
-  { address: 'recipient-3-address', amount: 0.75 }
+  { address: 'recipient-3-address', amount: 0.75 },
 ];
 const wif = 'sender-wif-key';
 
 const response = await mnee.transfer(recipients, wif);
-console.log('Transaction ID:', response.txid);
+console.log('Ticket ID:', response.ticketId);
+
+// Check status of the transfer
+const status = await mnee.getTxStatus(response.ticketId);
+console.log('Status:', status);
 ```
 
 ### Create Without Broadcasting
 
 ```typescript
-const recipients = [
-  { address: 'recipient-address', amount: 10 }
-];
+const recipients = [{ address: 'recipient-address', amount: 10 }];
 
 // Set broadcast to false to create but not submit
-const response = await mnee.transfer(recipients, wif, false);
+const response = await mnee.transfer(recipients, wif, { broadcast: false });
 console.log('Raw transaction:', response.rawtx);
-// Transaction ID will not be available until broadcast
+// Ticket ID will not be available when broadcast is false
+```
+
+### Transfer with Webhook Callback
+
+```typescript
+const recipients = [{ address: 'recipient-address', amount: 10 }];
+
+// Provide webhook URL for async status updates
+const response = await mnee.transfer(recipients, wif, {
+  broadcast: true,
+  callbackUrl: 'https://your-api.com/webhook/mnee',
+});
+
+console.log('Ticket ID:', response.ticketId);
+// Your webhook will receive status updates as the transaction progresses
 ```
 
 ## Parameters
@@ -49,7 +64,9 @@ console.log('Raw transaction:', response.rawtx);
   - **address**: Recipient Bitcoin address
   - **amount**: Amount to send in MNEE (not atomic units)
 - **wif**: Wallet Import Format private key of the sender
-- **broadcast** (optional): Whether to broadcast the transaction (default: `true`)
+- **transferOptions** (optional): Object containing:
+  - **broadcast**: Whether to broadcast the transaction (default: `true`)
+  - **callbackUrl**: Webhook URL for status updates (only when broadcast is true)
 
 ## Response
 
@@ -57,8 +74,8 @@ Returns a `TransferResponse` object:
 
 ```typescript
 {
-  rawtx: string;    // The raw transaction hex
-  txid?: string;    // Transaction ID (only if broadcast is true)
+  ticketId?: string;  // Ticket ID for tracking (only if broadcast is true)
+  rawtx?: string;     // The raw transaction hex (only if broadcast is false)
 }
 ```
 
@@ -69,12 +86,12 @@ Returns a `TransferResponse` object:
 ```typescript
 async function payInvoice(recipientAddress, amountMNEE, senderWif) {
   try {
-    const response = await mnee.transfer(
-      [{ address: recipientAddress, amount: amountMNEE }],
-      senderWif
-    );
-    console.log(`Payment sent! TxID: ${response.txid}`);
-    return response.txid;
+    const response = await mnee.transfer([{ address: recipientAddress, amount: amountMNEE }], senderWif);
+    console.log(`Payment sent! Ticket: ${response.ticketId}`);
+
+    // Get transaction ID from status
+    const status = await mnee.getTxStatus(response.ticketId);
+    return status.tx_id;
   } catch (error) {
     console.error('Payment failed:', error.message);
     throw error;
@@ -90,14 +107,14 @@ async function distributePayments(payments, senderWif) {
   try {
     const response = await mnee.transfer(payments, senderWif);
     console.log(`Distributed to ${payments.length} recipients`);
-    console.log(`Transaction: ${response.txid}`);
-    
+    console.log(`Ticket ID: ${response.ticketId}`);
+
     // Log each payment
-    payments.forEach(p => {
+    payments.forEach((p) => {
       console.log(`  - ${p.address}: ${p.amount} MNEE`);
     });
-    
-    return response.txid;
+
+    return response.ticketId;
   } catch (error) {
     console.error('Distribution failed:', error.message);
     throw error;
@@ -110,21 +127,21 @@ async function distributePayments(payments, senderWif) {
 ```typescript
 async function secureTransfer(recipients, wif) {
   // Step 1: Create transaction without broadcasting
-  const txResponse = await mnee.transfer(recipients, wif, false);
-  
+  const txResponse = await mnee.transfer(recipients, wif, { broadcast: false });
+
   // Step 2: Validate the transaction
   const isValid = await mnee.validateMneeTx(txResponse.rawtx, recipients);
   if (!isValid) {
     throw new Error('Transaction validation failed');
   }
-  
+
   // Step 3: Parse to review
   const parsed = await mnee.parseTxFromRawTx(txResponse.rawtx);
   console.log('Transaction details:', parsed);
-  
+
   // Step 4: Broadcast if everything looks good
   const submitResponse = await mnee.submitRawTx(txResponse.rawtx);
-  return submitResponse.txid;
+  return submitResponse.ticketId;
 }
 ```
 
@@ -134,19 +151,20 @@ async function secureTransfer(recipients, wif) {
 async function safeTransfer(recipients, wif, senderAddress) {
   // Calculate total needed
   const totalNeeded = recipients.reduce((sum, r) => sum + r.amount, 0);
-  
+
   // Check balance
   const balance = await mnee.balance(senderAddress);
   if (balance.decimalAmount < totalNeeded) {
-    throw new Error(
-      `Insufficient balance. Have ${balance.decimalAmount}, need ${totalNeeded} MNEE`
-    );
+    throw new Error(`Insufficient balance. Have ${balance.decimalAmount}, need ${totalNeeded} MNEE`);
   }
-  
+
   // Proceed with transfer
   const response = await mnee.transfer(recipients, wif);
-  console.log(`Transfer complete: ${response.txid}`);
-  return response.txid;
+  console.log(`Transfer complete: ${response.ticketId}`);
+
+  // Get transaction ID
+  const status = await mnee.getTxStatus(response.ticketId);
+  return status.tx_id;
 }
 ```
 
@@ -155,20 +173,21 @@ async function safeTransfer(recipients, wif, senderAddress) {
 ```typescript
 async function sendMicroPayment(address, amount, wif) {
   const MIN_AMOUNT = 0.001; // 0.001 MNEE minimum
-  
+
   if (amount < MIN_AMOUNT) {
     throw new Error(`Amount too small. Minimum is ${MIN_AMOUNT} MNEE`);
   }
-  
-  const response = await mnee.transfer(
-    [{ address, amount }],
-    wif
-  );
-  
+
+  const response = await mnee.transfer([{ address, amount }], wif);
+
+  // Get transaction ID from status
+  const status = await mnee.getTxStatus(response.ticketId);
+
   return {
-    txid: response.txid,
+    txid: status.tx_id,
+    ticketId: response.ticketId,
     amount: amount,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
   };
 }
 ```
@@ -181,34 +200,32 @@ The transfer method can throw several specific errors:
 try {
   const response = await mnee.transfer(recipients, wif);
 } catch (error) {
-  switch (error.message) {
-    case 'Config not fetched':
+  switch (true) {
+    case error.message('Config not fetched'):
       console.error('Failed to fetch cosigner configuration');
       break;
-    case 'Invalid transfer options':
+    case error.message('Invalid transfer options'):
       console.error('Invalid recipients or amounts');
       break;
-    case 'Private key not found':
+    case error.message('Private key not found'):
       console.error('Invalid WIF private key');
       break;
-    case 'Invalid amount':
+    case error.message('Invalid amount'):
       console.error('Amount must be greater than 0');
       break;
-    case 'Insufficient MNEE balance':
+    case error.message('Insufficient MNEE balance'):
       console.error('Not enough MNEE tokens');
       break;
-    case 'Failed to broadcast transaction':
+    case error.message('Failed to broadcast transaction'):
       console.error('Cosigner rejected the transaction');
       break;
-    case 'Invalid API key':
+    case error.message('Invalid API key'):
       console.error('API key authentication failed (401/403)');
+    case error.message.includes('HTTP error! status:'):
+      console.error('API request failed:', error.message);
       break;
     default:
-      if (error.message.includes('HTTP error! status:')) {
-        console.error('API request failed:', error.message);
-      } else {
-        console.error('Transfer failed:', error.message);
-      }
+      console.error('Transfer failed:', error.message);
   }
 }
 ```
@@ -224,10 +241,13 @@ try {
 - Minimum transfer amount is determined by dust limit (check via `config()`)
 - All recipients must have valid Bitcoin addresses
 - The sender must have sufficient balance to cover amounts + fees
+- When broadcast is true, the transaction is processed asynchronously and you receive a ticketId to track status
 
 ## See Also
 
 - [Transfer Multi](./transferMulti.md) - Advanced transfers with UTXO control
 - [Submit Raw Transaction](./submitRawTx.md) - Broadcast pre-created transactions
+- [Get Transaction Status](./getTxStatus.md) - Track transaction status
+- [Transfer Webhooks](./transferWebhook.md) - Webhook callbacks for async updates
 - [Validate Transaction](./validateMneeTx.md) - Validate before broadcasting
 - [Check Balance](./balance.md) - Verify sufficient funds

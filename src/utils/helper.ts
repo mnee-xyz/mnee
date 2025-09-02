@@ -252,7 +252,7 @@ export const validateTransferMultiOptions = (options: TransferMultiOptions): { i
   }
 
   for (const input of options.inputs) {
-    if (!input.txid || !input.vout || !input.wif) {
+    if (!input.txid || typeof input.vout !== 'number' || !input.wif) {
       return {
         isValid: false,
         error: `Invalid input: ${JSON.stringify(input)}. Missing required fields: txid, vout, wif`,
@@ -286,12 +286,15 @@ export const validateTransferMultiOptions = (options: TransferMultiOptions): { i
   return { isValid: true };
 };
 
-export const validateTransferOptions = (options: SendMNEE[], wif: string): { isValid: boolean; totalAmount?: number; privateKey?: PrivateKey; error?: string } => {
+export const validateTransferOptions = (
+  options: SendMNEE[],
+  wif: string,
+): { isValid: boolean; totalAmount?: number; privateKey?: PrivateKey; error?: string } => {
   const { isValid, error, privateKey } = validateWIF(wif);
   if (options.length === 0) {
     return { isValid: false, error: 'Empty transfer options provided. Please provide at least one recipient.' };
   }
-  
+
   if (!isValid) {
     return { isValid: false, error: error || 'Invalid WIF key provided' };
   }
@@ -310,7 +313,10 @@ export const validateTransferOptions = (options: SendMNEE[], wif: string): { isV
       return { isValid: false, error: `Invalid amount for ${req.address}: amount must be a valid number` };
     }
     if (req.amount < MIN_TRANSFER_AMOUNT) {
-      return { isValid: false, error: `Invalid amount for ${req.address}: minimum transfer amount is ${MIN_TRANSFER_AMOUNT} MNEE` };
+      return {
+        isValid: false,
+        error: `Invalid amount for ${req.address}: minimum transfer amount is ${MIN_TRANSFER_AMOUNT} MNEE`,
+      };
     }
     totalAmount += req.amount;
   }

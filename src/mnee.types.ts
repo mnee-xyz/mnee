@@ -21,8 +21,7 @@ export type MNEEConfig = {
   tokenId: string;
 };
 
-export type MNEEOperation = 'transfer' | 'burn' | 'deploy+mint';
-export type TxOperation = 'transfer' | 'burn' | 'deploy' | 'mint';
+export type TxOperation = 'transfer' | 'burn' | 'deploy' | 'mint' | 'redeem';
 
 export type MNEEUtxo = {
   data: {
@@ -94,6 +93,10 @@ export type MneeInscription = {
   op: string;
   id: string;
   amt: string;
+  metadata?: {
+    action?: 'mint' | 'redeem';
+    [key: string]: any; // Allow other metadata fields in the future
+  };
 };
 
 export type ParsedCosigner = {
@@ -114,7 +117,42 @@ export interface Inscription {
   parent?: string;
 }
 
-export type TransferResponse = { rawtx: string; txid?: string };
+export type BalanceResponse = Array<{
+  address: string;
+  amt: number;
+  precised: number;
+}>;
+
+export type TransferResponse = { ticketId?: string; rawtx?: string };
+
+export type TransferStatus = {
+  id: string;
+  tx_id: string;
+  tx_hex: string;
+  action_requested: 'transfer';
+  status: 'BROADCASTING' | 'SUCCESS' | 'MINED' | 'FAILED';
+  createdAt: string;
+  updatedAt: string;
+  errors: string | null;
+};
+
+export type TransferOptions = {
+  broadcast?: boolean;
+  callbackUrl?: string;
+  // callbackSecret?: string; // TODO: Add this back in if/when we have a way to generate a secret
+};
+
+export type TransferWebhookResponse = {
+  id: string;
+  tx_id: string;
+  tx_hex: string;
+  action_requested: 'transfer';
+  callback_url: string;
+  status: 'SUCCESS' | 'BROADCASTING' | 'MINED' | 'FAILED';
+  createdAt: string;
+  updatedAt: string;
+  errors: string | null;
+};
 
 export interface TransferMultiOptions {
   inputs: Array<{
@@ -212,6 +250,7 @@ export interface AddressHistoryParams {
   address: string;
   fromScore?: number;
   limit?: number;
+  order?: 'asc' | 'desc';
 }
 
 export interface ProcessedInput {
