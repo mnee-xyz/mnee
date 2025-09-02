@@ -17,7 +17,7 @@ const TEST_WIF = testConfig.wallet.testWif;
 // Test 7.1: Basic transferMulti with single input
 async function testBasicTransferMulti() {
   // First get UTXOs for the test address
-  const utxos = await mnee.getUtxos(TEST_ADDRESS);
+  const utxos = await mnee.getUtxos(TEST_ADDRESS, undefined, 100);
 
   if (utxos.length === 0) {
     console.log('  ⚠️  No UTXOs available for test address, skipping test');
@@ -71,7 +71,7 @@ async function testBasicTransferMulti() {
 
 // Test 7.2: TransferMulti with multiple inputs from same address
 async function testMultipleInputs() {
-  const utxos = await mnee.getUtxos(TEST_ADDRESS);
+  const utxos = await mnee.getUtxos(TEST_ADDRESS, undefined, 100);
 
   if (utxos.length < 2) {
     console.log('  ⚠️  Not enough UTXOs for multiple input test, skipping');
@@ -119,7 +119,7 @@ async function testMultipleInputs() {
 
 // Test 7.3: TransferMulti with multiple recipients
 async function testMultipleRecipients() {
-  const utxos = await mnee.getUtxos(TEST_ADDRESS);
+  const utxos = await mnee.getUtxos(TEST_ADDRESS, undefined, 100);
 
   if (utxos.length === 0) {
     console.log('  ⚠️  No UTXOs available, skipping test');
@@ -203,7 +203,7 @@ async function testInvalidUtxo() {
 
 // Test 7.5: TransferMulti with mismatched WIF
 async function testMismatchedWif() {
-  const utxos = await mnee.getUtxos(TEST_ADDRESS);
+  const utxos = await mnee.getUtxos(TEST_ADDRESS, undefined, 100);
 
   if (utxos.length === 0) {
     console.log('  ⚠️  No UTXOs available, skipping test');
@@ -246,7 +246,7 @@ async function testMismatchedWif() {
 
 // Test 7.6: TransferMulti with multiple change addresses
 async function testMultipleChangeAddresses() {
-  const utxos = await mnee.getUtxos(TEST_ADDRESS);
+  const utxos = await mnee.getUtxos(TEST_ADDRESS, undefined, 100);
 
   if (utxos.length === 0) {
     console.log('  ⚠️  No UTXOs available, skipping test');
@@ -325,7 +325,7 @@ async function testEmptyInputs() {
 
 // Test 7.8: TransferMulti with empty recipients
 async function testEmptyRecipients() {
-  const utxos = await mnee.getUtxos(TEST_ADDRESS);
+  const utxos = await mnee.getUtxos(TEST_ADDRESS, undefined, 100);
 
   if (utxos.length === 0) {
     console.log('  ⚠️  No UTXOs available, using dummy data');
@@ -412,7 +412,7 @@ async function testInvalidRecipientAddresses() {
 
   console.log('  Testing various invalid recipient addresses:');
 
-  const utxos = await mnee.getUtxos(TEST_ADDRESS);
+  const utxos = await mnee.getUtxos(TEST_ADDRESS, undefined, 100);
   if (utxos.length === 0) {
     console.log('    ⚠️  No UTXOs available, using dummy data');
   }
@@ -463,7 +463,7 @@ async function testInvalidAmounts() {
 
   console.log('  Testing various invalid amounts:');
 
-  const utxos = await mnee.getUtxos(TEST_ADDRESS);
+  const utxos = await mnee.getUtxos(TEST_ADDRESS, undefined, 100);
   if (utxos.length === 0) {
     console.log('    ⚠️  No UTXOs available, using dummy data');
   }
@@ -598,7 +598,7 @@ async function testMissingRequiredFields() {
 
 // Test 7.13: TransferMulti with invalid change address
 async function testInvalidChangeAddress() {
-  const utxos = await mnee.getUtxos(TEST_ADDRESS);
+  const utxos = await mnee.getUtxos(TEST_ADDRESS, undefined, 100);
 
   if (utxos.length === 0) {
     console.log('  ⚠️  No UTXOs available, skipping test');
@@ -697,7 +697,7 @@ async function testInvalidChangeAddress() {
 async function testTransferMultiWithBroadcast() {
   console.log('  Testing transferMulti with actual broadcast to the network!');
 
-  const utxos = await mnee.getEnoughUtxos(TEST_ADDRESS, 5000);
+  const utxos = await mnee.getEnoughUtxos(TEST_ADDRESS, 3000);
 
   if (utxos.length === 0) {
     console.log('  ⚠️  No UTXOs available for broadcast test, skipping');

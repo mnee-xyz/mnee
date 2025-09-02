@@ -30,7 +30,7 @@ async function testDuplicateTransactions() {
     const individualTxIds = new Map();
 
     for (const address of addresses) {
-      const history = await mnee.recentTxHistory(address, undefined, 20);
+      const history = await mnee.recentTxHistory(address, undefined, 10000);
       individualHistories.set(address, history);
       individualTxIds.set(address, new Set(history.history.map(tx => tx.txid)));
       console.log(`  ${address}: ${history.history.length} transactions`);
@@ -38,15 +38,15 @@ async function testDuplicateTransactions() {
 
     // Now get batch histories with default order
     console.log('\nStep 2: Getting batch histories...');
-    const params = addresses.map(address => ({ address, limit: 20 }));
+    const params = addresses.map(address => ({ address, limit: 10000 }));
     const batchHistories = await mnee.recentTxHistories(params);
     
     // Test with different order parameters
     console.log('\nStep 2b: Testing with order parameters...');
-    const ascParams = addresses.map(address => ({ address, limit: 20, order: 'asc' }));
+    const ascParams = addresses.map(address => ({ address, limit: 10000, order: 'asc' }));
     const ascBatchHistories = await mnee.recentTxHistories(ascParams);
     
-    const descParams = addresses.map(address => ({ address, limit: 20, order: 'desc' }));
+    const descParams = addresses.map(address => ({ address, limit: 10000, order: 'desc' }));
     const descBatchHistories = await mnee.recentTxHistories(descParams);
     
     // Verify order affects results

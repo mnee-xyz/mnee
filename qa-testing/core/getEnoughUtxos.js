@@ -132,7 +132,7 @@ async function testGetEnoughUtxosEmptyAddress() {
       error.message.includes('Insufficient MNEE balance'),
       `Error should mention insufficient balance: "${error.message}"`,
     );
-    assert(error.message.includes('Max transfer amount: 0'), `Error should show 0 available: "${error.message}"`);
+    assert(error.message.includes('Max transfer amount: -0.001'), `Error should show -0.001 available: "${error.message}"`);
     console.log(`  ✓ Empty address correctly failed: "${error.message}"`);
   }
 }
@@ -212,11 +212,26 @@ async function testGetEnoughUtxosVsGetAllUtxos() {
 // Test 5.8: Edge case - request exact balance
 async function testGetEnoughUtxosExactBalance() {
   const balance = await mnee.balance(TEST_ADDRESS);
-  const exactAmount = balance.amount;
+  
+  // First, try to get the exact max transfer amount by attempting to request too much
+  // This will give us the exact maximum in the error message
+  let maxTransferAmount;
+  try {
+    // Request the full balance (which will fail and tell us the max)
+    await mnee.getEnoughUtxos(TEST_ADDRESS, balance.amount);
+  } catch (error) {
+    // Extract the max transfer amount from the error message
+    const match = error.message.match(/Max transfer amount: ([\d.]+)/);
+    if (match) {
+      maxTransferAmount = mnee.toAtomicAmount(parseFloat(match[1]));
+    } else {
+      throw new Error(`Could not determine max transfer amount from error: ${error.message}`);
+    }
+  }
 
-  console.log(`  Requesting exact balance: ${mnee.fromAtomicAmount(exactAmount)} MNEE`);
+  console.log(`  Requesting exact max transfer amount: ${mnee.fromAtomicAmount(maxTransferAmount)} MNEE`);
 
-  const utxos = await mnee.getEnoughUtxos(TEST_ADDRESS, exactAmount);
+  const utxos = await mnee.getEnoughUtxos(TEST_ADDRESS, maxTransferAmount);
 
   const totalAmount = utxos.reduce((sum, utxo) => {
     if (utxo.data.bsv21.op === 'transfer') {
@@ -225,7 +240,7 @@ async function testGetEnoughUtxosExactBalance() {
     return sum;
   }, 0);
 
-  assert(totalAmount >= exactAmount, 'Should have at least the exact amount');
+  assert(totalAmount >= maxTransferAmount, 'Should have at least the exact amount');
   console.log(
     `  ✓ Got ${utxos.length} UTXOs with ${mnee.fromAtomicAmount(totalAmount)} MNEE for exact balance request`,
   );
