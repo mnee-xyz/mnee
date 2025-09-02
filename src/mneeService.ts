@@ -330,7 +330,6 @@ export class MNEEService {
     const feeAmount = fee.fee;
     const requiredAmount = totalAtomicTokenAmount + feeAmount;
 
-    // Check balance upfront to avoid unnecessary pagination
     const balance = await this.getBalance(address);
     if (balance.amount < requiredAmount) {
       const maxTransferAmount = this.fromAtomicAmount(balance.amount - feeAmount);
@@ -353,11 +352,11 @@ export class MNEEService {
 
       allUtxos.push(...pageUtxos);
       totalUtxoAmount = allUtxos.reduce((sum, utxo) => sum + utxo.data.bsv21.amt, 0);
-      
+
       if (totalUtxoAmount >= requiredAmount) {
         break;
       }
-      
+
       page++;
     }
 
@@ -367,7 +366,7 @@ export class MNEEService {
     // Select only the UTXOs we need
     let selectedUtxos: MNEEUtxo[] = [];
     let selectedAmount = 0;
-    
+
     for (const utxo of allUtxos) {
       selectedUtxos.push(utxo);
       selectedAmount += utxo.data.bsv21.amt;

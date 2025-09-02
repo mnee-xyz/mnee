@@ -33,42 +33,36 @@ const knownTransactions = {
 async function testParseValidTransaction() {
   try {
     // First get a transaction from history to parse
-    const history = await mnee.recentTxHistory(TEST_ADDRESS, undefined, 1);
+    const txid = 'baa78cb903e0bf7af6e5fc5a27de59d587fc5ff4f08ed5e7886ab1a7d2741c5b';
 
-    if (history.history.length > 0) {
-      const txid = history.history[0].txid;
+    const parsed = await mnee.parseTx(txid);
 
-      const parsed = await mnee.parseTx(txid);
+    // Verify response structure
+    assert(parsed.txid === txid, 'Parsed txid should match requested txid');
+    assert(parsed.environment === config.environment, 'Environment should match');
+    assert(['transfer', 'burn', 'deploy', 'mint', 'redeem'].includes(parsed.type), 'Type should be valid');
+    assert(Array.isArray(parsed.inputs), 'Inputs should be an array');
+    assert(Array.isArray(parsed.outputs), 'Outputs should be an array');
+    assert(typeof parsed.isValid === 'boolean', 'isValid should be boolean');
+    assert(typeof parsed.inputTotal === 'string', 'inputTotal should be string');
+    assert(typeof parsed.outputTotal === 'string', 'outputTotal should be string');
 
-      // Verify response structure
-      assert(parsed.txid === txid, 'Parsed txid should match requested txid');
-      assert(parsed.environment === config.environment, 'Environment should match');
-      assert(['transfer', 'burn', 'deploy', 'mint'].includes(parsed.type), 'Type should be valid');
-      assert(Array.isArray(parsed.inputs), 'Inputs should be an array');
-      assert(Array.isArray(parsed.outputs), 'Outputs should be an array');
-      assert(typeof parsed.isValid === 'boolean', 'isValid should be boolean');
-      assert(typeof parsed.inputTotal === 'string', 'inputTotal should be string');
-      assert(typeof parsed.outputTotal === 'string', 'outputTotal should be string');
+    console.log(`  Parsed transaction ${txid.substring(0, 10)}...`);
+    console.log(`  Type: ${parsed.type}`);
+    console.log(`  Inputs: ${parsed.inputs.length}, Outputs: ${parsed.outputs.length}`);
+    console.log(`  Valid: ${parsed.isValid}`);
 
-      console.log(`  Parsed transaction ${txid.substring(0, 10)}...`);
-      console.log(`  Type: ${parsed.type}`);
-      console.log(`  Inputs: ${parsed.inputs.length}, Outputs: ${parsed.outputs.length}`);
-      console.log(`  Valid: ${parsed.isValid}`);
+    // Verify input/output structure
+    if (parsed.inputs.length > 0) {
+      const input = parsed.inputs[0];
+      assert(input.address, 'Input should have address');
+      assert(typeof input.amount === 'number', 'Input amount should be number');
+    }
 
-      // Verify input/output structure
-      if (parsed.inputs.length > 0) {
-        const input = parsed.inputs[0];
-        assert(input.address, 'Input should have address');
-        assert(typeof input.amount === 'number', 'Input amount should be number');
-      }
-
-      if (parsed.outputs.length > 0) {
-        const output = parsed.outputs[0];
-        assert(output.address, 'Output should have address');
-        assert(typeof output.amount === 'number', 'Output amount should be number');
-      }
-    } else {
-      console.log('  No transactions in history to test');
+    if (parsed.outputs.length > 0) {
+      const output = parsed.outputs[0];
+      assert(output.address, 'Output should have address');
+      assert(typeof output.amount === 'number', 'Output amount should be number');
     }
   } catch (error) {
     console.log(`  Parse valid transaction error: ${error.message}`);
@@ -79,43 +73,37 @@ async function testParseValidTransaction() {
 // Test 13.2: Parse with includeRaw option
 async function testParseWithIncludeRaw() {
   try {
-    const history = await mnee.recentTxHistory(TEST_ADDRESS, undefined, 1);
+    const txid = 'baa78cb903e0bf7af6e5fc5a27de59d587fc5ff4f08ed5e7886ab1a7d2741c5b';
 
-    if (history.history.length > 0) {
-      const txid = history.history[0].txid;
+    const parsed = await mnee.parseTx(txid, { includeRaw: true });
 
-      const parsed = await mnee.parseTx(txid, { includeRaw: true });
+    // Should have all standard fields
+    assert(parsed.txid === txid, 'Should have txid');
+    assert(parsed.inputs && parsed.outputs, 'Should have inputs and outputs');
 
-      // Should have all standard fields
-      assert(parsed.txid === txid, 'Should have txid');
-      assert(parsed.inputs && parsed.outputs, 'Should have inputs and outputs');
+    // Should also have raw data
+    assert(parsed.raw, 'Should have raw data when includeRaw is true');
+    assert(parsed.raw.txHex, 'Raw should have txHex');
+    assert(Array.isArray(parsed.raw.inputs), 'Raw should have inputs array');
+    assert(Array.isArray(parsed.raw.outputs), 'Raw should have outputs array');
 
-      // Should also have raw data
-      assert(parsed.raw, 'Should have raw data when includeRaw is true');
-      assert(parsed.raw.txHex, 'Raw should have txHex');
-      assert(Array.isArray(parsed.raw.inputs), 'Raw should have inputs array');
-      assert(Array.isArray(parsed.raw.outputs), 'Raw should have outputs array');
+    console.log(`  Parsed with raw data included`);
+    console.log(`  Raw tx hex length: ${parsed.raw.txHex.length} characters`);
 
-      console.log(`  Parsed with raw data included`);
-      console.log(`  Raw tx hex length: ${parsed.raw.txHex.length} characters`);
+    // Verify raw input structure
+    if (parsed.raw.inputs.length > 0) {
+      const rawInput = parsed.raw.inputs[0];
+      assert(rawInput.txid, 'Raw input should have txid');
+      assert(typeof rawInput.vout === 'number', 'Raw input should have vout');
+      assert(rawInput.scriptSig, 'Raw input should have scriptSig');
+      assert(typeof rawInput.sequence === 'number', 'Raw input should have sequence');
+    }
 
-      // Verify raw input structure
-      if (parsed.raw.inputs.length > 0) {
-        const rawInput = parsed.raw.inputs[0];
-        assert(rawInput.txid, 'Raw input should have txid');
-        assert(typeof rawInput.vout === 'number', 'Raw input should have vout');
-        assert(rawInput.scriptSig, 'Raw input should have scriptSig');
-        assert(typeof rawInput.sequence === 'number', 'Raw input should have sequence');
-      }
-
-      // Verify raw output structure
-      if (parsed.raw.outputs.length > 0) {
-        const rawOutput = parsed.raw.outputs[0];
-        assert(typeof rawOutput.value === 'number', 'Raw output should have value');
-        assert(rawOutput.scriptPubKey, 'Raw output should have scriptPubKey');
-      }
-    } else {
-      console.log('  No transactions to test with includeRaw');
+    // Verify raw output structure
+    if (parsed.raw.outputs.length > 0) {
+      const rawOutput = parsed.raw.outputs[0];
+      assert(typeof rawOutput.value === 'number', 'Raw output should have value');
+      assert(rawOutput.scriptPubKey, 'Raw output should have scriptPubKey');
     }
   } catch (error) {
     console.log(`  Parse with includeRaw error: ${error.message}`);
@@ -236,7 +224,7 @@ async function testAmountCalculations() {
 async function testDifferentTransactionTypes() {
   try {
     // Get multiple transactions to find different types
-    const history = await mnee.recentTxHistory(TEST_ADDRESS, undefined, 10);
+    const history = await mnee.recentTxHistory(TEST_ADDRESS, undefined, 3);
 
     assert(history.history.length > 0, 'Should have at least one transaction in history');
 
