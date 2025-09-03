@@ -433,7 +433,7 @@ export class MNEEService {
         }
 
         const sourceTransaction = await this.fetchRawTx(utxo.txid);
-        if (!sourceTransaction) throw stacklessError('Failed to fetch source transaction');
+        if (!sourceTransaction) throw stacklessError(`Failed to fetch source transaction: ${utxo.txid}`);
 
         changeAddress = changeAddress || utxo.owners[0];
         tx.addInput({
