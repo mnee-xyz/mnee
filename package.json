@@ -1,7 +1,10 @@
 {
-  "name": "mnee",
-  "version": "3.0.2",
-  "description": "A simple package for interacting with the MNEE USD",
+  "name": "@mnee/ts-sdk",
+  "publishConfig": {
+    "access": "public"
+  },
+  "version": "1.0.0",
+  "description": "Official typescript SDK of MNEE USD stablecoin",
   "type": "module",
   "source": "src/index.ts",
   "main": "dist/index.js",
@@ -34,15 +37,17 @@
   "keywords": [
     "mnee",
     "bsv",
-    "blockchain"
+    "blockchain",
+    "stablecoin",
+    "1satordinal"
   ],
-  "author": "Dan Wagner",
+  "author": "MNEE",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/mnee-xyz/mnee.git"
   },
-  "homepage": "https://github.com/mnee-xyz/mnee#readme",
+  "homepage": "https://docs.mnee.io",
   "bugs": {
     "url": "https://github.com/mnee-xyz/mnee/issues"
   },
