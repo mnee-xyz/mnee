@@ -16,7 +16,7 @@ This document provides comprehensive documentation for the MNEE SDK, designed to
 ### Installation and Initialization
 
 ```typescript
-import Mnee from 'mnee';
+import Mnee from 'mnee/ts-sdk';
 
 // Initialize MNEE SDK
 const mnee = new Mnee({
@@ -31,7 +31,7 @@ import {
   TransferResponse,
   HDWallet,
   // ... and more
-} from 'mnee';
+} from 'mnee/ts-sdk';
 ```
 
 #### SdkConfig Type
@@ -494,7 +494,7 @@ interface BatchParseTxResult {
 ### Setup
 
 ```typescript
-import Mnee, { HDWallet } from 'mnee';
+import Mnee, { HDWallet } from 'mnee/ts-sdk';
 
 const mnee = new Mnee({
   environment: 'production', // required
@@ -506,7 +506,7 @@ const mnee = new Mnee({
 
 ```typescript
 // Static methods can be accessed via Mnee.HDWallet or imported HDWallet
-import Mnee, { HDWallet } from 'mnee';
+import Mnee, { HDWallet } from 'mnee/ts-sdk';
 
 // Generate new mnemonic (12 words)
 const mnemonic = HDWallet.generateMnemonic();

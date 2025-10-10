@@ -5,7 +5,7 @@ The MNEE SDK includes a complete BIP32/BIP44 hierarchical deterministic (HD) wal
 ## Setup
 
 ```typescript
-import Mnee, { HDWallet } from 'mnee';
+import Mnee, { HDWallet } from 'mnee/ts-sdk';
 
 // Initialize MNEE SDK
 const mnee = new Mnee({ apiKey: 'your-api-key' });
