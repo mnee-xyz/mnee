@@ -5,7 +5,7 @@ The `config` method retrieves the current configuration for the MNEE service. Th
 ## Usage
 
 ```typescript
-import Mnee from 'mnee/ts-sdk';
+import Mnee from '@mnee/ts-sdk';
 
 const config = {
   environment: 'sandbox', // or 'production'

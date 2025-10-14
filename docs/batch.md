@@ -5,7 +5,7 @@ The MNEE SDK provides a powerful batch processing system for handling multiple o
 ## Setup
 
 ```typescript
-import Mnee from 'mnee/ts-sdk';
+import Mnee from '@mnee/ts-sdk';
 
 // Initialize MNEE SDK
 const mnee = new Mnee({ apiKey: 'your-api-key' });
