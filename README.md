@@ -19,7 +19,7 @@ For detailed API references and advanced usage, see the [docs](./docs) directory
 ## Installation
 
 ```bash
-npm install mnee/ts-sdk
+npm install @mnee/ts-sdk
 ```
 
 ## Quick Start
@@ -27,7 +27,7 @@ npm install mnee/ts-sdk
 ### Basic Setup
 
 ```typescript
-import Mnee from 'mnee/ts-sdk';
+import Mnee from '@mnee/ts-sdk';
 
 // Initialize the SDK
 const mnee = new Mnee({
@@ -66,7 +66,7 @@ console.log('Transaction ID:', status.tx_id);
 ### HD Wallet
 
 ```typescript
-import { HDWallet } from 'mnee/ts-sdk';
+import { HDWallet } from '@mnee/ts-sdk';
 
 // Generate a new wallet
 const mnemonic = HDWallet.generateMnemonic();
