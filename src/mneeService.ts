@@ -144,6 +144,23 @@ export class MNEEService {
       if (!address) {
         throw stacklessError('Address is required');
       }
+      if (page !== undefined) {
+        if (typeof page !== 'number' || page <= 0 || !Number.isFinite(page)) {
+          throw stacklessError(`Invalid page: ${page}. Must be a positive integer`);
+        }
+      }
+
+      if (size !== undefined) {
+        if (typeof size !== 'number' || size <= 0 || !Number.isInteger(size)) {
+          throw stacklessError(`Invalid size: ${size}. Must be a positive integer`);
+        }
+      }
+
+      if (order !== undefined) {
+        if (order !== 'asc' && order !== 'desc') {
+          throw stacklessError(`Invalid order: ${order}. Must be 'asc' or 'desc'`);
+        }
+      }
 
       // Handle single address
       if (typeof address === 'string') {
