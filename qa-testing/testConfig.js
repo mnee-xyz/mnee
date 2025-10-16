@@ -3,14 +3,14 @@ export default {
   apiKey: '54f1fd1688ba66a58a67675b82feb93e',
   addresses: {
     testAddress: '1525VDfA8swjDMLHjLRCCmPFsTJToarrA2',
-    emptyAddress: '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa',
+    emptyAddress: '1Gw5HiwzTkP9Ntf1U72qNM1Cp84Nakp1N6',
     invalidAddress: 'invalid-address',
   },
   balances: {
-    testAddressBalance: 1878454,
-    testAddressDecimalBalance: 18.78454,
-    testAddressTwoBalance: 2764371,
-    testAddressTwoDecimalBalance: 27.64371,
+    testAddressBalance: 1361654,
+    testAddressDecimalBalance: 13.61654,
+    testAddressTwoBalance: 1199071,
+    testAddressTwoDecimalBalance: 11.99071,
   },
   wallet: {
     testWif: 'L1z7N5Qkpkz93odzExb8DNyee2CRQAXsqWX3WQb2hpsbGsWAPeb1',
