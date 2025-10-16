@@ -6,7 +6,7 @@
   "scripts": {
     "build": "cd .. && npm run build && node -e \"const fs=require('fs'); const qaVer=fs.readFileSync('qa-testing/versions/.qa-version','utf8').trim(); const pkgVer=JSON.parse(fs.readFileSync('package.json','utf8')).version; const src='mnee-ts-sdk-'+pkgVer+'.tgz'; const dst='qa-testing/versions/qa-mnee-'+qaVer+'.tgz'; fs.copyFileSync(src,dst); console.log('Created: '+dst);\"",
     "bump": "node -e \"const fs=require('fs'); const v=fs.readFileSync('versions/.qa-version','utf8').trim().split('.'); v[2]++; const newVer=v.join('.'); fs.writeFileSync('versions/.qa-version',newVer); const pkg=JSON.parse(fs.readFileSync('package.json','utf8')); pkg.dependencies['@mnee/ts-sdk'] = 'file:versions/qa-mnee-' + newVer + '.tgz'; fs.writeFileSync('package.json',JSON.stringify(pkg,null,2)+'\\n'); console.log('QA version bumped to: '+newVer+' and package.json updated');\"",
-    "install:latest": "npm install ./versions/qa-mnee-$(cat versions/.qa-version).tgz",
+    "install:latest": "node -e \"const fs=require('fs'); const ver=fs.readFileSync('versions/.qa-version','utf8').trim(); require('child_process').execSync('npm install ./versions/qa-mnee-'+ver+'.tgz', {stdio:'inherit'});\"",
     "test:balance": "node balance.js",
     "test:balances": "node balances.js",
     "test:batch": "node batch.js",
