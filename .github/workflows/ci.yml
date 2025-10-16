@@ -1,4 +1,4 @@
-name: CI/CD Pipeline
+name: CI Pipeline
 
 on:
   push:
@@ -107,8 +107,8 @@ jobs:
       - name: Verify build output
         run: |
           ls -la dist/
-          if [ ! -f "dist/index.js" ]; then
-            echo "Error: dist/index.js not found"
+          if [ ! -f "dist/index.cjs" ]; then
+            echo "Error: dist/index.cjs not found"
             exit 1
           fi
       
