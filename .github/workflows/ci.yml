@@ -152,7 +152,7 @@ jobs:
       
       - name: Run QA test suite
         working-directory: qa-testing
-        run: npm run test:all
+        run: node run-all.js
         timeout-minutes: 45
       
       - name: Upload test logs (on failure)
