@@ -125,7 +125,7 @@ async function runAllTests() {
 
     // Show cooldown if not the last test
     if (currentIndex < totalTests) {
-      await showCooldown(5);
+      await showCooldown(3);
     }
     currentIndex++;
   }

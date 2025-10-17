@@ -1,4 +1,4 @@
-name: CI Pipeline
+name: Build & Test
 
 on:
   push:
@@ -54,14 +54,22 @@ jobs:
           fi
           echo "Build artifacts created successfully"
       
+      - name: Verify package tarball
+        run: |
+          if [ ! -f mnee-ts-sdk-*.tgz ]; then
+            echo "Error: Package tarball not created"
+            exit 1
+          fi
+          echo "Package created:"
+          ls -lh mnee-ts-sdk-*.tgz
+      
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: sdk-build-node-${{ matrix.node-version }}
+          name: sdk-build-${{ matrix.node-version }}
           path: |
             dist/
-            package.json
-            package-lock.json
+            mnee-ts-sdk-*.tgz
           retention-days: 7
 
   # Job 2: Run QA test suite
@@ -98,40 +106,43 @@ jobs:
           fi
           echo "API key configured successfully"
       
-      - name: Install root dependencies
-        run: npm ci
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: sdk-build-${{ matrix.node-version }}
       
-      - name: Build SDK
-        run: npm run build
-      
-      - name: Verify build output
+      - name: Verify downloaded artifacts
         run: |
-          ls -la dist/
-          if [ ! -f "dist/index.cjs" ]; then
-            echo "Error: dist/index.cjs not found"
-            exit 1
-          fi
+          echo "Downloaded artifacts:"
+          ls -lh
+          ls -lh dist/
+          ls -lh mnee-ts-sdk-*.tgz
+      
+      - name: Prepare QA package
+        working-directory: qa-testing
+        run: |
+          mkdir -p versions
+          echo "Copying package..."
+          cp ../mnee-ts-sdk-*.tgz versions/mnee-ts-sdk-latest.tgz
+          echo "Created: versions/mnee-ts-sdk-latest.tgz"
+          ls -lh versions/
       
       - name: Install QA dependencies
         working-directory: qa-testing
         run: npm ci
       
-      - name: Build QA package
+      - name: Verify QA package installed
         working-directory: qa-testing
         run: |
-          mkdir -p versions
-          if [ ! -f "versions/.qa-version" ]; then
-            echo "0.0.1" > versions/.qa-version
+          if [ ! -d "node_modules/@mnee/ts-sdk" ]; then
+            echo "Error: @mnee/ts-sdk not installed"
+            exit 1
           fi
-          npm run build
-      
-      - name: Install QA package
-        working-directory: qa-testing
-        run: npm run install:latest
+          echo "@mnee/ts-sdk installed successfully"
       
       - name: Run QA test suite
         working-directory: qa-testing
-        run: node run-all.js
+        run: npm run test:all
         timeout-minutes: 45
       
       - name: Upload test logs (on failure)
@@ -175,14 +186,14 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const body = `## ✅ CI Pipeline Passed
+            const body = `## ✅ Build & test Pipeline Passed
             
             All quality checks have passed successfully!
             
             | Check | Status |
             |-------|--------|
             | SDK Build | ✅ Passed |
-            | QA Tests | ✅ Passed |
+            | QA Tests  | ✅ Passed |
             
             **Ready for review!** 🚀`;
             
@@ -198,7 +209,7 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const body = `## ❌ CI Pipeline Failed
+            const body = `## ❌ Build & Test Failed
             
             | Check | Status |
             |-------|--------|
