@@ -1,0 +1,241 @@
+name: Build & Test
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: ['main', 'develop']
+  workflow_dispatch: # Allow manual trigger
+
+# Cancel in-progress workflows when a new push occurs
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  # Job 1: Build and validate the main SDK
+  build-sdk:
+    name: Build SDK
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [18.x]
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run linter (if configured)
+        run: npm run lint --if-present
+        continue-on-error: true
+      
+      - name: Build SDK
+        run: npm run build
+      
+      - name: Check TypeScript types
+        run: npx tsc --noEmit --skipLibCheck
+        continue-on-error: true
+      
+      - name: Verify dist directory
+        run: |
+          if [ ! -d "dist" ]; then
+            echo "Error: dist directory not created"
+            exit 1
+          fi
+          echo "Build artifacts created successfully"
+      
+      - name: Verify package tarball
+        run: |
+          if [ ! -f mnee-ts-sdk-*.tgz ]; then
+            echo "Error: Package tarball not created"
+            exit 1
+          fi
+          echo "Package created:"
+          ls -lh mnee-ts-sdk-*.tgz
+      
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-build-${{ matrix.node-version }}
+          path: |
+            dist/
+            mnee-ts-sdk-*.tgz
+          retention-days: 7
+
+  # Job 2: Run QA test suite
+  qa-tests:
+    name: QA Test Suite (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    needs: build-sdk
+    
+    strategy:
+      matrix:
+        node-version: [18.x]
+      fail-fast: false
+    
+    env:
+      MNEE_API_KEY: ${{ secrets.MNEE_API_KEY }}
+      CI: true
+      NODE_ENV: test
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+      
+      - name: Verify API key is set
+        run: |
+          if [ -z "$MNEE_API_KEY" ]; then
+            echo "Error: MNEE_API_KEY secret not configured"
+            exit 1
+          fi
+          echo "API key configured successfully"
+      
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: sdk-build-${{ matrix.node-version }}
+          path: ./
+      
+      - name: Verify downloaded artifacts
+        run: |
+          echo "Downloaded artifacts:"
+          ls -lh
+          ls -lh dist/
+          ls -lh mnee-ts-sdk-*.tgz
+      
+      - name: Prepare QA package
+        working-directory: qa-testing
+        run: |
+          mkdir -p versions
+          echo "Copying package..."
+          cp ../mnee-ts-sdk-*.tgz versions/mnee-ts-sdk-latest.tgz
+          echo "Created: versions/mnee-ts-sdk-latest.tgz"
+          ls -lh versions/
+          echo "Package SHA256:"
+          sha256sum versions/mnee-ts-sdk-latest.tgz
+      
+      - name: Clean npm cache and remove stale files
+        working-directory: qa-testing
+        run: |
+          npm cache clean --force
+          rm -f package-lock.json
+          rm -rf node_modules
+      
+      - name: Install QA dependencies (fresh)
+        working-directory: qa-testing
+        run: npm install
+      
+      - name: Verify QA package installed
+        working-directory: qa-testing
+        run: |
+          if [ ! -d "node_modules/@mnee/ts-sdk" ]; then
+            echo "Error: @mnee/ts-sdk not installed"
+            exit 1
+          fi
+          echo "@mnee/ts-sdk installed successfully"
+      
+      - name: Run QA test suite
+        working-directory: qa-testing
+        run: node run-all.js
+        timeout-minutes: 45
+      
+      - name: Upload test logs (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs-node-${{ matrix.node-version }}-${{ github.run_number }}
+          path: |
+            qa-testing/*.log
+            qa-testing/test-results/
+          retention-days: 30
+          if-no-files-found: ignore
+
+  # Job 3: Build validation summary and PR comment
+  ci-success:
+    name: CI Status Check
+    runs-on: ubuntu-latest
+    needs: [build-sdk, qa-tests]
+    if: always()
+    
+    steps:
+      - name: Check build status
+        run: |
+          echo "Build SDK: ${{ needs.build-sdk.result }}"
+          echo "QA Tests: ${{ needs.qa-tests.result }}"
+      
+      - name: Verify critical jobs passed
+        run: |
+          if [ "${{ needs.build-sdk.result }}" != "success" ]; then
+            echo "❌ SDK build failed"
+            exit 1
+          fi
+          if [ "${{ needs.qa-tests.result }}" != "success" ]; then
+            echo "❌ QA tests failed"
+            exit 1
+          fi
+          echo "✅ All critical checks passed!"
+      
+      - name: Post success comment on PR
+        if: github.event_name == 'pull_request' && success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = `## ✅ Build & test Pipeline Passed
+            
+            All quality checks have passed successfully!
+            
+            | Check | Status |
+            |-------|--------|
+            | SDK Build | ✅ Passed |
+            | QA Tests  | ✅ Passed |
+            
+            **Ready for review!** 🚀`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+      
+      - name: Post failure comment on PR
+        if: github.event_name == 'pull_request' && failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = `## ❌ Build & Test Failed
+            
+            | Check | Status |
+            |-------|--------|
+            | SDK Build | ${{ needs.build-sdk.result == 'success' && '✅' || '❌' }} |
+            | QA Tests | ${{ needs.qa-tests.result == 'success' && '✅' || '❌' }} |
+            
+            Please check the [Actions tab](${context.payload.repository.html_url}/actions/runs/${context.runId}) for details.`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });

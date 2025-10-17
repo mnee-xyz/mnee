@@ -1,0 +1,27 @@
+{
+  "name": "mnee-tests",
+  "version": "1.0.0",
+  "description": "Test suite for mnee package",
+  "type": "module",
+  "scripts": {
+    "build": "cd .. && npm run build && cd qa-testing && npm run prepare-package",
+    "prepare-package": "mkdir -p versions && cp ../mnee-ts-sdk-*.tgz versions/mnee-ts-sdk-latest.tgz",
+    "install:latest": "npm install",
+    "test:balance": "node balance.js",
+    "test:balances": "node balances.js",
+    "test:batch": "node batch.js",
+    "test:config": "node config.js",
+    "test:transfer": "node transfer.js",
+    "test:transferMulti": "node transferMulti.js",
+    "test:all": "npm run test:balance && npm run test:balances && npm run test:batch && npm run test:config",
+    "webhook": "node webhook-server.js",
+    "test-webhook": "node test-webhook.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "@mnee/ts-sdk": "file:versions/mnee-ts-sdk-latest.tgz"
+  },
+  "engines": {
+    "node": ">=16.14.0"
+  }
+}
