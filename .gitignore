@@ -1,6 +1,5 @@
 .prettierrc
 mnee*.tgz
-qa-testing/
 node_modules/
 dist
 local-test/

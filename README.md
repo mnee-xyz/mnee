@@ -2,6 +2,10 @@
 
 The MNEE TypeScript SDK provides a comprehensive and efficient way to interact with the MNEE USD token. It offers a full suite of features including balance checking, UTXO management, transaction validation and parsing, token transfers (including multi-source), HD wallet support, and high-performance batch operations for processing large numbers of addresses.
 
+[![Build & Test](https://github.com/mnee-xyz/mnee/actions/workflows/ci.yml/badge.svg)](https://github.com/mnee-xyz/mnee/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![npm version](https://img.shields.io/npm/v/@mnee/ts-sdk.svg)](https://www.npmjs.com/package/@mnee/ts-sdk)
+
 ## Documentation
 
 📚 **Full documentation is available at [https://docs.mnee.io](https://docs.mnee.io)**
