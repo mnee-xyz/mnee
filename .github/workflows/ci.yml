@@ -110,6 +110,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: sdk-build-${{ matrix.node-version }}
+          path: ./
       
       - name: Verify downloaded artifacts
         run: |
@@ -126,10 +127,19 @@ jobs:
           cp ../mnee-ts-sdk-*.tgz versions/mnee-ts-sdk-latest.tgz
           echo "Created: versions/mnee-ts-sdk-latest.tgz"
           ls -lh versions/
+          echo "Package SHA256:"
+          sha256sum versions/mnee-ts-sdk-latest.tgz
       
-      - name: Install QA dependencies
+      - name: Clean npm cache and remove stale files
         working-directory: qa-testing
-        run: npm ci
+        run: |
+          npm cache clean --force
+          rm -f package-lock.json
+          rm -rf node_modules
+      
+      - name: Install QA dependencies (fresh)
+        working-directory: qa-testing
+        run: npm install
       
       - name: Verify QA package installed
         working-directory: qa-testing
