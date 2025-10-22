@@ -533,7 +533,7 @@ export class MNEEService {
       });
 
       if (!response.ok) {
-        throw stacklessError(`Failed to submit transaction: ${response.status}`);
+        throw stacklessError(`Failed to submit transaction`);
       }
 
       const ticketId = await response.text();
@@ -561,7 +561,7 @@ export class MNEEService {
       });
 
       if (!response.ok) {
-        throw stacklessError(`Failed to get transaction status: ${response.status}`);
+        throw stacklessError(`Failed to get transaction status`);
       }
 
       const status: TransferStatus = await response.json();
