@@ -255,6 +255,11 @@ Please refer to the [full documentation](https://docs.mnee.io) or the [docs dire
 
 Contributions are welcome! Please submit a pull request or open an issue on the repository to suggest improvements or report bugs.
 
+## Local QA-test
+```bash
+npm test
+```
+
 ## License
 
 This project is licensed under the MIT License. See the LICENSE file for details.
