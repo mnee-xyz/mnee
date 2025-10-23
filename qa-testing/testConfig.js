@@ -2,7 +2,7 @@ export default {
   environment: 'sandbox',
   apiKey: '54f1fd1688ba66a58a67675b82feb93e',
   addresses: {
-    testAddress: '1525VDfA8swjDMLHjLRCCmPFsTJToarrA2',
+    testAddress: '18kMmJ4F6uYPYuQ7o2C2GfsVKWu5fE9ska',
     emptyAddress: '19xtDEdcR1S9xzAv73qA4KTkdwsi3Z4sCK',
     invalidAddress: 'invalid-address',
   },
