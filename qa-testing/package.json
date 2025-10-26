@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "cd .. && npm run build && cd qa-testing && npm run prepare-package",
-    "prepare-package": "mkdir -p versions && cp ../mnee-ts-sdk-*.tgz versions/mnee-ts-sdk-latest.tgz",
-    "install:latest": "npm install",
+    "prepare-package": "mkdir -p versions && cp ../mnee-ts-sdk-*.tgz versions/mnee-ts-sdk-latest.tgz && npm run install:latest",
+    "install:latest": "rm -f package-lock.json && npm install",
     "test:balance": "node balance.js",
     "test:balances": "node balances.js",
     "test:batch": "node batch.js",
