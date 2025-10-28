@@ -13,7 +13,7 @@ const mnee = new Mnee(config);
 // Test addresses from config
 const TEST_ADDRESS = testConfig.addresses.testAddress;
 const EMPTY_ADDRESS = testConfig.addresses.emptyAddress;
-const TEST_ADDRESS_TWO = '1ERN5r4A8Ur6T4XQgaxQLmWtRAmusga5xZ';
+const TEST_ADDRESS_TWO = '14mahoYBkpLUXFVtkS9trN3Bot8MKw8EJk';
 const TEST_ADDRESS_THREE = '159zQuZRmHUrZArYTFgogQxndrAeSsbTtJ';
 const testAddressBalance = testConfig.balances.testAddressBalance;
 const testAddressDecimalBalance = testConfig.balances.testAddressDecimalBalance;

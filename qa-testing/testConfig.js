@@ -2,18 +2,18 @@ export default {
   environment: 'sandbox',
   apiKey: '54f1fd1688ba66a58a67675b82feb93e',
   addresses: {
-    testAddress: '1525VDfA8swjDMLHjLRCCmPFsTJToarrA2',
-    emptyAddress: '1Gw5HiwzTkP9Ntf1U72qNM1Cp84Nakp1N6',
+    testAddress: '18kMmJ4F6uYPYuQ7o2C2GfsVKWu5fE9ska',
+    emptyAddress: '19xtDEdcR1S9xzAv73qA4KTkdwsi3Z4sCK',
     invalidAddress: 'invalid-address',
   },
   balances: {
     testAddressBalance: 1361654,
     testAddressDecimalBalance: 13.61654,
-    testAddressTwoBalance: 1199071,
-    testAddressTwoDecimalBalance: 11.99071,
+    testAddressTwoBalance: 1000000,
+    testAddressTwoDecimalBalance: 10,
   },
   wallet: {
-    testWif: 'L1z7N5Qkpkz93odzExb8DNyee2CRQAXsqWX3WQb2hpsbGsWAPeb1',
+    testWif: 'L1dRKo7sZZJijNyXbPTSJGc8DCVDcPLtsyhNSSVvcBrcTMDjnfuD',
   },
   transaction: {
     validRawTx:

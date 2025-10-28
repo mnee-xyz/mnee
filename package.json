@@ -31,7 +31,7 @@
     "clean": "rm -rf dist",
     "build": "npm run clean && microbundle --globals @bsv/sdk=bsv && npm pack",
     "start": "node dist/index.modern.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "cd qa-testing && npm run prepare-package && node run-all.js",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
