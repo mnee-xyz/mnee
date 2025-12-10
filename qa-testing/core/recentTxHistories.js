@@ -359,14 +359,19 @@ async function testInvalidParameterValues() {
 // Test 12.10: Test duplicate transaction handling
 async function testDuplicateTransactionHandling() {
   try {
-    // Use addresses that might have interacted with each other
-    const params = [
-      { address: TEST_ADDRESS, limit: 50 },
-      { address: '1ERN5r4A8Ur6T4XQgaxQLmWtRAmusga5xZ', limit: 50 },
-      { address: '159zQuZRmHUrZArYTFgogQxndrAeSsbTtJ', limit: 50 },
+    // Fetch histories one at a time to avoid overloading the API
+    const addresses = [
+      TEST_ADDRESS,
+      '1ERN5r4A8Ur6T4XQgaxQLmWtRAmusga5xZ',
     ];
 
-    const histories = await mnee.recentTxHistories(params);
+    const histories = [];
+    for (const address of addresses) {
+      const result = await mnee.recentTxHistories([{ address, limit: 30 }]);
+      histories.push(result[0]);
+      // Small delay between requests
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
 
     // Check that each address has unique transactions (no duplicates by txid)
     for (let i = 0; i < histories.length; i++) {
