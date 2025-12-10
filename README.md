@@ -2,6 +2,10 @@
 
 The MNEE TypeScript SDK provides a comprehensive and efficient way to interact with the MNEE USD token. It offers a full suite of features including balance checking, UTXO management, transaction validation and parsing, token transfers (including multi-source), HD wallet support, and high-performance batch operations for processing large numbers of addresses.
 
+[![Build & Test](https://github.com/mnee-xyz/mnee/actions/workflows/ci.yml/badge.svg)](https://github.com/mnee-xyz/mnee/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![npm version](https://img.shields.io/npm/v/@mnee/ts-sdk.svg)](https://www.npmjs.com/package/@mnee/ts-sdk)
+
 ## Documentation
 
 📚 **Full documentation is available at [https://docs.mnee.io](https://docs.mnee.io)**
@@ -19,7 +23,7 @@ For detailed API references and advanced usage, see the [docs](./docs) directory
 ## Installation
 
 ```bash
-npm install mnee
+npm install @mnee/ts-sdk
 ```
 
 ## Quick Start
@@ -27,7 +31,7 @@ npm install mnee
 ### Basic Setup
 
 ```typescript
-import Mnee from 'mnee';
+import Mnee from '@mnee/ts-sdk';
 
 // Initialize the SDK
 const mnee = new Mnee({
@@ -66,7 +70,7 @@ console.log('Transaction ID:', status.tx_id);
 ### HD Wallet
 
 ```typescript
-import { HDWallet } from 'mnee';
+import { HDWallet } from '@mnee/ts-sdk';
 
 // Generate a new wallet
 const mnemonic = HDWallet.generateMnemonic();
@@ -250,6 +254,11 @@ Please refer to the [full documentation](https://docs.mnee.io) or the [docs dire
 ## Contributing
 
 Contributions are welcome! Please submit a pull request or open an issue on the repository to suggest improvements or report bugs.
+
+## Local QA-test
+```bash
+npm test
+```
 
 ## License
 

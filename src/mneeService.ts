@@ -144,6 +144,23 @@ export class MNEEService {
       if (!address) {
         throw stacklessError('Address is required');
       }
+      if (page !== undefined) {
+        if (typeof page !== 'number' || page <= 0 || !Number.isFinite(page)) {
+          throw stacklessError(`Invalid page: ${page}. Must be a positive integer`);
+        }
+      }
+
+      if (size !== undefined) {
+        if (typeof size !== 'number' || size <= 0 || !Number.isInteger(size)) {
+          throw stacklessError(`Invalid size: ${size}. Must be a positive integer`);
+        }
+      }
+
+      if (order !== undefined) {
+        if (order !== 'asc' && order !== 'desc') {
+          throw stacklessError(`Invalid order: ${order}. Must be 'asc' or 'desc'`);
+        }
+      }
 
       // Handle single address
       if (typeof address === 'string') {
@@ -433,7 +450,7 @@ export class MNEEService {
         }
 
         const sourceTransaction = await this.fetchRawTx(utxo.txid);
-        if (!sourceTransaction) throw stacklessError('Failed to fetch source transaction');
+        if (!sourceTransaction) throw stacklessError(`Failed to fetch source transaction: ${utxo.txid}_${utxo.vout}`);
 
         changeAddress = changeAddress || utxo.owners[0];
         tx.addInput({
@@ -516,7 +533,7 @@ export class MNEEService {
       });
 
       if (!response.ok) {
-        throw stacklessError(`Failed to submit transaction: ${response.status}`);
+        throw stacklessError(`Failed to submit transaction`);
       }
 
       const ticketId = await response.text();
@@ -544,7 +561,7 @@ export class MNEEService {
       });
 
       if (!response.ok) {
-        throw stacklessError(`Failed to get transaction status: ${response.status}`);
+        throw stacklessError(`Failed to get transaction status`);
       }
 
       const status: TransferStatus = await response.json();
@@ -1459,7 +1476,8 @@ export class MNEEService {
     for (let i = 0; i < inputs.length; i++) {
       const input = inputs[i];
       const sourceTransaction = await this.fetchRawTx(input.txid);
-      if (!sourceTransaction) return { tokensIn: 0, error: `Failed to fetch source transaction: ${input.txid}` };
+      if (!sourceTransaction)
+        return { tokensIn: 0, error: `Failed to fetch source transaction: ${input.txid}_${input.vout}` };
 
       const output = sourceTransaction.outputs[input.vout];
       if (!output) return { tokensIn: 0, error: `Output ${input.vout} not found in transaction ${input.txid}` };
@@ -1600,41 +1618,11 @@ export class MNEEService {
   }
 
   private async signAllInputs(tx: Transaction, privateKeys: Map<number, PrivateKey>): Promise<{ error?: string }> {
-    const sigRequests: SignatureRequest[] = tx.inputs.map((input, index) => {
-      if (!input.sourceTXID) throw stacklessError('Source TXID is undefined');
-      return {
-        prevTxid: input.sourceTXID,
-        outputIndex: input.sourceOutputIndex,
-        inputIndex: index,
-        address: privateKeys.get(index)!.toAddress(),
-        script: input.sourceTransaction?.outputs[input.sourceOutputIndex].lockingScript.toHex(),
-        satoshis: input.sourceTransaction?.outputs[input.sourceOutputIndex].satoshis || 1,
-        sigHashType:
-          TransactionSignature.SIGHASH_ALL |
-          TransactionSignature.SIGHASH_ANYONECANPAY |
-          TransactionSignature.SIGHASH_FORKID,
-      };
-    });
-
-    const rawtx = tx.toHex();
-    const allSigResponses: SignatureResponse[] = [];
-
-    for (const [inputIndex, privateKey] of privateKeys.entries()) {
-      const inputSigRequest = sigRequests[inputIndex];
-      const res = await this.getSignatures({ rawtx, sigRequests: [inputSigRequest] }, privateKey);
-
-      if (!res?.sigResponses) {
-        return { error: `Failed to get signatures for input ${inputIndex}` };
-      }
-
-      allSigResponses.push(...res.sigResponses);
+    for (let i = 0; i < tx.inputs.length; i++) {
+      tx.inputs[i].unlockingScriptTemplate = new P2PKH().unlock(privateKeys.get(i)!, "all", true);
     }
 
-    for (const sigResponse of allSigResponses) {
-      tx.inputs[sigResponse.inputIndex].unlockingScript = new Script()
-        .writeBin(Utils.toArray(sigResponse.sig, 'hex'))
-        .writeBin(Utils.toArray(sigResponse.pubKey, 'hex'));
-    }
+    await tx.sign();
 
     return {};
   }

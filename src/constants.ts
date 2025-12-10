@@ -14,12 +14,3 @@ export const PUBLIC_SANDBOX_MNEE_API_TOKEN = '54f1fd1688ba66a58a67675b82feb93e';
 export const SANDBOX_TOKEN_ID = '833a7720966a2a435db28d967385e8aa7284b6150ebb39482cc5228b73e1703f_0';
 export const SANDBOX_APPROVER = '02bed35e894cc41cc9879b4002ad03d33533b615c1b476068c8dd6822a09f93f6c';
 export const SANDBOX_MINT_ADDRESS = '1AZNdbFYBDFTAEgzZMfPzANxyNrpGJZAUY';
-
-// DEV - TODO we should consider removing these as legacy tokens that just aren't supported *****************************************************
-// export const DEV_TOKEN_ID = '833a7720966a2a435db28d967385e8aa7284b6150ebb39482cc5228b73e1703f_0';
-// export const DEV_ADDRESS = '1A1QNEkLuvAALsmG4Me3iubP8zb5C6jpv5';
-// export const QA_TOKEN_ID = '55cde0733049a226fdb6abc387ee9dcd036e859f7cbc69ab90050c0435139f00_0';
-// export const QA_ADDRESS = '1BW7cejD27vDLiHsbK1Hvf1y4JTKvC1Yue';
-// export const STAGE_TOKEN_ID = '833a7720966a2a435db28d967385e8aa7284b6150ebb39482cc5228b73e1703f_0';
-// export const STAGE_ADDRESS = '1AZNdbFYBDFTAEgzZMfPzANxyNrpGJZAUY';
-// ***************************************************** END DEV

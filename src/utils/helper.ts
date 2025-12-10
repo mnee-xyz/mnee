@@ -328,6 +328,10 @@ export const validateTransferOptions = (
 
 export const isValidHex = (hex: string) => {
   try {
+    const hexRegex = /^[a-fA-F0-9]+$/;
+    if (!hexRegex.test(hex)) {
+      return false;
+    }
     Transaction.fromHex(hex);
     return true;
   } catch (error) {
