@@ -136,10 +136,16 @@ export type TransferStatus = {
   errors: string | null;
 };
 
+export type OpReturnData = {
+  type: 'utf8' | 'hex';
+  data: string;
+};
+
 export type TransferOptions = {
   broadcast?: boolean;
   callbackUrl?: string;
   // callbackSecret?: string; // TODO: Add this back in if/when we have a way to generate a secret
+  extraData?: OpReturnData[] | OpReturnData;
 };
 
 export type TransferWebhookResponse = {
