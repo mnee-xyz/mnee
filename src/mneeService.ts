@@ -8,6 +8,8 @@ import {
   TransactionSignature,
   UnlockingScript,
   Utils,
+  OP,
+  LockingScript,
 } from '@bsv/sdk';
 import {
   Environment,
@@ -471,7 +473,67 @@ export class MNEEService {
       if (change > 0) {
         tx.addOutput(await this.createInscription(changeAddress, change, config));
       }
+      if (transferOptions?.extraData) {
+        const items = Array.isArray(transferOptions.extraData)
+          ? transferOptions.extraData
+          : [transferOptions.extraData];
 
+        if (items.length === 0) {
+          throw stacklessError('extraData must contain at least one item');
+        }
+        const buffers: Buffer[] = [];
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+    
+        if (!item || typeof item.data !== 'string') {
+          throw stacklessError(`Invalid extraData at index ${i}: data must be a string`);
+        }
+        if (item.type === 'utf8') {
+          const buf = Buffer.from(item.data, 'utf8');
+          if (buf.length === 0) {
+            throw stacklessError(`extraData at index ${i} is empty after UTF-8 encoding`);
+          }
+          buffers.push(buf);
+        } else if (item.type === 'hex') {
+          const hex = item.data.trim();
+          if (!hex) {
+            throw stacklessError(`extraData at index ${i} is empty`);
+          }
+          if (!/^[0-9a-fA-F]+$/.test(hex) || hex.length % 2 !== 0) {
+            throw stacklessError(
+              `extraData at index ${i} is not valid hex or has odd length: "${hex}"`,
+            );
+          }
+          const buf = Buffer.from(hex, 'hex');
+          if (buf.length === 0) {
+            throw stacklessError(`extraData at index ${i} decoded to an empty buffer`);
+          }
+
+          buffers.push(buf);
+        } else {
+          throw stacklessError(`Unsupported extraData type at index ${i}: ${(item as any).type}`);
+        }
+      }
+      const totalBytes = buffers.reduce((sum, b) => sum + b.length, 0);
+      if (totalBytes > 512) {
+        throw stacklessError(
+          `extraData is too large: ${totalBytes} bytes (max allowed is 512 bytes)`,
+        );
+      }
+
+      const script = new Script();
+      script.writeOpCode(OP.OP_0);
+      script.writeOpCode(OP.OP_RETURN);
+      for (const buf of buffers) {
+        script.writeBin(Array.from(buf));
+      }
+      tx.addOutput({
+        satoshis: 0,
+        lockingScript: LockingScript.fromBinary(script.toBinary()),
+      });
+     }
+
+    
       const privateKeys = new Map<number, PrivateKey>();
       for (let i = 0; i < tx.inputs.length; i++) {
         privateKeys.set(i, privateKey);
@@ -1787,7 +1849,72 @@ export class MNEEService {
         fee,
       );
       if (changeResult.error) throw stacklessError(changeResult.error);
+      
+      // === ADD OP_RETURN LOGIC HERE (SAME AS IN transfer METHOD) ===
+      if (transferOptions?.extraData) {
+        const items = Array.isArray(transferOptions.extraData)
+          ? transferOptions.extraData
+          : [transferOptions.extraData];
 
+        if (items.length === 0) {
+          throw stacklessError('extraData must contain at least one item');
+        }
+
+        const buffers: Buffer[] = [];
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+    
+          if (!item || typeof item.data !== 'string') {
+            throw stacklessError(`Invalid extraData at index ${i}: data must be a string`);
+          }
+
+          if (item.type === 'utf8') {
+            const buf = Buffer.from(item.data, 'utf8');
+            if (buf.length === 0) {
+              throw stacklessError(`extraData at index ${i} is empty after UTF-8 encoding`);
+            }
+            buffers.push(buf);
+          } else if (item.type === 'hex') {
+            const hex = item.data.trim();
+            if (!hex) {
+              throw stacklessError(`extraData at index ${i} is empty`);
+            }
+            if (!/^[0-9a-fA-F]+$/.test(hex) || hex.length % 2 !== 0) {
+              throw stacklessError(
+                `extraData at index ${i} is not valid hex or has odd length: "${hex}"`,
+              );
+            }
+            const buf = Buffer.from(hex, 'hex');
+            if (buf.length === 0) {
+              throw stacklessError(`extraData at index ${i} decoded to an empty buffer`);
+            }
+            buffers.push(buf);
+          } else {
+            throw stacklessError(`Unsupported extraData type at index ${i}: ${(item as any).type}`);
+          }
+        }
+
+        const totalBytes = buffers.reduce((sum, b) => sum + b.length, 0);
+        if (totalBytes > 512) {
+          throw stacklessError(
+            `extraData is too large: ${totalBytes} bytes (max allowed is 512 bytes)`,
+          );
+        }
+
+        const script = new Script();
+        script.writeOpCode(OP.OP_0);
+        script.writeOpCode(OP.OP_RETURN);
+        for (const buf of buffers) {
+          script.writeBin(Array.from(buf));
+        }
+      
+        tx.addOutput({
+          satoshis: 0,
+          lockingScript: LockingScript.fromBinary(script.toBinary()),
+        });
+      }
+      // === END OP_RETURN LOGIC ===
+      
       const signResult = await this.signAllInputs(tx, privateKeys);
       if (signResult.error) throw stacklessError(signResult.error);
 
