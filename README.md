@@ -31,7 +31,7 @@ npm install @mnee/ts-sdk
 ### Basic Setup
 
 ```typescript
-import Mnee from '@mnee/ts-sdk';
+import {Mnee} from '@mnee/ts-sdk';
 
 // Initialize the SDK
 const mnee = new Mnee({
@@ -231,6 +231,48 @@ const atomic = mnee.toAtomicAmount(1.5); // Returns: 150000
 
 // Convert from atomic to MNEE for display
 const mneeAmount = mnee.fromAtomicAmount(150000); // Returns: 1.5
+```
+
+## ERC-20
+
+MNEE ERC-20 Configuration 
+
+```typescript
+import { MneeErc20 } from "@mnee/ts-sdk";
+
+const PK = "0xa5180d013b7d82923f1bb9938c23003c460455ed537a8910df46c4e169301440";
+const sdk = new MneeErc20("TESTNET", PK);
+
+mnee.config().then(mneeConfig => {
+  console.log('MNEE Configuration:', mneeConfig);
+});
+```
+
+# Check Balance
+
+The `balance` method retrieves the balance for a specific MNEE address. This method is useful for checking how many MNEE tokens are associated with a given address.
+
+## Usage
+
+```typescript
+const address = '0xdb03C44A8C63f2c2d057A252b35f4483F97Dd230';
+
+mnee.balance(address).then(balance => {
+  console.log('Your balance:', balance);
+});
+```
+
+# Transfer MNEE
+
+The `transfer` method transfers MNEE token.
+## Usage
+
+### Basic Transfer
+
+```typescript
+
+const response = await mnee.transfer(recipient);
+console.log('Transaction Hash', txHash);
 ```
 
 ## Advanced Features

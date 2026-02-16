@@ -1,4 +1,4 @@
-import Mnee from '@mnee/ts-sdk';
+import {Mnee} from '@mnee/ts-sdk';
 import assert from 'assert';
 import testConfigJson from '../testConfig.js';
 

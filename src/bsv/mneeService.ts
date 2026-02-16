@@ -561,12 +561,14 @@ export class MNEEService {
       });
 
       if (!response.ok) {
+        console.log("Response for Status", response);
         throw stacklessError(`Failed to get transaction status`);
       }
 
       const status: TransferStatus = await response.json();
       return status;
     } catch (error) {
+      console.error("Error in getTxStatus:",error);
       if (isNetworkError(error)) {
         logNetworkError(error, 'get transaction status');
       }

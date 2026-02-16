@@ -30,6 +30,12 @@ The MNEE SDK is a JavaScript/TypeScript SDK for interacting with MNEE tokens on 
 - Transaction history retrieval
 - Inscription and cosigner script parsing
 
+
+**ERC-20 Features:**
+- Token transfer
+- Balance queries
+- Token metadata
+
 **Helper Features:**
 
 - Batch operations for processing multiple addresses
@@ -92,7 +98,13 @@ qa-testing/
 │   ├── 07-rate-limiting.js
 │   ├── 08-hd-wallet-integration.js
 │   └── 09-edge-cases.js
-│
+|
+├── erc20/ - Core SDK method tests (18 files)
+│   ├── tokenConfig.js - Token metadata
+│   ├── balance.js - Single address balance queries
+│   ├── balances.js - Multiple address balance queries
+│   ├── transactions.js - Sending transactions
+|
 ├── versions/ - Package versions for testing
 │   ├── .qa-version - Current QA version number
 │   └── qa-mnee-*.tgz - Built packages (gitignored, build locally)

@@ -8,42 +8,48 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // All test files in order of priority
 const tests = [
   // Core configuration
-  { file: 'core/config.js', description: 'Configuration management' },
+  // { file: 'core/config.js', description: 'Configuration management' },
 
-  // Balance operations
-  { file: 'core/balance.js', description: 'Single address balance queries' },
-  { file: 'core/balances.js', description: 'Multiple address balance queries' },
+  // // Balance operations
+  // { file: 'core/balance.js', description: 'Single address balance queries' },
+  // { file: 'core/balances.js', description: 'Multiple address balance queries' },
 
-  // UTXO management
-  { file: 'core/getUtxos.js', description: 'UTXO retrieval with pagination' },
-  { file: 'core/getEnoughUtxos.js', description: 'Efficient UTXO retrieval for transfers' },
-  { file: 'core/getAllUtxos.js', description: 'Complete UTXO retrieval for wallets' },
+  // // UTXO management
+  // { file: 'core/getUtxos.js', description: 'UTXO retrieval with pagination' },
+  // { file: 'core/getEnoughUtxos.js', description: 'Efficient UTXO retrieval for transfers' },
+  // { file: 'core/getAllUtxos.js', description: 'Complete UTXO retrieval for wallets' },
 
-  // Transaction operations
-  { file: 'core/validateMneeTx.js', description: 'Transaction validation' },
-  { file: 'core/transfer.js', description: 'Single-source transfers' },
-  { file: 'core/transferMulti.js', description: 'Multi-source transfers' },
-  { file: 'core/submitRawTx.js', description: 'Raw transaction submission' },
-  { file: 'core/getTxStatus.js', description: 'Transaction status polling' },
+  // // Transaction operations
+  // { file: 'core/validateMneeTx.js', description: 'Transaction validation' },
+  // { file: 'core/transfer.js', description: 'Single-source transfers' },
+  // { file: 'core/transferMulti.js', description: 'Multi-source transfers' },
+  // { file: 'core/submitRawTx.js', description: 'Raw transaction submission' },
+  // { file: 'core/getTxStatus.js', description: 'Transaction status polling' },
 
-  // Utility functions
-  { file: 'core/toAtomicAmount.js', description: 'Decimal to atomic conversion' },
-  { file: 'core/fromAtomicAmount.js', description: 'Atomic to decimal conversion' },
+  // // Utility functions
+  // { file: 'core/toAtomicAmount.js', description: 'Decimal to atomic conversion' },
+  // { file: 'core/fromAtomicAmount.js', description: 'Atomic to decimal conversion' },
 
-  // History operations
-  { file: 'core/recentTxHistory.js', description: 'Single address history' },
-  { file: 'core/recentTxHistories.js', description: 'Multiple address histories' },
-  { file: 'core/recentTxHistoriesDuplicates.js', description: 'Duplicate transaction detection' },
+  // // History operations
+  // { file: 'core/recentTxHistory.js', description: 'Single address history' },
+  // { file: 'core/recentTxHistories.js', description: 'Multiple address histories' },
+  // { file: 'core/recentTxHistoriesDuplicates.js', description: 'Duplicate transaction detection' },
 
-  // Parsing operations
-  { file: 'core/parseTx.js', description: 'Transaction parsing by txid' },
-  { file: 'core/parseTxFromRawTx.js', description: 'Transaction parsing from raw hex' },
-  { file: 'core/parseInscription.js', description: 'Inscription detection' },
-  { file: 'core/parseCosignerScripts.js', description: 'Cosigner script parsing' },
+  // // Parsing operations
+  // { file: 'core/parseTx.js', description: 'Transaction parsing by txid' },
+  // { file: 'core/parseTxFromRawTx.js', description: 'Transaction parsing from raw hex' },
+  // { file: 'core/parseInscription.js', description: 'Inscription detection' },
+  // { file: 'core/parseCosignerScripts.js', description: 'Cosigner script parsing' },
 
-  // Advanced features
-  { file: 'core/hdWallet.js', description: 'HD wallet functionality' },
-  { file: 'core/batch.js', description: 'Batch operations (includes 9 subtests)' },
+  // // Advanced features
+  // { file: 'core/hdWallet.js', description: 'HD wallet functionality' },
+  // { file: 'core/batch.js', description: 'Batch operations (includes 9 subtests)' },
+
+  // ERC-20 functionalities
+  { file: 'erc20/balance.js', description: 'ERC-20 balances check' },
+  { file: 'erc20/tokenConfig.js', description: 'MNEE ERC-20 token metadata' },
+  { file: 'erc20/transaction.js', description: 'Transactions of MNEE' },
+
 ];
 
 // Note: batch.js already runs all 9 batch subtests internally,

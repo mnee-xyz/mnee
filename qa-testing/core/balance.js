@@ -1,4 +1,4 @@
-import Mnee from '@mnee/ts-sdk';
+import {Mnee} from '@mnee/ts-sdk';
 import assert from 'assert';
 import testConfig from '../testConfig.js';
 import { readFileSync, writeFileSync } from 'fs';
