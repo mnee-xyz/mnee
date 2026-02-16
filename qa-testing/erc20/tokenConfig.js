@@ -1,8 +1,8 @@
 import assert from "assert";
-import { MneeErc20 } from "@mnee/ts-sdk";
+import { MneeERC20 } from "@mnee/ts-sdk";
 
 const PK = "0xa5180d013b7d82923f1bb9938c23003c460455ed537a8910df46c4e169301440";
-const sdk = new MneeErc20("TESTNET", PK);
+const sdk = new MneeERC20("TESTNET", PK);
 
 // Test 20.1: Test token config
 async function testTokenConfig() {

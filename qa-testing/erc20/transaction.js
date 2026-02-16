@@ -1,10 +1,10 @@
 import assert from "assert";
-import { MneeErc20 } from "@mnee/ts-sdk";
+import { MneeERC20 } from "@mnee/ts-sdk";
 import { solidityPackedSha256 } from "ethers";
 
 const PK = "0xa5180d013b7d82923f1bb9938c23003c460455ed537a8910df46c4e169301440";
 
-const sdk = new MneeErc20("TESTNET", PK);
+const sdk = new MneeERC20("TESTNET", PK);
 
 const TO1 = "0xdb03C44A8C63f2c2d057A252b35f4483F97Dd230";
 const TO2 = "0xEd23D46901D364C8F7bd974F5F6a321B55197892";
@@ -90,7 +90,7 @@ async function testMalformedRequest() {
 
 async function run() {
   console.log("Test: ERC20 transactions");
-  //await testTransferPositive();
+  await testTransferPositive();
   await testInsufficientBalance();
   await testZeroAmount();
   await testInvalidRecipient();
