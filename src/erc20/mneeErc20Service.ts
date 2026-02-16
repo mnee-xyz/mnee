@@ -37,7 +37,6 @@ export class MneeErc20Service {
   private readonly chainId!: number;
 
   constructor(env: string, privateKey: string) {
-    console.log("Inside constructor");
     if (env === "MAINNET") {
       this.provider = new JsonRpcProvider(ETHEREUM_RPC_URL);
       this.tokenAbi = ETHEREUM_MNEE_ABI;
@@ -53,15 +52,13 @@ export class MneeErc20Service {
       this.chainId = 11155111;
     }
 
-    if (!process.env.PRIVATE_KEY) {
+    if (!privateKey) {
       throw new Error("PRIVATE_KEY missing in environment");
     }
 
     if (privateKey) {
       this.signer = new Wallet(privateKey, this.provider);
     }
-
-    console.log("Signer initialized:", this.signer?.getAddress());
   }
 
   private getReadContract(): MneeContract {
@@ -154,19 +151,14 @@ export class MneeErc20Service {
       throw new Error("Transfer amount must be greater than zero");
     }
 
-    if (this.signer) {
-      const writeContract = contract.connect(
-        this.signer,
-      ) as unknown as MneeContract;
-      const tx = await writeContract.transfer(to, parsedAmount);
-      const receipt = await tx.wait();
+    const tx = await contract.transfer(to, parsedAmount);
+    const receipt = await tx.wait();
 
-      if (!receipt) {
-        throw new Error("Transaction not mined");
-      }
+    if (!receipt) {
+      throw new Error("Transaction not mined");
+    }
 
-      return receipt.hash;
-    } else return "";
+    return receipt.hash;
   }
 
   // async multiSigTransfer(

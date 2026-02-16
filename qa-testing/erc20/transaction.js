@@ -12,7 +12,7 @@ const TO2 = "0xEd23D46901D364C8F7bd974F5F6a321B55197892";
 // Test 20.1: Test transfer amount
 async function testTransferPositive() {
 
-  const txHash = await sdk.transfer(TO1, "10");
+  const txHash = await sdk.transfer(TO2, "10");
 
   assert.ok(txHash.startsWith("0x"), "txHash should be returned");
   console.log("  transfer positive ✓");
