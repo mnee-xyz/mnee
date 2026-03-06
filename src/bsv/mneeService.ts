@@ -428,10 +428,9 @@ export class MNEEService {
       const address = privateKey.toAddress();
       const utxos = await this.getEnoughUtxos(address, totalAtomicTokenAmount);
 
-      const fee =
-        request.find((req) => req.address === config.burnAddress) !== undefined
-          ? 0
-          : config.fees.find(
+        // const fee = request.find((req) => req.address === config.burnAddress) !== undefined ? 0 // changes made for resolving burnAddress transfer
+
+      const fee = config.fees.find(
               (fee: { min: number; max: number }) =>
                 totalAtomicTokenAmount >= fee.min && totalAtomicTokenAmount <= fee.max,
             )?.fee;
@@ -499,7 +498,7 @@ export class MNEEService {
 
   public async submitRawTx(
     rawtx: string,
-    transferOptions: TransferOptions = { broadcast: true, callbackUrl: undefined },
+    transferOptions: TransferOptions = { broadcast: true, callbackUrl: undefined }
   ): Promise<TransferResponse> {
     try {
       if (transferOptions?.broadcast !== false) {
