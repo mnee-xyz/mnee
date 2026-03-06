@@ -11,8 +11,8 @@ import {
   TxStatus,
   TxType,
 } from '../mnee.types';
-import { stacklessError } from './stacklessError';
-import { MIN_TRANSFER_AMOUNT } from '../constants';
+import { stacklessError } from './stacklessError.js';
+import { MIN_TRANSFER_AMOUNT } from '../constants.js';
 
 export const parseInscription = (script: Script) => {
   let fromPos: number | undefined;

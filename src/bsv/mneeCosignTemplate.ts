@@ -11,7 +11,7 @@ import {
   UnlockingScript,
   Utils,
 } from "@bsv/sdk";
-import { stacklessError } from "./utils/stacklessError";
+import { stacklessError } from "./utils/stacklessError.js";
 
 /**
  * P2PKH (Pay To Public Key Hash) class implementing ScriptTemplate.

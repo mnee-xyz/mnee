@@ -1,4 +1,4 @@
-import {Mnee} from '@mnee/ts-sdk';
+import Mnee from '@mnee/ts-sdk/bsv';
 import assert from 'assert';
 import testConfig from '../testConfig.js';
 import knownTxs from '../knownTestTransactions.js';

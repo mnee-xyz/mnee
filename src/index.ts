@@ -1,4 +1,5 @@
-import Mnee from "./bsv";
-import MneeERC20 from "./erc20";
+export { default as Mnee } from "./bsv";
+export { default as MneeERC20 } from "./erc20";
 
-export { Mnee, MneeERC20 };
+export type * from "./bsv";
+export type * from "./erc20";

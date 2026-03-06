@@ -36,7 +36,7 @@ export class MneeErc20Service {
   private readonly signingLibraryAddress!: string;
   private readonly chainId!: number;
 
-  constructor(env: string, privateKey: string) {
+  constructor(env: string, privateKey?: string) {
     if (env === "MAINNET") {
       this.provider = new JsonRpcProvider(ETHEREUM_RPC_URL);
       this.tokenAbi = ETHEREUM_MNEE_ABI;
@@ -50,10 +50,6 @@ export class MneeErc20Service {
       this.tokenAddress = SEPOLIA_MNEE_ADDRESS;
       this.signingLibraryAddress = SEPOLIA_LIBRARY_ADDRESS;
       this.chainId = 11155111;
-    }
-
-    if (!privateKey) {
-      throw new Error("PRIVATE_KEY missing in environment");
     }
 
     if (privateKey) {

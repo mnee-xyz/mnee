@@ -1,5 +1,5 @@
 import { LockingScript } from '@bsv/sdk';
-import { stacklessError } from './stacklessError';
+import { stacklessError } from './stacklessError.js';
 
 /**
  * MAP (Magic Attribute Protocol) metadata object with stringified values for writing to the blockchain

@@ -31,7 +31,7 @@ npm install @mnee/ts-sdk
 ### Basic Setup
 
 ```typescript
-import {Mnee} from '@mnee/ts-sdk';
+import Mnee from '@mnee/ts-sdk/bsv';
 
 // Initialize the SDK
 const mnee = new Mnee({
@@ -238,12 +238,12 @@ const mneeAmount = mnee.fromAtomicAmount(150000); // Returns: 1.5
 MNEE ERC-20 Configuration 
 
 ```typescript
-import { MneeErc20 } from "@mnee/ts-sdk";
+import MneeERC20 from "@mnee/ts-sdk/erc20";
 
 const PK = "0xa5180d013b7d82923f1bb9938c23003c460455ed537a8910df46c4e169301440";
-const sdk = new MneeErc20("TESTNET", PK);
+const sdk = new MneeErc20("TESTNET");
 
-mnee.config().then(mneeConfig => {
+sdk.config().then(mneeConfig => {
   console.log('MNEE Configuration:', mneeConfig);
 });
 ```
@@ -257,7 +257,7 @@ The `balance` method retrieves the balance for a specific MNEE address. This met
 ```typescript
 const address = '0xdb03C44A8C63f2c2d057A252b35f4483F97Dd230';
 
-mnee.balance(address).then(balance => {
+sdk.balance(address).then(balance => {
   console.log('Your balance:', balance);
 });
 ```
@@ -271,7 +271,10 @@ The `transfer` method transfers MNEE token.
 
 ```typescript
 
-const response = await mnee.transfer(recipient);
+const address = '0xdb03C78D8C63f2c2d057A252b35f4483F97Aa230';
+const amount = '10';
+const sdk = new MneeErc20("TESTNET", PK);
+const response = await sdk.transfer(recipient, amount);
 console.log('Transaction Hash', txHash);
 ```
 

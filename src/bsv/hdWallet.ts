@@ -1,6 +1,6 @@
 import { HD, Mnemonic } from '@bsv/sdk';
 import * as bip39 from 'bip39';
-import { stacklessError } from './utils/stacklessError';
+import { stacklessError } from './utils/stacklessError.js';
 
 /**
  * Note: We're using the HD class from @bsv/sdk despite it being marked as deprecated.

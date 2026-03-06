@@ -9,6 +9,11 @@
   "source": "src/index.ts",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+ "files": [
+  "dist",
+  "bsv",
+  "erc20"
+],
   "exports": {
     ".": {
       "require": {
@@ -23,13 +28,23 @@
         "types": "./dist/index.d.ts",
         "default": "./dist/index.modern.js"
       }
+    },
+    "./bsv": {
+      "types": "./dist/bsv/index.d.ts",
+      "default": "./dist/bsv/index.js",
+      "require": "./dist/bsv/index.js"
+    },
+    "./erc20": {
+      "types": "./dist/erc20/index.d.ts",
+      "default": "./dist/erc20/index.js",
+      "require": "./dist/erc20/index.js"
     }
   },
   "module": "./dist/index.module.js",
   "unpkg": "./dist/index.umd.js",
   "scripts": {
     "clean": "rm -rf dist",
-    "build": "npm run clean && microbundle --globals @bsv/sdk=bsv && npm pack",
+    "build": "npm run clean && tsc && microbundle src/index.ts src/bsv/index.ts src/erc20/index.ts --globals @bsv/sdk=bsv && npm pack",
     "start": "node dist/index.modern.js",
     "test": "cd qa-testing && npm run prepare-package && node run-all.js",
     "prepublishOnly": "npm run build"

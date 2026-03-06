@@ -99,10 +99,9 @@ qa-testing/
 │   ├── 08-hd-wallet-integration.js
 │   └── 09-edge-cases.js
 |
-├── erc20/ - Core SDK method tests (18 files)
+├── erc20/ - ERC20 method tests (21 files)
 │   ├── tokenConfig.js - Token metadata
 │   ├── balance.js - Single address balance queries
-│   ├── balances.js - Multiple address balance queries
 │   ├── transactions.js - Sending transactions
 |
 ├── versions/ - Package versions for testing

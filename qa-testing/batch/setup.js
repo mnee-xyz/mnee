@@ -1,5 +1,5 @@
 // Shared setup for batch tests
-import Mnee from 'mnee';
+import Mnee from '@mnee/ts-sdk/bsv';
 import assert from 'assert';
 import testConfig from '../testConfig.js';
 

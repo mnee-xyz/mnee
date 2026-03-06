@@ -5,9 +5,15 @@ The `balance` method retrieves the balance for a specific MNEE address. This met
 ## Usage
 
 ```typescript
+
+import MneeERC20 from "@mnee/ts-sdk/erc20";
+
+const PK = "0xa5180d013b7d82923f1bb9938c23003c460455ed537a8910df46c4e169301440";
+const sdk = new MneeErc20("TESTNET", PK);
+
 const address = '0xdb03C44A8C63f2c2d057A252b35f4483F97Dd230';
 
-mnee.balance(address).then(balance => {
+sdk.balance(address).then(balance => {
   console.log('Your balance:', balance);
 });
 ```

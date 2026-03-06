@@ -1,5 +1,5 @@
 import assert from "assert";
-import { MneeERC20 } from "@mnee/ts-sdk";
+import MneeERC20 from "@mnee/ts-sdk/erc20";
 import { solidityPackedSha256 } from "ethers";
 
 const PK = "0xa5180d013b7d82923f1bb9938c23003c460455ed537a8910df46c4e169301440";

@@ -5,13 +5,18 @@ const PK = "0xa5180d013b7d82923f1bb9938c23003c460455ed537a8910df46c4e169301440";
 const sdk = new MneeERC20("TESTNET");
 //const TOKEN_ADDRESS = "0x7CFceCE31146f39a2fC6A60edB3870Bcbc18F5Aa";
 
+const TO1 = "0xdb03C44A8C63f2c2d057A252b35f4483F97Dd230";
+const TO2 = "0xEd23D46901D364C8F7bd974F5F6a321B55197892";
+const TO3 = "0x0000000000000000000000000000000000000000";
+
+
 // Test 19.1: Check balance
 async function testBalancePositive() {
-  const balance = await sdk.balance(
-    "0xdb03C44A8C63f2c2d057A252b35f4483F97Dd230"
+  const balance = await sdk.balances(
+    TO1, TO2
   );
 
-  assert(balance > 0, "No Balance");
+  assert(balance === "500.0", "No Balance");
 
   console.log("  getBalance positive ✓");
 }
@@ -21,7 +26,7 @@ async function testInvalidAddress() {
   let failed = false;
 
   try {
-    await sdk.balance("invalid-address");
+    await sdk.balances();
   } catch (e) {
     failed = true;
     assert.ok(

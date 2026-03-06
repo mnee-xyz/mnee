@@ -16,7 +16,7 @@ This document provides comprehensive documentation for the MNEE SDK, designed to
 ### Installation and Initialization
 
 ```typescript
-import {Mnee} from '@mnee/ts-sdk';
+import Mnee from '@mnee/ts-sdk/bsv';
 
 // Initialize MNEE SDK
 const mnee = new Mnee({
