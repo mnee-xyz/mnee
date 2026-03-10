@@ -430,13 +430,17 @@ export class MNEEService {
       const address = privateKey.toAddress();
       const utxos = await this.getEnoughUtxos(address, totalAtomicTokenAmount);
 
-      const fee =
-        request.find((req) => req.address === config.burnAddress) !== undefined
-          ? 0
-          : config.fees.find(
-              (fee: { min: number; max: number }) =>
-                totalAtomicTokenAmount >= fee.min && totalAtomicTokenAmount <= fee.max,
-            )?.fee;
+      // const fee =
+      //   request.find((req) => req.address === config.burnAddress) !== undefined
+      //     ? 0
+      //     : config.fees.find(
+      //         (fee: { min: number; max: number }) =>
+      //           totalAtomicTokenAmount >= fee.min && totalAtomicTokenAmount <= fee.max,
+      //       )?.fee;
+      const fee = config.fees.find(
+                  (fee: { min: number; max: number }) =>
+                    totalAtomicTokenAmount >= fee.min && totalAtomicTokenAmount <= fee.max,
+                  )?.fee;// changes made for resolving burnAddress transfer MN-122
       if (fee === undefined) throw stacklessError('Fee ranges inadequate');
 
       const tx = new Transaction(1, [], [], 0);
