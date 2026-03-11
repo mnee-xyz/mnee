@@ -1609,12 +1609,13 @@ export class MNEEService {
       const totalTransferAmount = totalAtomicTokenAmount + changeToNonInputAddresses;
 
       // Get fee based on total transfer amount
-      const newFee =
-        recipients.find((req) => req.address === config.burnAddress) !== undefined
-          ? 0
-          : config.fees.find(
-              (f: { min: number; max: number }) => totalTransferAmount >= f.min && totalTransferAmount <= f.max,
-            )?.fee;
+      // const newFee = recipients.find((req) => req.address === config.burnAddress) !== undefined ? 0 : config.fees.find(
+      //   (f: { min: number; max: number }) => totalTransferAmount >= f.min && totalTransferAmount <= f.max,
+      // )?.fee;
+
+      const newFee = config.fees.find(
+        (f: { min: number; max: number }) => totalTransferAmount >= f.min && totalTransferAmount <= f.max,
+        )?.fee; // changes made for resolving burnAddress transfer MN-122
 
       if (newFee === undefined) return { fee: 0, error: 'Fee ranges inadequate' };
       fee = newFee;
