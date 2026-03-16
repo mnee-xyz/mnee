@@ -3,7 +3,7 @@ export default {
   apiKey: '54f1fd1688ba66a58a67675b82feb93e',
   addresses: {
     testAddress: '18kMmJ4F6uYPYuQ7o2C2GfsVKWu5fE9ska',
-    emptyAddress: '19xtDEdcR1S9xzAv73qA4KTkdwsi3Z4sCK',
+    emptyAddress: '1AJoZperDvK6wBLzYtnUSzrfSCFgqH9b9d',
     invalidAddress: 'invalid-address',
   },
   balances: {
