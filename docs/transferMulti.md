@@ -85,7 +85,8 @@ console.log('Ticket ID:', response.ticketId);
 
 - **broadcast**: Whether to broadcast the transaction (default: `true`)
 - **callbackUrl**: Webhook URL for status updates (only when broadcast is true)
-- **extraData**: Attach custom metadata to the transaction either in 'utf-8' or 'hex' format
+- **extraData**: Attach custom metadata in an `OP_RETURN` output. Can be a single object or an array of objects, each with a `type` (`'utf8'` or `'hex'`) and a `data` (string) property.
+
 
 ## Response
 
