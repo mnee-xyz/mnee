@@ -59,6 +59,7 @@ const options = {
 const response = await mnee.transferMulti(options, {
   broadcast: true,
   callbackUrl: 'https://your-api.com/webhook',
+  extraData: [{ type: 'utf8', data: 'your-custom-data'}, { type: 'utf8', data: 'your-custom-data'}],
 });
 
 console.log('Ticket ID:', response.ticketId);
@@ -84,6 +85,7 @@ console.log('Ticket ID:', response.ticketId);
 
 - **broadcast**: Whether to broadcast the transaction (default: `true`)
 - **callbackUrl**: Webhook URL for status updates (only when broadcast is true)
+- **extraData**: Attach custom metadata to the transaction either in 'utf-8' or 'hex' format
 
 ## Response
 

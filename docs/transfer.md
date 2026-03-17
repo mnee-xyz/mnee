@@ -52,6 +52,7 @@ const recipients = [{ address: 'recipient-address', amount: 10 }];
 const response = await mnee.transfer(recipients, wif, {
   broadcast: true,
   callbackUrl: 'https://your-api.com/webhook/mnee',
+  extraData: { type: 'utf8', data: 'your-custom-data'}
 });
 
 console.log('Ticket ID:', response.ticketId);
@@ -67,6 +68,7 @@ console.log('Ticket ID:', response.ticketId);
 - **transferOptions** (optional): Object containing:
   - **broadcast**: Whether to broadcast the transaction (default: `true`)
   - **callbackUrl**: Webhook URL for status updates (only when broadcast is true)
+  - **extraData**: Attach custom metadata to the transaction either in 'utf-8' or 'hex' format
 
 ## Response
 
