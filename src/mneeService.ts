@@ -1685,41 +1685,11 @@ export class MNEEService {
   }
 
   private async signAllInputs(tx: Transaction, privateKeys: Map<number, PrivateKey>): Promise<{ error?: string }> {
-    const sigRequests: SignatureRequest[] = tx.inputs.map((input, index) => {
-      if (!input.sourceTXID) throw stacklessError('Source TXID is undefined');
-      return {
-        prevTxid: input.sourceTXID,
-        outputIndex: input.sourceOutputIndex,
-        inputIndex: index,
-        address: privateKeys.get(index)!.toAddress(),
-        script: input.sourceTransaction?.outputs[input.sourceOutputIndex].lockingScript.toHex(),
-        satoshis: input.sourceTransaction?.outputs[input.sourceOutputIndex].satoshis || 1,
-        sigHashType:
-          TransactionSignature.SIGHASH_ALL |
-          TransactionSignature.SIGHASH_ANYONECANPAY |
-          TransactionSignature.SIGHASH_FORKID,
-      };
-    });
-
-    const rawtx = tx.toHex();
-    const allSigResponses: SignatureResponse[] = [];
-
-    for (const [inputIndex, privateKey] of privateKeys.entries()) {
-      const inputSigRequest = sigRequests[inputIndex];
-      const res = await this.getSignatures({ rawtx, sigRequests: [inputSigRequest] }, privateKey);
-
-      if (!res?.sigResponses) {
-        return { error: `Failed to get signatures for input ${inputIndex}` };
-      }
-
-      allSigResponses.push(...res.sigResponses);
+    for (let i = 0; i < tx.inputs.length; i++) {
+      tx.inputs[i].unlockingScriptTemplate = new P2PKH().unlock(privateKeys.get(i)!, "all", true);
     }
 
-    for (const sigResponse of allSigResponses) {
-      tx.inputs[sigResponse.inputIndex].unlockingScript = new Script()
-        .writeBin(Utils.toArray(sigResponse.sig, 'hex'))
-        .writeBin(Utils.toArray(sigResponse.pubKey, 'hex'));
-    }
+    await tx.sign();
 
     return {};
   }
