@@ -40,6 +40,8 @@ import {
   ProcessedOutput,
   TransferOptions,
   BalanceResponse,
+  MultisigBuildOptions,
+  UnsignedTransactionResult,
 } from './mnee.types.js';
 import CosignTemplate from './mneeCosignTemplate.js';
 import { applyInscription } from './utils/applyInscription.js';
@@ -120,7 +122,7 @@ export class MNEEService {
     return amount / 10 ** MNEE_DECIMALS;
   }
 
-  private async createInscription(recipient: string, amount: number, config: MNEEConfig) {
+  public async createInscription(recipient: string, amount: number, config: MNEEConfig) {
     const inscriptionData = {
       p: 'bsv-20',
       op: 'transfer',
@@ -235,7 +237,7 @@ export class MNEEService {
     }
   }
 
-  private async fetchRawTx(txid: string, retries: number = 3): Promise<Transaction | undefined> {
+  public async fetchRawTx(txid: string, retries: number = 3): Promise<Transaction | undefined> {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const resp = await fetch(`${this.mneeApi}/v1/tx/${txid}?auth_token=${this.mneeApiKey}`);
@@ -273,7 +275,7 @@ export class MNEEService {
     return undefined;
   }
 
-  private async getSignatures(
+  public async getSignatures(
     request: GetSignatures,
     privateKey: PrivateKey,
   ): Promise<{
@@ -1684,14 +1686,14 @@ export class MNEEService {
     return {};
   }
 
-  private async signAllInputs(tx: Transaction, privateKeys: Map<number, PrivateKey>): Promise<{ error?: string }> {
-    const sigRequests: SignatureRequest[] = tx.inputs.map((input, index) => {
+  public createSignatureRequests(tx: Transaction): SignatureRequest[] {
+    return tx.inputs.map((input, index) => {
       if (!input.sourceTXID) throw stacklessError('Source TXID is undefined');
       return {
         prevTxid: input.sourceTXID,
         outputIndex: input.sourceOutputIndex,
         inputIndex: index,
-        address: privateKeys.get(index)!.toAddress(),
+        address: '', // Will be filled by the signer
         script: input.sourceTransaction?.outputs[input.sourceOutputIndex].lockingScript.toHex(),
         satoshis: input.sourceTransaction?.outputs[input.sourceOutputIndex].satoshis || 1,
         sigHashType:
@@ -1699,6 +1701,15 @@ export class MNEEService {
           TransactionSignature.SIGHASH_ANYONECANPAY |
           TransactionSignature.SIGHASH_FORKID,
       };
+    });
+  }
+
+  private async signAllInputs(tx: Transaction, privateKeys: Map<number, PrivateKey>): Promise<{ error?: string }> {
+    const sigRequests = this.createSignatureRequests(tx);
+
+    // Update the address field with the actual addresses from private keys
+    sigRequests.forEach((req, index) => {
+      req.address = privateKeys.get(index)!.toAddress();
     });
 
     const rawtx = tx.toHex();
@@ -1715,13 +1726,139 @@ export class MNEEService {
       allSigResponses.push(...res.sigResponses);
     }
 
-    for (const sigResponse of allSigResponses) {
+    this.applySignatures(tx, allSigResponses);
+
+    return {};
+  }
+
+  public applySignatures(tx: Transaction, signatures: SignatureResponse[]): Transaction {
+    for (const sigResponse of signatures) {
       tx.inputs[sigResponse.inputIndex].unlockingScript = new Script()
         .writeBin(Utils.toArray(sigResponse.sig, 'hex'))
         .writeBin(Utils.toArray(sigResponse.pubKey, 'hex'));
     }
+    return tx;
+  }
 
-    return {};
+  public async buildUnsignedMneeTransaction(options: MultisigBuildOptions): Promise<UnsignedTransactionResult> {
+    const config = this.mneeConfig || (await this.getCosignerConfig());
+    if (!config) throw stacklessError('Config not fetched');
+
+    // Calculate total output amount
+    const totalAmount = options.recipients.reduce((sum, req) => sum + req.amount, 0);
+    if (totalAmount <= 0) throw stacklessError('Invalid amount');
+    const totalAtomicTokenAmount = this.toAtomicAmount(totalAmount);
+
+    // Build the transaction
+    const tx = new Transaction(1, [], [], 0);
+    const sourceTransactions = new Map<number, Transaction>();
+    let tokensIn = 0;
+
+    // Add inputs
+    for (let i = 0; i < options.inputs.length; i++) {
+      const input = options.inputs[i];
+      const sourceTransaction = await this.fetchRawTx(input.txid);
+      if (!sourceTransaction) {
+        throw stacklessError(`Failed to fetch source transaction: ${input.txid}_${input.vout}`);
+      }
+
+      const output = sourceTransaction.outputs[input.vout];
+      if (!output) {
+        throw stacklessError(`Output ${input.vout} not found in transaction ${input.txid}`);
+      }
+
+      const inscription = this.parseInscriptionData(output.lockingScript);
+      if (!inscription) {
+        throw stacklessError(`No inscription found in output ${input.txid}:${input.vout}`);
+      }
+
+      tokensIn += parseInt(inscription.amt);
+      sourceTransactions.set(i, sourceTransaction);
+
+      tx.addInput({
+        sourceTXID: input.txid,
+        sourceOutputIndex: input.vout,
+        sourceTransaction,
+        unlockingScript: new UnlockingScript(),
+      });
+    }
+
+    // Calculate fee
+    const fee =
+      options.recipients.find((req) => req.address === config.burnAddress) !== undefined
+        ? 0
+        : config.fees.find(
+            (f: { min: number; max: number }) => totalAtomicTokenAmount >= f.min && totalAtomicTokenAmount <= f.max,
+          )?.fee;
+
+    if (fee === undefined) throw stacklessError('Fee ranges inadequate');
+
+    // Check if we have enough tokens
+    if (tokensIn < totalAtomicTokenAmount + fee) {
+      const haveDecimal = this.fromAtomicAmount(tokensIn);
+      const needDecimal = this.fromAtomicAmount(totalAtomicTokenAmount + fee);
+      throw stacklessError(
+        `Insufficient tokens. Have: ${haveDecimal}, Need: ${needDecimal} (including fee: ${this.fromAtomicAmount(
+          fee,
+        )})`,
+      );
+    }
+
+    // Add recipient outputs
+    for (const req of options.recipients) {
+      tx.addOutput(await this.createInscription(req.address, this.toAtomicAmount(req.amount), config));
+    }
+
+    // Add fee output if needed
+    if (fee > 0) {
+      tx.addOutput(await this.createInscription(config.feeAddress, fee, config));
+    }
+
+    // Add change output(s)
+    const change = tokensIn - totalAtomicTokenAmount - fee;
+    if (change > 0) {
+      if (!options.changeAddress) {
+        // Default to first input - need to extract address from the UTXO
+        const firstInput = options.inputs[0];
+        const sourceTx = sourceTransactions.get(0)!;
+        const sourceOutput = sourceTx.outputs[firstInput.vout];
+        const parsedCosigner = parseCosignerScripts([sourceOutput.lockingScript])[0];
+        if (!parsedCosigner?.address) {
+          throw stacklessError('Could not determine change address from input');
+        }
+        tx.addOutput(await this.createInscription(parsedCosigner.address, change, config));
+      } else if (typeof options.changeAddress === 'string') {
+        tx.addOutput(await this.createInscription(options.changeAddress, change, config));
+      } else if (Array.isArray(options.changeAddress)) {
+        // Multiple change outputs
+        const atomicChangeOutputs = options.changeAddress.map((c) => ({
+          address: c.address,
+          amount: this.toAtomicAmount(c.amount),
+        }));
+
+        const changeSum = atomicChangeOutputs.reduce((sum, c) => sum + c.amount, 0);
+        if (changeSum !== change) {
+          const changeDecimal = this.fromAtomicAmount(change);
+          const changeSumDecimal = this.fromAtomicAmount(changeSum);
+          throw stacklessError(
+            `Change amounts must sum to ${changeDecimal}. Your change outputs sum to ${changeSumDecimal}`,
+          );
+        }
+
+        for (const changeOutput of atomicChangeOutputs) {
+          tx.addOutput(await this.createInscription(changeOutput.address, changeOutput.amount, config));
+        }
+      }
+    }
+
+    // Create signature requests
+    const sigRequests = this.createSignatureRequests(tx);
+
+    return {
+      transaction: tx,
+      sigRequests,
+      sourceTransactions,
+    };
   }
 
   private validateTokenConservation(tx: Transaction, tokensIn: number): { error?: string } {

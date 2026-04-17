@@ -1,3 +1,5 @@
+import { Transaction } from "@bsv/sdk";
+
 export type Environment = 'production' | 'sandbox';
 
 export type SdkConfig = {
@@ -287,4 +289,19 @@ export interface TxOutputResponse {
   total: bigint;
   environment?: Environment;
   type?: TxOperation;
+}
+
+export interface UnsignedTransactionResult {
+    transaction: Transaction;
+    sigRequests: SignatureRequest[];
+    sourceTransactions: Map<number, Transaction>;
+}
+
+export interface MultisigBuildOptions {
+    inputs: Array<{
+        txid: string;
+        vout: number;
+    }>;
+    recipients: SendMNEE[];
+    changeAddress?: string | SendMNEE[];
 }
