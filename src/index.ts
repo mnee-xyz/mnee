@@ -16,8 +16,13 @@ import {
   ParsedCosigner,
   MNEEUtxo,
   TransferOptions,
+  SignatureRequest,
+  SignatureResponse,
+  GetSignatures,
+  UnsignedTransactionResult,
+  MultisigBuildOptions,
 } from './mnee.types.js';
-import { Script } from '@bsv/sdk';
+import { Script, Transaction } from '@bsv/sdk';
 import { HDWallet, HDWalletOptions } from './hdWallet.js';
 import { Batch } from './batch.js';
 export * from './mnee.types.js';
@@ -49,6 +54,19 @@ export interface MneeInterface {
   parseCosignerScripts(scripts: Script[]): ParsedCosigner[];
   HDWallet(mnemonic: string, options: HDWalletOptions): HDWallet;
   batch(): Batch;
+  createInscriptionOutput(
+    recipient: string,
+    amount: number,
+    config: MNEEConfig,
+  ): Promise<{ lockingScript: Script; satoshis: number }>;
+  fetchSourceTransaction(txid: string, retries?: number): Promise<Transaction | undefined>;
+  generateSignatures(
+    request: GetSignatures,
+    privateKey: any,
+  ): Promise<{ sigResponses?: SignatureResponse[]; error?: { message: string; cause?: any } }>;
+  createSignatureRequests(tx: Transaction): SignatureRequest[];
+  applySignatures(tx: Transaction, signatures: SignatureResponse[]): Transaction;
+  buildUnsignedMneeTransaction(options: MultisigBuildOptions): Promise<UnsignedTransactionResult>;
 }
 
 /**
@@ -317,5 +335,83 @@ export default class Mnee implements MneeInterface {
       this._batch = new Batch(this.service);
     }
     return this._batch;
+  }
+
+  /**
+   * Creates an inscription output.
+   * @param recipient - The recipient of the inscription.
+   * @param amount - The amount of the inscription.
+   * @param config - The configuration of the MNEE.
+   * @returns A promise that resolves to a { lockingScript: Script; satoshis: number }.
+   * @example
+   * const inscriptionOutput = await mnee.createInscriptionOutput('recipient', 1, config);
+   */
+  async createInscriptionOutput(
+    recipient: string,
+    amount: number,
+    config: MNEEConfig,
+  ): Promise<{ lockingScript: Script; satoshis: number }> {
+    return this.service.createInscription(recipient, amount, config);
+  }
+
+  /**
+   * Fetches a source transaction.
+   * @param txid - The transaction ID of the source transaction.
+   * @param retries - The number of retries to attempt.
+   * @returns A promise that resolves to a Transaction object.
+   * @example
+   * const sourceTransaction = await mnee.fetchSourceTransaction('txid');
+   */
+  async fetchSourceTransaction(txid: string, retries?: number): Promise<Transaction | undefined> {
+    return this.service.fetchRawTx(txid, retries);
+  }
+
+  /**
+   * Generates signatures.
+   * @param request - The request to generate signatures.
+   * @param privateKey - The private key to generate signatures.
+   * @returns A promise that resolves to a { sigResponses?: SignatureResponse[]; error?: { message: string; cause?: any } }.
+   * @example
+   * const signatures = await mnee.generateSignatures(request, privateKey);
+   */
+  async generateSignatures(
+    request: GetSignatures,
+    privateKey: any,
+  ): Promise<{ sigResponses?: SignatureResponse[]; error?: { message: string; cause?: any } }> {
+    return this.service.getSignatures(request, privateKey);
+  }
+
+  /**
+   * Creates signature requests.
+   * @param tx - The transaction to create signature requests.
+   * @returns An array of SignatureRequest objects.
+   * @example
+   * const signatureRequests = mnee.createSignatureRequests(tx);
+   */
+  createSignatureRequests(tx: Transaction): SignatureRequest[] {
+    return this.service.createSignatureRequests(tx);
+  }
+
+  /**
+   * Applies signatures to a transaction.
+   * @param tx - The transaction to apply signatures.
+   * @param signatures - The signatures to apply.
+   * @returns A Transaction object.
+   * @example
+   * const signedTx = mnee.applySignatures(tx, signatures);
+   */
+  applySignatures(tx: Transaction, signatures: SignatureResponse[]): Transaction {
+    return this.service.applySignatures(tx, signatures);
+  }
+
+  /**
+   * Builds an unsigned MNEE transaction.
+   * @param options - The options to build an unsigned MNEE transaction.
+   * @returns A promise that resolves to an UnsignedTransactionResult object.
+   * @example
+   * const unsignedTransactionResult = await mnee.buildUnsignedMneeTransaction(options);
+   */
+  async buildUnsignedMneeTransaction(options: MultisigBuildOptions): Promise<UnsignedTransactionResult> {
+    return this.service.buildUnsignedMneeTransaction(options);
   }
 }
