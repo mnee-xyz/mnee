@@ -385,6 +385,7 @@ export default class Mnee implements MneeInterface {
    * Creates signature requests.
    * @param tx - The transaction to create signature requests.
    * @returns An array of SignatureRequest objects.
+   * @throws {Error} If an input is missing the source transaction data required for signing.
    * @example
    * const signatureRequests = mnee.createSignatureRequests(tx);
    */

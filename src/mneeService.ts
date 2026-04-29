@@ -1688,14 +1688,32 @@ export class MNEEService {
 
   public createSignatureRequests(tx: Transaction): SignatureRequest[] {
     return tx.inputs.map((input, index) => {
-      if (!input.sourceTXID) throw stacklessError('Source TXID is undefined');
+      const sourceTXID = input.sourceTXID ?? input.sourceTransaction?.id('hex');
+      if (!sourceTXID) {
+        throw stacklessError(`Input ${index} is missing sourceTXID or sourceTransaction`);
+      }
+
+      const sourceTransaction = input.sourceTransaction;
+      if (!sourceTransaction) {
+        throw stacklessError(`Input ${index} is missing sourceTransaction required for signing`);
+      }
+
+      const sourceOutput = sourceTransaction.outputs[input.sourceOutputIndex];
+      if (!sourceOutput) {
+        throw stacklessError(`Output ${input.sourceOutputIndex} not found in transaction ${sourceTXID}`);
+      }
+
+      if (sourceOutput.satoshis === undefined) {
+        throw stacklessError(`Output ${input.sourceOutputIndex} in transaction ${sourceTXID} is missing satoshis`);
+      }
+
       return {
-        prevTxid: input.sourceTXID,
+        prevTxid: sourceTXID,
         outputIndex: input.sourceOutputIndex,
         inputIndex: index,
         address: '', // Will be filled by the signer
-        script: input.sourceTransaction?.outputs[input.sourceOutputIndex].lockingScript.toHex(),
-        satoshis: input.sourceTransaction?.outputs[input.sourceOutputIndex].satoshis || 1,
+        script: sourceOutput.lockingScript.toHex(),
+        satoshis: sourceOutput.satoshis,
         sigHashType:
           TransactionSignature.SIGHASH_ALL |
           TransactionSignature.SIGHASH_ANYONECANPAY |
@@ -1745,9 +1763,8 @@ export class MNEEService {
     if (!config) throw stacklessError('Config not fetched');
 
     // Calculate total output amount
-    const totalAmount = options.recipients.reduce((sum, req) => sum + req.amount, 0);
-    if (totalAmount <= 0) throw stacklessError('Invalid amount');
-    const totalAtomicTokenAmount = this.toAtomicAmount(totalAmount);
+    const totalAtomicTokenAmount = options.recipients.reduce((sum, req) => sum + this.toAtomicAmount(req.amount), 0);
+    if (totalAtomicTokenAmount <= 0) throw stacklessError('Invalid amount');
 
     // Build the transaction
     const tx = new Transaction(1, [], [], 0);
