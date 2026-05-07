@@ -3,7 +3,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Official typescript SDK of MNEE USD stablecoin",
   "type": "module",
   "source": "src/index.ts",
