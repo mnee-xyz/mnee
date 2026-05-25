@@ -51,6 +51,7 @@ export interface MneeInterface {
   recentTxHistories(params: AddressHistoryParams[]): Promise<TxHistoryResponse[]>;
   parseTx(txid: string, options?: ParseOptions): Promise<ParseTxResponse | ParseTxExtendedResponse>;
   parseTxFromRawTx(rawTxHex: string, options?: ParseOptions): Promise<ParseTxResponse | ParseTxExtendedResponse>;
+  parseTxFromBEEF(beefHex: string, options?: ParseOptions): Promise<ParseTxResponse | ParseTxExtendedResponse>;
   parseInscription(script: Script): Inscription | undefined;
   parseCosignerScripts(scripts: Script[]): ParsedCosigner[];
   HDWallet(mnemonic: string, options: HDWalletOptions): HDWallet;
@@ -294,6 +295,24 @@ export default class Mnee implements MneeInterface {
    */
   async parseTxFromRawTx(rawTxHex: string, options?: ParseOptions): Promise<ParseTxResponse | ParseTxExtendedResponse> {
     return this.service.parseTxFromRawTx(rawTxHex, options);
+  }
+
+  /**
+   * Parses a transaction from a BEEF (Bitcoin Extended Format) hex string.
+   *
+   * This is the purely compute-based alternative to `parseTxFromRawTx`. BEEF embeds all
+   * parent transactions inline, so input amounts and addresses are resolved locally without
+   * any network calls. Combined with the config cached at SDK initialisation, this method
+   * has zero API dependencies.
+   *
+   * Produce a BEEF hex from a built transaction using `tx.toHexBEEF()` from \@bsv/sdk.
+   *
+   * @param beefHex - A BEEF-encoded transaction hex string
+   * @param options - Optional parsing options. Set includeRaw to true to get extended response.
+   * @returns A promise that resolves to a `ParseTxResponse` or `ParseTxExtendedResponse`.
+   */
+  async parseTxFromBEEF(beefHex: string, options?: ParseOptions): Promise<ParseTxResponse | ParseTxExtendedResponse> {
+    return this.service.parseTxFromBEEF(beefHex, options);
   }
 
   /**

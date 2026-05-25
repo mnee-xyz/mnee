@@ -1259,6 +1259,11 @@ export class MNEEService {
         return { index, sourceTx: null };
       }
 
+      // Use embedded source transaction if available (e.g. parsed from BEEF/EF format) — no network call needed
+      if (input.sourceTransaction) {
+        return { index, sourceTx: input.sourceTransaction };
+      }
+
       try {
         const sourceTx = await rateLimiter.execute(() => this.fetchRawTx(input.sourceTXID!));
         return { index, sourceTx };
@@ -1535,6 +1540,37 @@ export class MNEEService {
     const config = await this.getConfig();
     if (!config) throw stacklessError('Config not fetched');
     return await this.parseTransaction(tx, config, options);
+  }
+
+  /**
+   * Parse a transaction from BEEF (Bitcoin Extended Format) hex — purely compute-based, no API calls.
+   *
+   * BEEF embeds all parent transactions inline, so input amounts and locking scripts are resolved
+   * locally. Combined with the cached config, this method has zero network dependencies.
+   *
+   * Use `Transaction.toHexBEEF()` from @bsv/sdk to produce the BEEF hex after building a tx.
+   *
+   * @param beefHex - A BEEF-encoded transaction hex string
+   * @param options - Optional parse options (e.g. includeRaw)
+   */
+  public async parseTxFromBEEF(
+    beefHex: string,
+    options?: ParseOptions,
+  ): Promise<ParseTxResponse | ParseTxExtendedResponse> {
+    if (!beefHex || typeof beefHex !== 'string' || beefHex.trim() === '') {
+      throw stacklessError('A valid BEEF hex string is required');
+    }
+    let tx: Transaction;
+    try {
+      tx = Transaction.fromHexBEEF(beefHex);
+    } catch {
+      throw stacklessError('Invalid BEEF hex: could not deserialise transaction');
+    }
+    // Config is cached from SDK initialisation — no network call
+    const config = await this.getConfig();
+    if (!config) throw stacklessError('Config not fetched');
+    // processTransactionInputs will use input.sourceTransaction (embedded by BEEF) — no fetch
+    return this.parseTransaction(tx, config, options);
   }
 
   public parseInscription(script: Script) {

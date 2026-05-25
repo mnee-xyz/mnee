@@ -18,8 +18,8 @@
     "test-webhook": "node test-webhook.js"
   },
   "dependencies": {
-    "express": "^4.21.2",
-    "@mnee/ts-sdk": "file:versions/mnee-ts-sdk-latest.tgz"
+    "@mnee/ts-sdk": "file:versions/mnee-ts-sdk-latest.tgz",
+    "express": "^4.21.2"
   },
   "engines": {
     "node": ">=16.14.0"
