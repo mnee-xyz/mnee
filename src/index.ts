@@ -29,6 +29,7 @@ export * from './mnee.types.js';
 
 export interface MneeInterface {
   config(): Promise<MNEEConfig>;
+  refreshConfig(): Promise<MNEEConfig>;
   balance(address: string): Promise<MNEEBalance>;
   balances(addresses: string[]): Promise<MNEEBalance[]>;
   getUtxos(address: string | string[], page?: number, size?: number, order?: 'asc' | 'desc'): Promise<MNEEUtxo[]>;
@@ -136,6 +137,15 @@ export default class Mnee implements MneeInterface {
    */
   async config(): Promise<MNEEConfig> {
     return this.service.getCosignerConfig();
+  }
+
+  /**
+   * Forces a refresh of the cached MNEE config from the API.
+   * Config is normally fetched once at SDK initialization and cached.
+   * Call this only if you need to pick up updated fee tiers or approver keys.
+   */
+  async refreshConfig(): Promise<MNEEConfig> {
+    return this.service.refreshConfig();
   }
 
   /**

@@ -75,7 +75,7 @@ import { RateLimiter } from './batch.js';
 export class MNEEService {
   private mneeApiKey: string;
   private mneeConfig: MNEEConfig | undefined;
-  private mneeConfigPromise: Promise<MNEEConfig> | null = null;
+  private configReady: Promise<MNEEConfig>;
   private mneeApi: string;
 
   constructor(config: SdkConfig) {
@@ -93,7 +93,7 @@ export class MNEEService {
       this.mneeApiKey = isProd ? PUBLIC_PROD_MNEE_API_TOKEN : PUBLIC_SANDBOX_MNEE_API_TOKEN;
     }
     this.mneeApi = isProd ? MNEE_PROXY_API_URL : SANDBOX_MNEE_API_URL;
-    this.getConfig().catch(() => {});
+    this.configReady = this.getCosignerConfig();
   }
 
   public async getCosignerConfig(): Promise<MNEEConfig> {
@@ -116,20 +116,15 @@ export class MNEEService {
     }
   }
 
-  /**
-   * Thread-safe config accessor. Guarantees exactly one in-flight getCosignerConfig()
-   * call even when multiple callers race before the first response returns.
-   * Resets the promise on failure so the next caller retries.
-   */
   private async getConfig(): Promise<MNEEConfig> {
     if (this.mneeConfig) return this.mneeConfig;
-    if (!this.mneeConfigPromise) {
-      this.mneeConfigPromise = this.getCosignerConfig().catch((err) => {
-        this.mneeConfigPromise = null; // allow retry on next call
-        throw err;
-      });
-    }
-    return this.mneeConfigPromise;
+    return this.configReady;
+  }
+
+  public async refreshConfig(): Promise<MNEEConfig> {
+    this.mneeConfig = undefined;
+    this.configReady = this.getCosignerConfig();
+    return this.configReady;
   }
 
   /**
