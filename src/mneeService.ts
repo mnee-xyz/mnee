@@ -94,6 +94,9 @@ export class MNEEService {
     }
     this.mneeApi = isProd ? MNEE_PROXY_API_URL : SANDBOX_MNEE_API_URL;
     this.configReady = this.getCosignerConfig();
+    // Prevent an unhandled-rejection crash if the initial fetch fails before
+    // it is awaited (e.g. when the caller replaces configReady via refreshConfig()).
+    this.configReady.catch(() => {});
   }
 
   public async getCosignerConfig(): Promise<MNEEConfig> {
@@ -122,9 +125,12 @@ export class MNEEService {
   }
 
   public async refreshConfig(): Promise<MNEEConfig> {
-    this.mneeConfig = undefined;
-    this.configReady = this.getCosignerConfig();
-    return this.configReady;
+    // Fetch first — if it fails, the existing cached config is preserved
+    // and the SDK remains operational (no state is mutated on error).
+    const newConfig = await this.getCosignerConfig();
+    this.mneeConfig = newConfig;
+    this.configReady = Promise.resolve(newConfig);
+    return newConfig;
   }
 
   /**
@@ -353,13 +359,18 @@ export class MNEEService {
         const { rawtx } = await resp.json();
         return Transaction.fromHex(Buffer.from(rawtx, 'base64').toString('hex'));
       } catch (error) {
+        // Permanent errors — re-throw immediately, retrying won't help
+        const msg = (error as Error)?.message ?? '';
+        if (msg === 'Transaction not found' || msg === 'Invalid API key') {
+          throw error;
+        }
         if (attempt === retries) {
           if (isNetworkError(error)) {
             logNetworkError(error, 'fetch transaction');
           }
           return undefined;
         }
-        // For network errors, use a shorter fixed delay
+        // For transient errors, use a shorter fixed delay before retrying
         await new Promise((resolve) => setTimeout(resolve, 200));
       }
     }
@@ -1244,7 +1255,11 @@ export class MNEEService {
     return 'transfer';
   }
 
-  private async processTransactionInputs(tx: Transaction, config: MNEEConfig): Promise<TxInputResponse> {
+  private async processTransactionInputs(
+    tx: Transaction,
+    config: MNEEConfig,
+    opts?: { noNetwork?: boolean },
+  ): Promise<TxInputResponse> {
     const txid = tx.id('hex');
     const inputs: ProcessedInput[] = new Array(tx.inputs.length);
     let total = BigInt(0);
@@ -1262,6 +1277,13 @@ export class MNEEService {
       // Use embedded source transaction if available (e.g. parsed from BEEF/EF format) — no network call needed
       if (input.sourceTransaction) {
         return { index, sourceTx: input.sourceTransaction };
+      }
+
+      // BEEF parsing path: never fetch from network. Missing parents become unknown inputs.
+      // The MNEE API doesn't serve non-MNEE BSV transactions (e.g. plain fee inputs) or oversized
+      // MNEE distribution txs, so a "complete" BEEF often isn't constructible — that's expected.
+      if (opts?.noNetwork) {
+        return { index, sourceTx: null };
       }
 
       try {
@@ -1472,10 +1494,11 @@ export class MNEEService {
     tx: Transaction,
     config: MNEEConfig,
     options?: ParseOptions,
+    internalOpts?: { noNetwork?: boolean },
   ): Promise<ParseTxResponse | ParseTxExtendedResponse> {
     const txid = tx.id('hex');
 
-    const inputData = await this.processTransactionInputs(tx, config);
+    const inputData = await this.processTransactionInputs(tx, config, internalOpts);
     const outputData = this.processTransactionOutputs(tx, config);
 
     const environment = outputData.environment || inputData.environment || 'sandbox';
@@ -1545,8 +1568,12 @@ export class MNEEService {
   /**
    * Parse a transaction from BEEF (Bitcoin Extended Format) hex — purely compute-based, no API calls.
    *
-   * BEEF embeds all parent transactions inline, so input amounts and locking scripts are resolved
-   * locally. Combined with the cached config, this method has zero network dependencies.
+   * BEEF embeds parent transactions inline; embedded parents resolve locally with no network
+   * lookup. Inputs whose parent is NOT embedded (e.g. plain BSV fee inputs the MNEE API doesn't
+   * serve, or oversized MNEE distribution txs the indexer can't return) resolve as "unknown" —
+   * address: undefined, amount/satoshis: 0 — rather than triggering a network fetch. This keeps
+   * the call strictly compute-only and matches the lenient behaviour of parseTxFromRawTx when
+   * a parent can't be obtained.
    *
    * Use `Transaction.toHexBEEF()` from @bsv/sdk to produce the BEEF hex after building a tx.
    *
@@ -1560,17 +1587,18 @@ export class MNEEService {
     if (!beefHex || typeof beefHex !== 'string' || beefHex.trim() === '') {
       throw stacklessError('A valid BEEF hex string is required');
     }
+
     let tx: Transaction;
     try {
       tx = Transaction.fromHexBEEF(beefHex);
     } catch {
       throw stacklessError('Invalid BEEF hex: could not deserialise transaction');
     }
-    // Config is cached from SDK initialisation — no network call
+
     const config = await this.getConfig();
     if (!config) throw stacklessError('Config not fetched');
-    // processTransactionInputs will use input.sourceTransaction (embedded by BEEF) — no fetch
-    return this.parseTransaction(tx, config, options);
+
+    return this.parseTransaction(tx, config, options, { noNetwork: true });
   }
 
   public parseInscription(script: Script) {

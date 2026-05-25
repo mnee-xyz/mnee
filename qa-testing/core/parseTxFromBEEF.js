@@ -31,30 +31,74 @@ const knownTransactions = {
 };
 
 // ---------------------------------------------------------------------------
-// Helper: given a txid, fetch its raw hex and all parent transactions, then
-// reconstruct a BEEF hex string that is self-contained (no API calls needed
-// to parse it afterwards).
+// Helper: given a txid, fetch its raw hex and as many parent transactions as
+// the MNEE API will serve, then reconstruct a BEEF hex string.
+//
+// The MNEE indexer only serves MNEE-related transactions — plain BSV fee
+// inputs and oversized MNEE distribution txs (e.g. 22000+ output mints) come
+// back as HTTP 400/404. We embed what we can; parseTxFromBEEF tolerates the
+// rest by marking those inputs as unknown.
 // ---------------------------------------------------------------------------
 async function txidToBEEF(txid) {
-  // 1. Fetch the main transaction (raw hex via parseTx includeRaw)
-  const parsed = await mnee.parseTx(txid, { includeRaw: true });
-  assert(parsed.raw && parsed.raw.txHex, `Could not get raw hex for txid ${txid}`);
+  const tx = await mnee.fetchSourceTransaction(txid);
+  assert(tx, `Could not fetch raw transaction for txid ${txid}`);
+  const rawtxHex = tx.toHex();
 
-  // 2. Parse into a Transaction object so we can attach source txs
-  const tx = Transaction.fromHex(parsed.raw.txHex);
-
-  // 3. For each input, fetch its source transaction and attach it inline
+  let embedded = 0;
+  let skipped = 0;
   for (const input of tx.inputs) {
-    if (input.sourceTXID) {
+    if (!input.sourceTXID) continue;
+    await new Promise((r) => setTimeout(r, 150)); // rate-limit buffer
+    try {
       const sourceTx = await mnee.fetchSourceTransaction(input.sourceTXID);
       if (sourceTx) {
         input.sourceTransaction = sourceTx;
+        embedded++;
+      } else {
+        skipped++;
       }
+    } catch {
+      skipped++;
     }
   }
+  if (skipped > 0) {
+    console.log(`    BEEF parents: ${embedded} embedded, ${skipped} skipped (MNEE API doesn't serve them)`);
+  }
 
-  // 4. Serialise as BEEF — now self-contained with all parent txs embedded
-  return { beefHex: tx.toHexBEEF(), rawtxHex: parsed.raw.txHex, type: parsed.type };
+  return { beefHex: tx.toHexBEEF(), rawtxHex };
+}
+
+// ---------------------------------------------------------------------------
+// Helper: return a { txid, beefHex, rawtxHex } suitable for tests.
+//
+// Tries the most recent history entry first (exercises real-world data), but
+// falls back to a known-good transaction when the history entry's parent txs
+// are unavailable from the API (e.g. the parent is a coinbase or predates the
+// API's index).  Results are cached so all tests in a single run share one set
+// of fetches.
+// ---------------------------------------------------------------------------
+let _testBEEFCache = null;
+
+async function getTestBEEF() {
+  if (_testBEEFCache) return _testBEEFCache;
+
+  // Try history first
+  try {
+    const txid = await getRecentTxidFromHistory();
+    const { beefHex, rawtxHex } = await txidToBEEF(txid);
+    _testBEEFCache = { txid, beefHex, rawtxHex };
+    return _testBEEFCache;
+  } catch (err) {
+    console.log(`  History-based BEEF unavailable (${err.message}) — falling back to known transactions`);
+  }
+
+  // Fall back to a known transaction whose parents are guaranteed fetchable
+  const transactions = knownTransactions[config.environment];
+  if (!transactions) throw new Error(`No known transactions configured for environment "${config.environment}"`);
+  const txid = transactions.transfer ?? Object.values(transactions)[0];
+  const { beefHex, rawtxHex } = await txidToBEEF(txid);
+  _testBEEFCache = { txid, beefHex, rawtxHex };
+  return _testBEEFCache;
 }
 
 // ---------------------------------------------------------------------------
@@ -73,10 +117,8 @@ async function getRecentTxidFromHistory() {
 // ---------------------------------------------------------------------------
 async function testParseBEEFFromHistory() {
   try {
-    const txid = await getRecentTxidFromHistory();
-    console.log(`  Using txid from history: ${txid.substring(0, 16)}...`);
-
-    const { beefHex, rawtxHex } = await txidToBEEF(txid);
+    const { txid, beefHex, rawtxHex } = await getTestBEEF();
+    console.log(`  Using txid: ${txid.substring(0, 16)}...`);
 
     assert(beefHex && typeof beefHex === 'string', 'BEEF hex should be a non-empty string');
     assert(beefHex !== rawtxHex, 'BEEF hex should differ from plain raw tx hex');
@@ -107,8 +149,7 @@ async function testParseBEEFFromHistory() {
 // ---------------------------------------------------------------------------
 async function testParseBEEFWithIncludeRaw() {
   try {
-    const txid = await getRecentTxidFromHistory();
-    const { beefHex } = await txidToBEEF(txid);
+    const { txid, beefHex } = await getTestBEEF();
 
     const parsed = await mnee.parseTxFromBEEF(beefHex, { includeRaw: true });
 
@@ -146,8 +187,7 @@ async function testParseBEEFWithIncludeRaw() {
 // ---------------------------------------------------------------------------
 async function testBEEFvsRawTxConsistency() {
   try {
-    const txid = await getRecentTxidFromHistory();
-    const { beefHex, rawtxHex } = await txidToBEEF(txid);
+    const { txid, beefHex, rawtxHex } = await getTestBEEF();
 
     const [fromBEEF, fromRaw] = await Promise.all([
       mnee.parseTxFromBEEF(beefHex),
@@ -187,8 +227,7 @@ async function testBEEFvsRawTxConsistency() {
 // ---------------------------------------------------------------------------
 async function testBEEFIsComputeOnly() {
   try {
-    const txid = await getRecentTxidFromHistory();
-    const { beefHex } = await txidToBEEF(txid);
+    const { beefHex } = await getTestBEEF();
 
     // Ensure config is cached before timing
     await mnee.config();
