@@ -123,11 +123,12 @@ export class Batch {
       }
 
       const utxos = await this.service.getUtxos(validAddresses);
-      
+      const validAddressSet = new Set(validAddresses);
+
       // Return results for all addresses in chunk (valid ones get UTXOs, invalid get empty)
       return chunk.map((address) => ({
         address,
-        utxos: validAddresses.includes(address) 
+        utxos: validAddressSet.has(address)
           ? utxos.filter((utxo) => utxo.owners.includes(address))
           : [],
       }));

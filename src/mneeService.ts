@@ -16,6 +16,7 @@ import {
   GetSignatures,
   MNEEBalance,
   MNEEConfig,
+  MNEEFee,
   MneeInscription,
   SdkConfig,
   MneeSync,
@@ -74,6 +75,7 @@ import { RateLimiter } from './batch.js';
 export class MNEEService {
   private mneeApiKey: string;
   private mneeConfig: MNEEConfig | undefined;
+  private mneeConfigPromise: Promise<MNEEConfig> | null = null;
   private mneeApi: string;
 
   constructor(config: SdkConfig) {
@@ -91,7 +93,7 @@ export class MNEEService {
       this.mneeApiKey = isProd ? PUBLIC_PROD_MNEE_API_TOKEN : PUBLIC_SANDBOX_MNEE_API_TOKEN;
     }
     this.mneeApi = isProd ? MNEE_PROXY_API_URL : SANDBOX_MNEE_API_URL;
-    this.getCosignerConfig().catch(() => {});
+    this.getConfig().catch(() => {});
   }
 
   public async getCosignerConfig(): Promise<MNEEConfig> {
@@ -112,6 +114,106 @@ export class MNEEService {
       }
       throw error;
     }
+  }
+
+  /**
+   * Thread-safe config accessor. Guarantees exactly one in-flight getCosignerConfig()
+   * call even when multiple callers race before the first response returns.
+   * Resets the promise on failure so the next caller retries.
+   */
+  private async getConfig(): Promise<MNEEConfig> {
+    if (this.mneeConfig) return this.mneeConfig;
+    if (!this.mneeConfigPromise) {
+      this.mneeConfigPromise = this.getCosignerConfig().catch((err) => {
+        this.mneeConfigPromise = null; // allow retry on next call
+        throw err;
+      });
+    }
+    return this.mneeConfigPromise;
+  }
+
+  /**
+   * Look up the fee for a given atomic token amount from the fee tiers in config.
+   * Returns undefined if no tier covers the amount.
+   */
+  private lookupFee(atomicAmount: number, fees: MNEEFee[]): number | undefined {
+    return fees.find((f) => atomicAmount >= f.min && atomicAmount <= f.max)?.fee;
+  }
+
+  /**
+   * Filter a UTXO array to only those with spendable op-codes (transfer / deploy+mint).
+   * Extracted from getUtxos() where the same Set + filter appeared twice.
+   */
+  private static readonly VALID_UTXO_OPS = new Set(['transfer', 'deploy+mint']);
+
+  private filterValidUtxos(data: MNEEUtxo[]): MNEEUtxo[] {
+    return data.filter((utxo) =>
+      MNEEService.VALID_UTXO_OPS.has(utxo.data.bsv21.op.toLowerCase()),
+    );
+  }
+
+  /**
+   * Validate and append an OP_RETURN output carrying arbitrary user data.
+   * Extracted from transfer() and transferMulti() where the identical block appeared twice.
+   */
+  private addExtraDataOutput(tx: Transaction, extraData: NonNullable<TransferOptions['extraData']>): void {
+    const items = Array.isArray(extraData) ? extraData : [extraData];
+
+    if (items.length === 0) {
+      throw stacklessError('extraData must contain at least one item');
+    }
+
+    const buffers: Buffer[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+
+      if (!item || typeof item.data !== 'string') {
+        throw stacklessError(`Invalid extraData at index ${i}: data must be a string`);
+      }
+
+      if (item.type === 'utf8') {
+        const buf = Buffer.from(item.data, 'utf8');
+        if (buf.length === 0) {
+          throw stacklessError(`extraData at index ${i} is empty after UTF-8 encoding`);
+        }
+        buffers.push(buf);
+      } else if (item.type === 'hex') {
+        const hex = item.data.trim();
+        if (!hex) {
+          throw stacklessError(`extraData at index ${i} is empty`);
+        }
+        if (!/^[0-9a-fA-F]+$/.test(hex) || hex.length % 2 !== 0) {
+          throw stacklessError(
+            `extraData at index ${i} is not valid hex or has odd length: "${hex}"`,
+          );
+        }
+        const buf = Buffer.from(hex, 'hex');
+        if (buf.length === 0) {
+          throw stacklessError(`extraData at index ${i} decoded to an empty buffer`);
+        }
+        buffers.push(buf);
+      } else {
+        throw stacklessError(`Unsupported extraData type at index ${i}: ${(item as any).type}`);
+      }
+    }
+
+    const totalBytes = buffers.reduce((sum, b) => sum + b.length, 0);
+    if (totalBytes > 512) {
+      throw stacklessError(
+        `extraData is too large: ${totalBytes} bytes (max allowed is 512 bytes)`,
+      );
+    }
+
+    const script = new Script();
+    script.writeOpCode(OP.OP_0);
+    script.writeOpCode(OP.OP_RETURN);
+    for (const buf of buffers) {
+      script.writeBin(Array.from(buf));
+    }
+    tx.addOutput({
+      satoshis: 0,
+      lockingScript: LockingScript.fromBinary(script.toBinary()),
+    });
   }
 
   public toAtomicAmount(amount: number): number {
@@ -187,10 +289,7 @@ export class MNEEService {
         }
         if (!response.ok) throw stacklessError(`HTTP error! status: ${response.status}`);
         const data: MNEEUtxo[] = await response.json();
-        const ops = ['transfer', 'deploy+mint'];
-        return data.filter((utxo) =>
-          ops.includes(utxo.data.bsv21.op.toLowerCase() as 'transfer' | 'burn' | 'deploy+mint'),
-        );
+        return this.filterValidUtxos(data);
       }
 
       // Handle array of addresses - filter out invalid ones
@@ -222,10 +321,7 @@ export class MNEEService {
         }
         if (!response.ok) throw stacklessError(`HTTP error! status: ${response.status}`);
         const data: MNEEUtxo[] = await response.json();
-        const ops = ['transfer', 'deploy+mint'];
-        return data.filter((utxo) =>
-          ops.includes(utxo.data.bsv21.op.toLowerCase() as 'transfer' | 'burn' | 'deploy+mint'),
-        );
+        return this.filterValidUtxos(data);
       }
 
       throw stacklessError('Invalid input type for address');
@@ -343,12 +439,10 @@ export class MNEEService {
   }
 
   public async getEnoughUtxos(address: string, totalAtomicTokenAmount: number): Promise<MNEEUtxo[]> {
-    const config = this.mneeConfig || (await this.getCosignerConfig());
+    const config = await this.getConfig();
     if (!config) throw stacklessError('Config not fetched');
-    const fees = config.fees;
-    const fee = fees.find((f) => totalAtomicTokenAmount >= f.min && totalAtomicTokenAmount <= f.max);
-    if (!fee) throw stacklessError('Fee not found');
-    const feeAmount = fee.fee;
+    const feeAmount = this.lookupFee(totalAtomicTokenAmount, config.fees);
+    if (feeAmount === undefined) throw stacklessError('Fee not found');
     const requiredAmount = totalAtomicTokenAmount + feeAmount;
 
     const balance = await this.getBalance(address);
@@ -419,7 +513,7 @@ export class MNEEService {
     transferOptions?: TransferOptions,
   ): Promise<TransferResponse> {
     try {
-      const config = this.mneeConfig || (await this.getCosignerConfig());
+      const config = await this.getConfig();
       if (!config) throw stacklessError('Config not fetched');
 
       const { isValid, totalAmount, privateKey, error } = validateTransferOptions(request, wif);
@@ -432,17 +526,8 @@ export class MNEEService {
       const address = privateKey.toAddress();
       const utxos = await this.getEnoughUtxos(address, totalAtomicTokenAmount);
 
-      // const fee =
-      //   request.find((req) => req.address === config.burnAddress) !== undefined
-      //     ? 0
-      //     : config.fees.find(
-      //         (fee: { min: number; max: number }) =>
-      //           totalAtomicTokenAmount >= fee.min && totalAtomicTokenAmount <= fee.max,
-      //       )?.fee;
-      const fee = config.fees.find(
-                  (fee: { min: number; max: number }) =>
-                    totalAtomicTokenAmount >= fee.min && totalAtomicTokenAmount <= fee.max,
-                  )?.fee;// changes made for resolving burnAddress transfer MN-122
+      // Note: burn-address fee exemption was removed in MN-122; fee is always looked up from tiers.
+      const fee = this.lookupFee(totalAtomicTokenAmount, config.fees);
       if (fee === undefined) throw stacklessError('Fee ranges inadequate');
 
       const tx = new Transaction(1, [], [], 0);
@@ -480,66 +565,9 @@ export class MNEEService {
         tx.addOutput(await this.createInscription(changeAddress, change, config));
       }
       if (transferOptions?.extraData) {
-        const items = Array.isArray(transferOptions.extraData)
-          ? transferOptions.extraData
-          : [transferOptions.extraData];
-
-        if (items.length === 0) {
-          throw stacklessError('extraData must contain at least one item');
-        }
-        const buffers: Buffer[] = [];
-        for (let i = 0; i < items.length; i++) {
-          const item = items[i];
-    
-        if (!item || typeof item.data !== 'string') {
-          throw stacklessError(`Invalid extraData at index ${i}: data must be a string`);
-        }
-        if (item.type === 'utf8') {
-          const buf = Buffer.from(item.data, 'utf8');
-          if (buf.length === 0) {
-            throw stacklessError(`extraData at index ${i} is empty after UTF-8 encoding`);
-          }
-          buffers.push(buf);
-        } else if (item.type === 'hex') {
-          const hex = item.data.trim();
-          if (!hex) {
-            throw stacklessError(`extraData at index ${i} is empty`);
-          }
-          if (!/^[0-9a-fA-F]+$/.test(hex) || hex.length % 2 !== 0) {
-            throw stacklessError(
-              `extraData at index ${i} is not valid hex or has odd length: "${hex}"`,
-            );
-          }
-          const buf = Buffer.from(hex, 'hex');
-          if (buf.length === 0) {
-            throw stacklessError(`extraData at index ${i} decoded to an empty buffer`);
-          }
-
-          buffers.push(buf);
-        } else {
-          throw stacklessError(`Unsupported extraData type at index ${i}: ${(item as any).type}`);
-        }
-      }
-      const totalBytes = buffers.reduce((sum, b) => sum + b.length, 0);
-      if (totalBytes > 512) {
-        throw stacklessError(
-          `extraData is too large: ${totalBytes} bytes (max allowed is 512 bytes)`,
-        );
+        this.addExtraDataOutput(tx, transferOptions.extraData);
       }
 
-      const script = new Script();
-      script.writeOpCode(OP.OP_0);
-      script.writeOpCode(OP.OP_RETURN);
-      for (const buf of buffers) {
-        script.writeBin(Array.from(buf));
-      }
-      tx.addOutput({
-        satoshis: 0,
-        lockingScript: LockingScript.fromBinary(script.toBinary()),
-      });
-     }
-
-    
       const privateKeys = new Map<number, PrivateKey>();
       for (let i = 0; i < tx.inputs.length; i++) {
         privateKeys.set(i, privateKey);
@@ -650,7 +678,7 @@ export class MNEEService {
     }
 
     try {
-      const config = this.mneeConfig || (await this.getCosignerConfig());
+      const config = await this.getConfig();
       if (!config) throw stacklessError('Config not fetched');
 
       const response = await fetch(`${this.mneeApi}/v2/balance?auth_token=${this.mneeApiKey}`, {
@@ -702,7 +730,7 @@ export class MNEEService {
       console.warn(`\x1b[33m${totalInvalidAddresses} invalid bitcoin addresses will be ignored\x1b[0m`);
     }
     try {
-      const config = this.mneeConfig || (await this.getCosignerConfig());
+      const config = await this.getConfig();
       if (!config) throw stacklessError('Config not fetched');
       const response = await fetch(`${this.mneeApi}/v2/balance?auth_token=${this.mneeApiKey}`, {
         method: 'POST',
@@ -882,7 +910,7 @@ export class MNEEService {
 
   public async validateMneeTx(rawTx: string, request?: SendMNEE[]) {
     try {
-      const config = this.mneeConfig || (await this.getCosignerConfig());
+      const config = await this.getConfig();
       if (!config) throw stacklessError('Config not fetched');
       const tx = Transaction.fromHex(rawTx);
       const isValid = this.processMneeValidation(tx, config, request);
@@ -980,7 +1008,7 @@ export class MNEEService {
     }
 
     try {
-      const config = this.mneeConfig || (await this.getCosignerConfig());
+      const config = await this.getConfig();
       if (!config) throw stacklessError('Config not fetched');
 
       const syncsByAddress = await this.getMneeSyncs(address, fromScore, limit, order);
@@ -1065,7 +1093,7 @@ export class MNEEService {
     }
 
     try {
-      const config = this.mneeConfig || (await this.getCosignerConfig());
+      const config = await this.getConfig();
       if (!config) throw stacklessError('Config not fetched');
 
       // Group addressParams by fromScore, limit, and order to batch requests efficiently
@@ -1491,7 +1519,7 @@ export class MNEEService {
       throw stacklessError('A valid transaction ID is required');
     }
 
-    const config = this.mneeConfig || (await this.getCosignerConfig());
+    const config = await this.getConfig();
     if (!config) throw stacklessError('Config not fetched');
     const tx = await this.fetchRawTx(txid);
     if (!tx) throw stacklessError('Failed to fetch transaction');
@@ -1509,7 +1537,7 @@ export class MNEEService {
       throw stacklessError('Invalid raw transaction hex');
     }
     const tx = Transaction.fromHex(rawTxHex);
-    const config = this.mneeConfig || (await this.getCosignerConfig());
+    const config = await this.getConfig();
     if (!config) throw stacklessError('Config not fetched');
     return await this.parseTransaction(tx, config, options);
   }
@@ -1759,7 +1787,7 @@ export class MNEEService {
   }
 
   public async buildUnsignedMneeTransaction(options: MultisigBuildOptions): Promise<UnsignedTransactionResult> {
-    const config = this.mneeConfig || (await this.getCosignerConfig());
+    const config = await this.getConfig();
     if (!config) throw stacklessError('Config not fetched');
 
     // Calculate total output amount
@@ -1941,7 +1969,7 @@ export class MNEEService {
     transferOptions?: TransferOptions,
   ): Promise<TransferResponse> {
     try {
-      const config = this.mneeConfig || (await this.getCosignerConfig());
+      const config = await this.getConfig();
       if (!config) throw stacklessError('Config not fetched');
 
       const { isValid, error } = validateTransferMultiOptions(options);
@@ -2009,70 +2037,9 @@ export class MNEEService {
       );
       if (changeResult.error) throw stacklessError(changeResult.error);
       
-      // === ADD OP_RETURN LOGIC HERE (SAME AS IN transfer METHOD) ===
       if (transferOptions?.extraData) {
-        const items = Array.isArray(transferOptions.extraData)
-          ? transferOptions.extraData
-          : [transferOptions.extraData];
-
-        if (items.length === 0) {
-          throw stacklessError('extraData must contain at least one item');
-        }
-
-        const buffers: Buffer[] = [];
-        for (let i = 0; i < items.length; i++) {
-          const item = items[i];
-    
-          if (!item || typeof item.data !== 'string') {
-            throw stacklessError(`Invalid extraData at index ${i}: data must be a string`);
-          }
-
-          if (item.type === 'utf8') {
-            const buf = Buffer.from(item.data, 'utf8');
-            if (buf.length === 0) {
-              throw stacklessError(`extraData at index ${i} is empty after UTF-8 encoding`);
-            }
-            buffers.push(buf);
-          } else if (item.type === 'hex') {
-            const hex = item.data.trim();
-            if (!hex) {
-              throw stacklessError(`extraData at index ${i} is empty`);
-            }
-            if (!/^[0-9a-fA-F]+$/.test(hex) || hex.length % 2 !== 0) {
-              throw stacklessError(
-                `extraData at index ${i} is not valid hex or has odd length: "${hex}"`,
-              );
-            }
-            const buf = Buffer.from(hex, 'hex');
-            if (buf.length === 0) {
-              throw stacklessError(`extraData at index ${i} decoded to an empty buffer`);
-            }
-            buffers.push(buf);
-          } else {
-            throw stacklessError(`Unsupported extraData type at index ${i}: ${(item as any).type}`);
-          }
-        }
-
-        const totalBytes = buffers.reduce((sum, b) => sum + b.length, 0);
-        if (totalBytes > 512) {
-          throw stacklessError(
-            `extraData is too large: ${totalBytes} bytes (max allowed is 512 bytes)`,
-          );
-        }
-
-        const script = new Script();
-        script.writeOpCode(OP.OP_0);
-        script.writeOpCode(OP.OP_RETURN);
-        for (const buf of buffers) {
-          script.writeBin(Array.from(buf));
-        }
-      
-        tx.addOutput({
-          satoshis: 0,
-          lockingScript: LockingScript.fromBinary(script.toBinary()),
-        });
+        this.addExtraDataOutput(tx, transferOptions.extraData);
       }
-      // === END OP_RETURN LOGIC ===
       
       const signResult = await this.signAllInputs(tx, privateKeys);
       if (signResult.error) throw stacklessError(signResult.error);
