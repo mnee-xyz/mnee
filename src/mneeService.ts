@@ -121,7 +121,16 @@ export class MNEEService {
 
   private async getConfig(): Promise<MNEEConfig> {
     if (this.mneeConfig) return this.mneeConfig;
-    return this.configReady;
+    const currentPromise = this.configReady;
+    try {
+      return await currentPromise;
+    } catch (err) {
+      if (this.configReady === currentPromise) {
+        this.configReady = this.getCosignerConfig();
+        this.configReady.catch(() => {});
+      }
+      throw err;
+    }
   }
 
   public async refreshConfig(): Promise<MNEEConfig> {

@@ -88,9 +88,9 @@ export class HDWallet {
       path: fullPath,
     };
 
-    // Maintain a bounded LRU cache: evict the oldest entry when at capacity.
+    // Maintain a bounded FIFO cache: evict the oldest entry when at capacity.
     // Using a plain Map is sufficient because Map preserves insertion order,
-    // so the first key() is always the least-recently-inserted entry.
+    // so the first key() is always the oldest-inserted entry.
     if (this.cache.size >= this.cacheSize) {
       const oldestKey = this.cache.keys().next().value;
       if (oldestKey !== undefined) {

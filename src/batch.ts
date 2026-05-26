@@ -125,12 +125,22 @@ export class Batch {
       const utxos = await this.service.getUtxos(validAddresses);
       const validAddressSet = new Set(validAddresses);
 
+      const utxosByAddress = new Map<string, MNEEUtxo[]>();
+      for (const utxo of utxos) {
+        for (const owner of utxo.owners) {
+          let list = utxosByAddress.get(owner);
+          if (!list) {
+            list = [];
+            utxosByAddress.set(owner, list);
+          }
+          list.push(utxo);
+        }
+      }
+
       // Return results for all addresses in chunk (valid ones get UTXOs, invalid get empty)
       return chunk.map((address) => ({
         address,
-        utxos: validAddressSet.has(address)
-          ? utxos.filter((utxo) => utxo.owners.includes(address))
-          : [],
+        utxos: validAddressSet.has(address) ? (utxosByAddress.get(address) ?? []) : [],
       }));
     };
 
