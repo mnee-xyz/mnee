@@ -14,6 +14,8 @@
     "test:transfer": "node transfer.js",
     "test:transferMulti": "node transferMulti.js",
     "test:all": "npm run test:balance && npm run test:balances && npm run test:batch && npm run test:config",
+    "test:perf": "node perf/perf-suite.mjs",
+    "test:perf:full": "node perf/perf-suite.mjs --include-mutating --out perf/report.json",
     "webhook": "node webhook-server.js",
     "test-webhook": "node test-webhook.js"
   },

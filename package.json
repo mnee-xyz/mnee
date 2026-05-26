@@ -29,7 +29,7 @@
   "unpkg": "./dist/index.umd.js",
   "scripts": {
     "clean": "rm -rf dist",
-    "build": "npm run clean && microbundle --globals @bsv/sdk=bsv && npm pack",
+    "build": "npm run clean && microbundle --globals @bsv/sdk=bsv && rm -f mnee-ts-sdk-*.tgz && npm pack",
     "start": "node dist/index.modern.js",
     "test": "cd qa-testing && npm run prepare-package && node run-all.js",
     "prepublishOnly": "npm run build"
