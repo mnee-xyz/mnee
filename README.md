@@ -17,7 +17,7 @@ For detailed API references and advanced usage, see the [docs](./docs) directory
 - [Transfers](./docs/transfer.md) & [Multi-source Transfers](./docs/transferMulti.md)
 - [Batch Operations](./docs/batch.md)
 - [HD Wallet](./docs/hdWallet.md)
-- [Transaction Parsing](./docs/parseTx.md)
+- [Transaction Parsing](./docs/parseTx.md) (includes BEEF / offline parsing)
 - [And more...](./docs)
 
 ## Installation

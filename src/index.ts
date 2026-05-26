@@ -300,12 +300,16 @@ export default class Mnee implements MneeInterface {
   /**
    * Parses a transaction from a BEEF (Bitcoin Extended Format) hex string.
    *
-   * This is the purely compute-based alternative to `parseTxFromRawTx`. BEEF embeds all
-   * parent transactions inline, so input amounts and addresses are resolved locally without
-   * any network calls. Combined with the config cached at SDK initialisation, this method
-   * has zero API dependencies.
+   * Compute-only alternative to `parseTxFromRawTx` — makes zero network calls.
+   * BEEF embeds parent transactions inline so input amounts resolve locally.
+   *
+   * Partial BEEF is supported: inputs whose parent is NOT embedded (e.g. plain BSV fee
+   * inputs or oversized MNEE distribution txs the API can't serve) resolve as unknown
+   * ({ address: undefined, satoshis: 0 }) rather than triggering a fetch. As a result,
+   * `inputTotal` may understate the true value when parents are absent.
    *
    * Produce a BEEF hex from a built transaction using `tx.toHexBEEF()` from \@bsv/sdk.
+   * Plain raw hex is rejected — use `parseTxFromRawTx` for that.
    *
    * @param beefHex - A BEEF-encoded transaction hex string
    * @param options - Optional parsing options. Set includeRaw to true to get extended response.

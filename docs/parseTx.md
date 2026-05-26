@@ -1,6 +1,14 @@
 # Parse Transaction
 
-The MNEE SDK provides methods to parse and analyze MNEE transactions, extracting detailed information about inputs, outputs, and validation status.
+The MNEE SDK provides three methods to parse and analyze MNEE transactions. All three return the same response shape — they differ only in what you supply as input and whether they make network calls.
+
+## Choosing a Parse Method
+
+| Method | You provide | Network calls | Use when |
+|---|---|---|---|
+| `parseTx(txid)` | transaction ID | fetches raw tx + parent txs from MNEE API | you only have a txid |
+| `parseTxFromRawTx(rawHex)` | raw transaction hex | may fetch parent txs from MNEE API | you have raw hex, API lookups are acceptable |
+| `parseTxFromBEEF(beefHex)` | BEEF hex | **none** | you need compute-only / offline parsing, or want to avoid API quota |
 
 ## Parse Transaction by ID
 
@@ -23,7 +31,7 @@ console.log('Raw data:', parsed.raw);
 
 ## Parse Transaction from Raw Hex
 
-The `parseTxFromRawTx` method parses a transaction from its raw hexadecimal representation.
+The `parseTxFromRawTx` method parses a transaction from its raw hexadecimal representation. The SDK may fetch parent transactions from the MNEE API to resolve input amounts and addresses.
 
 ### Usage
 
@@ -38,20 +46,85 @@ console.log('Parsed TX:', parsed);
 const parsed = await mnee.parseTxFromRawTx('raw-tx-hex', { includeRaw: true });
 ```
 
+## Parse Transaction from BEEF
+
+The `parseTxFromBEEF` method parses a transaction from a [BEEF (Bitcoin Extended Format)](https://bsv.brc.dev/transactions/0062) hex string. BEEF embeds parent transactions inline, so input amounts and addresses resolve locally — no network calls are made.
+
+This is the preferred method when:
+- you are building a transaction offline and want to inspect it before broadcast
+- you want deterministic parsing with no API quota impact
+- you already have a BEEF hex from `tx.toHexBEEF()` via `@bsv/sdk`
+
+### Producing a BEEF Hex
+
+```typescript
+import { Transaction } from '@bsv/sdk';
+
+// After building and signing your transaction:
+const beefHex = tx.toHexBEEF();
+```
+
+### Basic Usage
+
+```typescript
+const parsed = await mnee.parseTxFromBEEF(beefHex);
+
+console.log(`Type: ${parsed.type}`);
+console.log(`Valid: ${parsed.isValid}`);
+console.log(`Input total: ${mnee.fromAtomicAmount(parseInt(parsed.inputTotal))} MNEE`);
+```
+
+### With Extended Data
+
+```typescript
+const parsed = await mnee.parseTxFromBEEF(beefHex, { includeRaw: true });
+
+parsed.raw.inputs.forEach((input, i) => {
+  console.log(`Input ${i}: ${input.address ?? 'unknown'} — ${input.satoshis} sats`);
+});
+```
+
+### Partial BEEF — Missing Parents
+
+A "complete" BEEF (every parent embedded) is often not constructible in practice. The MNEE API cannot serve:
+- plain BSV fee inputs (non-MNEE transactions)
+- oversized MNEE distribution transactions (e.g. 22 000+ output mints)
+
+`parseTxFromBEEF` handles this gracefully. Inputs whose parent is not embedded resolve as **unknown** rather than throwing:
+
+```
+{ address: undefined, amount: 0 }   // in parsed.inputs
+{ satoshis: 0, address: undefined } // in parsed.raw.inputs (includeRaw mode)
+```
+
+**Consequence:** `inputTotal` may understate the true MNEE value when parents are absent. If an accurate `inputTotal` is required, use `parseTx(txid)` or `parseTxFromRawTx(rawHex)` instead.
+
+### Error Cases
+
+| Situation | Behaviour |
+|---|---|
+| Malformed BEEF hex | Throws `"Invalid BEEF hex: could not deserialise transaction"` |
+| Plain raw hex passed | Throws — raw hex is not silently accepted; use `parseTxFromRawTx` |
+| Empty / non-string input | Throws `"A valid BEEF hex string is required"` |
+
 ## Parameters
 
 ### parseTx
-- **txid**: Transaction ID to parse
+- **txid**: Transaction ID (64-character hex string)
 - **options** (optional): `ParseOptions` object
-  - **includeRaw**: Include detailed raw transaction data
+  - **includeRaw**: Include detailed raw transaction data in the response
 
 ### parseTxFromRawTx
 - **rawTxHex**: Raw transaction in hexadecimal format
 - **options** (optional): Same as above
 
+### parseTxFromBEEF
+- **beefHex**: BEEF-encoded transaction hex string (produced via `tx.toHexBEEF()`)
+- **options** (optional): Same as above
+
 ## Response
 
-Returns a `ParseTxResponse` or `ParseTxExtendedResponse` object.
+All three methods return a `ParseTxResponse` or `ParseTxExtendedResponse` object.
 
 ### Basic Response
 
@@ -82,6 +155,12 @@ Returns a `ParseTxResponse` or `ParseTxExtendedResponse` object.
 }
 ```
 
+When parsing via BEEF with missing parents, inputs that could not be resolved appear as:
+
+```json
+{ "address": null, "amount": 0 }
+```
+
 ### Extended Response (with includeRaw)
 
 Includes all basic fields plus:
@@ -98,7 +177,7 @@ Includes all basic fields plus:
         "sequence": 4294967295,
         "satoshis": 1000,
         "address": "1Sender...",
-        "tokenData": { /* MNEE token data */ }
+        "tokenData": { }
       }
     ],
     "outputs": [
@@ -106,13 +185,9 @@ Includes all basic fields plus:
         "value": 1000,
         "scriptPubKey": "...",
         "address": "1Recipient...",
-        "tokenData": { /* MNEE token data */ }
+        "tokenData": { }
       }
-    ],
-    "version": 1,
-    "lockTime": 0,
-    "size": 250,
-    "hash": "..."
+    ]
   }
 }
 ```
@@ -122,21 +197,17 @@ Includes all basic fields plus:
 ### Basic Properties
 - **txid**: Transaction identifier
 - **environment**: `"production"` or `"sandbox"`
-- **type**: Operation type (`"transfer"`, `"burn"`, etc.)
+- **type**: Operation type (`"transfer"`, `"burn"`, `"deploy"`, `"mint"`, `"redeem"`)
 - **inputs**: Array of input addresses and amounts
 - **outputs**: Array of output addresses and amounts
-- **isValid**: Whether the transaction is valid
-- **inputTotal**: Total input amount (string)
-- **outputTotal**: Total output amount (string)
+- **isValid**: Whether the transaction is valid per MNEE protocol rules
+- **inputTotal**: Total input amount in atomic units (string, for precision)
+- **outputTotal**: Total output amount in atomic units (string, for precision)
 
 ### Extended Properties (raw)
 - **txHex**: Complete raw transaction hex
-- **inputs**: Detailed input information
-- **outputs**: Detailed output information
-- **version**: Transaction version
-- **lockTime**: Transaction lock time
-- **size**: Transaction size in bytes
-- **hash**: Transaction hash
+- **inputs**: Detailed per-input information (txid, vout, scriptSig, sequence, satoshis, address, tokenData)
+- **outputs**: Detailed per-output information (value, scriptPubKey, address, tokenData)
 
 ## Common Use Cases
 
@@ -155,7 +226,6 @@ async function analyzeTransaction(txid) {
   const fee = parseInt(parsed.inputTotal) - parseInt(parsed.outputTotal);
   console.log(`- Fee: ${mnee.fromAtomicAmount(fee)} MNEE`);
   
-  // Analyze flows
   console.log('\nInputs:');
   parsed.inputs.forEach(input => {
     console.log(`  ${input.address}: ${mnee.fromAtomicAmount(input.amount)} MNEE`);
@@ -174,20 +244,15 @@ async function analyzeTransaction(txid) {
 async function verifyIncomingTransaction(txid, expectedAmount, senderAddress) {
   const parsed = await mnee.parseTx(txid);
   
-  // Check if valid
   if (!parsed.isValid) {
     throw new Error('Invalid transaction');
   }
   
-  // Verify sender
-  const fromSender = parsed.inputs.some(input => 
-    input.address === senderAddress
-  );
+  const fromSender = parsed.inputs.some(input => input.address === senderAddress);
   if (!fromSender) {
     throw new Error('Transaction not from expected sender');
   }
   
-  // Verify amount
   const myAddress = 'my-address';
   const received = parsed.outputs
     .filter(output => output.address === myAddress)
@@ -201,6 +266,31 @@ async function verifyIncomingTransaction(txid, expectedAmount, senderAddress) {
 }
 ```
 
+### Inspect a Transaction Before Broadcast (BEEF)
+
+Use `parseTxFromBEEF` to validate a transaction you built locally before submitting it to the network.
+
+```typescript
+import { Transaction } from '@bsv/sdk';
+
+// Build and sign transaction
+const tx = new Transaction(/* ... */);
+// ... add inputs, outputs, sign ...
+
+const beefHex = tx.toHexBEEF();
+const parsed = await mnee.parseTxFromBEEF(beefHex);
+
+if (!parsed.isValid) {
+  throw new Error('Transaction does not pass MNEE validation — do not broadcast');
+}
+
+console.log(`Type: ${parsed.type}`);
+console.log(`Output total: ${mnee.fromAtomicAmount(parseInt(parsed.outputTotal))} MNEE`);
+
+// Note: parsed.inputTotal may be 0 or understated if some parent txs
+// are plain BSV inputs that BEEF could not embed.
+```
+
 ### Debug Failed Transactions
 
 ```typescript
@@ -209,133 +299,26 @@ async function debugTransaction(rawTxHex) {
   
   console.log('Transaction Debug Info:');
   console.log(`- Valid: ${parsed.isValid}`);
-  console.log(`- Size: ${parsed.raw.size} bytes`);
   console.log(`- Input Total: ${mnee.fromAtomicAmount(parseInt(parsed.inputTotal))} MNEE`);
   console.log(`- Output Total: ${mnee.fromAtomicAmount(parseInt(parsed.outputTotal))} MNEE`);
   
-  // Check for common issues
-  if (!parsed.isValid) {
-    console.log('\n❌ Transaction is invalid');
-  }
-  
-  if (parsed.inputTotal === parsed.outputTotal) {
-    console.log('\n⚠️ Warning: No fee included');
-  }
-  
-  // Analyze inputs
   console.log('\nInput Details:');
   parsed.raw.inputs.forEach((input, i) => {
     console.log(`Input ${i}:`);
     console.log(`  Previous TX: ${input.txid}:${input.vout}`);
-    console.log(`  Address: ${input.address || 'Unknown'}`);
+    console.log(`  Address: ${input.address ?? 'Unknown'}`);
     console.log(`  Token Data: ${JSON.stringify(input.tokenData)}`);
   });
 }
 ```
 
-### Track Transaction Flow
-
-```typescript
-async function trackTokenFlow(startTxid, depth = 3) {
-  const flow = [];
-  const queue = [{ txid: startTxid, level: 0 }];
-  const visited = new Set();
-  
-  while (queue.length > 0 && queue[0].level < depth) {
-    const { txid, level } = queue.shift();
-    
-    if (visited.has(txid)) continue;
-    visited.add(txid);
-    
-    const parsed = await mnee.parseTx(txid);
-    flow.push({ txid, level, parsed });
-    
-    // Find subsequent transactions
-    for (const output of parsed.outputs) {
-      // Would need to query for transactions spending these outputs
-      // This is a simplified example
-    }
-  }
-  
-  return flow;
-}
-```
-
-### Export Transaction Details
-
-```typescript
-async function exportTransactionDetails(txid) {
-  const parsed = await mnee.parseTx(txid, { includeRaw: true });
-  
-  const details = {
-    summary: {
-      txid: parsed.txid,
-      type: parsed.type,
-      valid: parsed.isValid,
-      fee: parseInt(parsed.inputTotal) - parseInt(parsed.outputTotal),
-      timestamp: new Date().toISOString() // Would need block time
-    },
-    inputs: parsed.inputs.map(input => ({
-      address: input.address,
-      amount: mnee.fromAtomicAmount(input.amount)
-    })),
-    outputs: parsed.outputs.map(output => ({
-      address: output.address,
-      amount: mnee.fromAtomicAmount(output.amount)
-    })),
-    raw: parsed.raw
-  };
-  
-  return JSON.stringify(details, null, 2);
-}
-```
-
-### Validate Complex Transactions
-
-```typescript
-async function validateComplexTransaction(txid, rules) {
-  const parsed = await mnee.parseTx(txid);
-  
-  const validations = {
-    isValid: parsed.isValid,
-    hasMinimumFee: false,
-    hasExpectedRecipients: false,
-    hasNoUnknownOutputs: false
-  };
-  
-  // Check minimum fee
-  const fee = parseInt(parsed.inputTotal) - parseInt(parsed.outputTotal);
-  validations.hasMinimumFee = fee >= rules.minimumFee;
-  
-  // Check expected recipients
-  validations.hasExpectedRecipients = rules.expectedRecipients.every(
-    expected => parsed.outputs.some(
-      output => output.address === expected.address && 
-                output.amount >= expected.amount
-    )
-  );
-  
-  // Check for unknown outputs
-  const knownAddresses = new Set([
-    ...rules.expectedRecipients.map(r => r.address),
-    ...rules.changeAddresses || []
-  ]);
-  
-  validations.hasNoUnknownOutputs = parsed.outputs.every(
-    output => knownAddresses.has(output.address)
-  );
-  
-  return validations;
-}
-```
-
 ## Important Notes
 
-- Transaction parsing includes automatic validation
-- Amounts in the response are in atomic units
-- The `isValid` flag indicates if the transaction follows MNEE protocol rules
-- Extended data (`includeRaw: true`) provides blockchain-level details
-- Input/output totals are provided as strings to preserve precision
+- Amounts in all responses are in **atomic units** (multiply by `1e-5` or use `mnee.fromAtomicAmount()`)
+- `inputTotal` / `outputTotal` are strings to preserve precision — parse with `parseInt()` or `BigInt()`
+- `parseTxFromBEEF` `inputTotal` may understate value when some parent transactions are not embedded
+- `isValid` reflects MNEE protocol validity, not BSV consensus validity
+- Transaction parsing includes automatic validation against MNEE cosigner scripts
 
 ## See Also
 
