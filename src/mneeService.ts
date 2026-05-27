@@ -82,7 +82,8 @@ export class MNEEService {
   private static readonly LOCK_RETRY_MAX = 3;
   private static readonly LOCK_RETRY_BACKOFF_MS = 250;
   private readonly txFetchCache = new Map<string, Promise<Transaction | undefined>>();
-  private readonly inputFetchLimiter = new RateLimiter(3, 334);
+  // 3 concurrent slots, each held ≥1000ms — caps starts at 3/s to match the MNEE API limit.
+  private readonly inputFetchLimiter = new RateLimiter(3, 1000);
   private readonly usedOutpoints = new Map<string, number>();
 
   constructor(config: SdkConfig) {
@@ -359,7 +360,13 @@ export class MNEEService {
       this.txFetchCache.delete(firstKey);
     }
     this.txFetchCache.set(txid, promise);
-    promise.catch(() => this.txFetchCache.delete(txid));
+    promise.catch(() => {
+      // Only evict if this promise still owns the slot — protects against a race
+      // where the entry was already evicted and re-fetched by a newer promise.
+      if (this.txFetchCache.get(txid) === promise) {
+        this.txFetchCache.delete(txid);
+      }
+    });
     return promise;
   }
 
@@ -513,13 +520,21 @@ export class MNEEService {
     let size = 25;
     let allUtxos: MNEEUtxo[] = [];
     let totalUtxoAmount = 0;
+    // Track whether *this address* had any UTXO filtered out by the lock cache.
+    // usedOutpoints is shared across all addresses on the instance, so checking
+    // its size would misreport locks belonging to a different address.
+    let sawLockedForAddress = false;
 
     // Collect UTXOs until we have enough, skipping recently-used outpoints
     while (totalUtxoAmount < requiredAmount) {
       const pageUtxos = await this.getUtxos(address, page, size);
-      const available = pageUtxos.filter((u) => !this.usedOutpoints.has(`${u.txid}_${u.vout}`));
+      const available = pageUtxos.filter((u) => {
+        const isLocked = this.usedOutpoints.has(`${u.txid}_${u.vout}`);
+        if (isLocked) sawLockedForAddress = true;
+        return !isLocked;
+      });
       if (pageUtxos.length === 0) {
-        if (this.usedOutpoints.size > 0) {
+        if (sawLockedForAddress) {
           throw stacklessError('UTXOs temporarily locked by recent transactions, retry shortly');
         }
         // This shouldn't happen given we checked balance, but handle gracefully
@@ -535,7 +550,7 @@ export class MNEEService {
       }
 
       if (pageUtxos.length < size) {
-        if (this.usedOutpoints.size > 0) {
+        if (sawLockedForAddress) {
           throw stacklessError('UTXOs temporarily locked by recent transactions, retry shortly');
         }
         // No more pages — can't satisfy with available UTXOs
