@@ -566,13 +566,15 @@ export class MNEEService {
 
   public async getAllUtxos(address: string): Promise<MNEEUtxo[]> {
     const PAGE_SIZE = 100;
-    const WINDOW = 4;
+    const WINDOW = 3;
     let page = 1;
     const utxos: MNEEUtxo[] = [];
 
     while (true) {
       const pageNums = Array.from({ length: WINDOW }, (_, i) => page + i);
-      const pages = await Promise.all(pageNums.map((p) => this.getUtxos(address, p, PAGE_SIZE)));
+      const pages = await Promise.all(
+        pageNums.map((p) => this.inputFetchLimiter.execute(() => this.getUtxos(address, p, PAGE_SIZE))),
+      );
 
       let done = false;
       for (const pageResults of pages) {
@@ -1389,6 +1391,18 @@ export class MNEEService {
       // MNEE distribution txs, so a "complete" BEEF often isn't constructible — that's expected.
       if (opts?.noNetwork) {
         return { index, sourceTx: null };
+      }
+
+      // Cache hit short-circuits the rate limiter: avoids paying the 334ms
+      // inter-request delay for transactions already in flight or fetched.
+      const cached = this.txFetchCache.get(input.sourceTXID!);
+      if (cached) {
+        try {
+          const sourceTx = await cached;
+          return { index, sourceTx };
+        } catch {
+          // Fall through to a fresh fetch if the cached promise rejected.
+        }
       }
 
       try {
