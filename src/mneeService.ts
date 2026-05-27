@@ -82,8 +82,8 @@ export class MNEEService {
   private static readonly LOCK_RETRY_MAX = 3;
   private static readonly LOCK_RETRY_BACKOFF_MS = 250;
   private readonly txFetchCache = new Map<string, Promise<Transaction | undefined>>();
-  // 3 concurrent slots, each held ≥1000ms — caps starts at 3/s to match the MNEE API limit.
-  private readonly inputFetchLimiter = new RateLimiter(3, 1000);
+  // 3 concurrent slots, each held ≥334ms — caps starts at ~9/s, under the MNEE API's 10/s limit.
+  private readonly inputFetchLimiter = new RateLimiter(3, 334);
   private readonly usedOutpoints = new Map<string, number>();
 
   constructor(config: SdkConfig) {
