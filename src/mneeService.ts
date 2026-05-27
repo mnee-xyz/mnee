@@ -78,8 +78,10 @@ export class MNEEService {
   private configReady: Promise<MNEEConfig>;
   private mneeApi: string;
   private static readonly TX_CACHE_MAX = 5000;
+  private static readonly OUTPOINT_LOCK_TTL = 35_000;
   private readonly txFetchCache = new Map<string, Promise<Transaction | undefined>>();
   private readonly inputFetchLimiter = new RateLimiter(3, 334);
+  private readonly usedOutpoints = new Map<string, number>();
 
   constructor(config: SdkConfig) {
     if (config.environment !== 'production' && config.environment !== 'sandbox') {
@@ -469,7 +471,16 @@ export class MNEEService {
     }
   }
 
+  private evictExpiredOutpoints(): void {
+    const cutoff = Date.now() - MNEEService.OUTPOINT_LOCK_TTL;
+    for (const [key, ts] of this.usedOutpoints) {
+      if (ts < cutoff) this.usedOutpoints.delete(key);
+    }
+  }
+
   public async getEnoughUtxos(address: string, totalAtomicTokenAmount: number): Promise<MNEEUtxo[]> {
+    this.evictExpiredOutpoints();
+
     const config = await this.getConfig();
     if (!config) throw stacklessError('Config not fetched');
     const feeAmount = this.lookupFee(totalAtomicTokenAmount, config.fees);
@@ -487,20 +498,33 @@ export class MNEEService {
     let allUtxos: MNEEUtxo[] = [];
     let totalUtxoAmount = 0;
 
-    // Collect UTXOs until we have enough
+    // Collect UTXOs until we have enough, skipping recently-used outpoints
     while (totalUtxoAmount < requiredAmount) {
       const pageUtxos = await this.getUtxos(address, page, size);
+      const available = pageUtxos.filter((u) => !this.usedOutpoints.has(`${u.txid}_${u.vout}`));
       if (pageUtxos.length === 0) {
+        if (this.usedOutpoints.size > 0) {
+          throw stacklessError('UTXOs temporarily locked by recent transactions, retry shortly');
+        }
         // This shouldn't happen given we checked balance, but handle gracefully
         const maxTransferAmount = this.fromAtomicAmount(totalUtxoAmount - feeAmount);
         throw stacklessError(`Insufficient MNEE balance. Max transfer amount: ${maxTransferAmount}`);
       }
 
-      allUtxos.push(...pageUtxos);
+      allUtxos.push(...available);
       totalUtxoAmount = allUtxos.reduce((sum, utxo) => sum + utxo.data.bsv21.amt, 0);
 
       if (totalUtxoAmount >= requiredAmount) {
         break;
+      }
+
+      if (pageUtxos.length < size) {
+        if (this.usedOutpoints.size > 0) {
+          throw stacklessError('UTXOs temporarily locked by recent transactions, retry shortly');
+        }
+        // No more pages — can't satisfy with available UTXOs
+        const maxTransferAmount = this.fromAtomicAmount(totalUtxoAmount - feeAmount);
+        throw stacklessError(`Insufficient MNEE balance. Max transfer amount: ${maxTransferAmount}`);
       }
 
       page++;
@@ -625,6 +649,10 @@ export class MNEEService {
         return { rawtx };
       }
 
+      const now = Date.now();
+      for (const input of tx.inputs) {
+        this.usedOutpoints.set(`${input.sourceTXID}_${input.sourceOutputIndex}`, now);
+      }
       const { ticketId } = await this.submitRawTx(rawtx, transferOptions);
       if (!ticketId) throw stacklessError('Failed to broadcast transaction');
       return { ticketId };
@@ -672,7 +700,8 @@ export class MNEEService {
       });
 
       if (!response.ok) {
-        throw stacklessError(`Failed to submit transaction`);
+        const body = await response.text().catch(() => '');
+        throw stacklessError(`Failed to submit transaction: ${body}`);
       }
 
       const ticketId = await response.text();
@@ -2169,6 +2198,11 @@ export class MNEEService {
 
       if (!transferOptions?.broadcast) {
         return { rawtx };
+      }
+
+      const now = Date.now();
+      for (const input of tx.inputs) {
+        this.usedOutpoints.set(`${input.sourceTXID}_${input.sourceOutputIndex}`, now);
       }
 
       const { ticketId } = await this.submitRawTx(rawtx, transferOptions);

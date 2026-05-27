@@ -218,6 +218,12 @@ try {
     case error.message('Insufficient MNEE balance'):
       console.error('Not enough MNEE tokens');
       break;
+    case error.message('UTXOs temporarily locked by recent transactions, retry shortly'):
+      // The SDK tracks outpoints from recently broadcast transactions in an
+      // in-memory cache to avoid colliding with the MNEE API's ~30 second
+      // outpoint lock window. Wait ~30 seconds and retry the transfer.
+      console.error('Recently spent UTXOs are still locked. Retry after ~30 seconds.');
+      break;
     case error.message('Failed to broadcast transaction'):
       console.error('Cosigner rejected the transaction');
       break;
@@ -244,6 +250,7 @@ try {
 - All recipients must have valid Bitcoin addresses
 - The sender must have sufficient balance to cover amounts + fees
 - When broadcast is true, the transaction is processed asynchronously and you receive a ticketId to track status
+- Before broadcast, the SDK marks the transaction's inputs into an in-memory outpoint cache on the SDK instance. Subsequent `transfer()` calls within ~35 seconds will skip those outpoints during UTXO selection, preventing collisions with the MNEE API's ~30 second outpoint lock window (which would otherwise reject the second call with HTTP 400). If every available UTXO is currently locked, `transfer()` throws `UTXOs temporarily locked by recent transactions, retry shortly` — wait ~30 seconds and retry. Note that this cache is per-SDK-instance and in-memory only; it does not coordinate across processes.
 
 ## See Also
 
