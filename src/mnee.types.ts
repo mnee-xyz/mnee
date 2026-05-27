@@ -231,6 +231,13 @@ export type ParseTxResponse = {
 
 export interface ParseOptions {
   includeRaw?: boolean;
+  /**
+   * Skip fetching input source transactions from the network. When true, type detection
+   * is output-only (mint labeling unavailable), isValid reflects script/cosigner checks
+   * only (no token-conservation check), and inputTotal is "0". Use validate mode (default)
+   * when accurate isValid or sender data is required.
+   */
+  skipInputFetch?: boolean;
 }
 
 export interface ParseTxExtendedResponse extends ParseTxResponse {

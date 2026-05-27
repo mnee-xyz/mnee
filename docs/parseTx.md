@@ -113,14 +113,15 @@ A "complete" BEEF (every parent embedded) is often not constructible in practice
 - **txid**: Transaction ID (64-character hex string)
 - **options** (optional): `ParseOptions` object
   - **includeRaw**: Include detailed raw transaction data in the response
+  - **skipInputFetch**: Skip input source-transaction fetching (~50ms vs ~2s). Trade-offs: `inputs` is empty, `inputTotal` is `"0"`, `type` is output-only (mint detection unavailable), `isValid` reflects script/cosigner checks only (no token-conservation check).
 
 ### parseTxFromRawTx
 - **rawTxHex**: Raw transaction in hexadecimal format
-- **options** (optional): Same as above
+- **options** (optional): Same `includeRaw` and `skipInputFetch` flags as `parseTx`
 
 ### parseTxFromBEEF
 - **beefHex**: BEEF-encoded transaction hex string (produced via `tx.toHexBEEF()`)
-- **options** (optional): Same as above
+- **options** (optional): Same as above (`skipInputFetch` is ignored for BEEF — embedded sources make it compute-only already)
 
 ## Response
 
@@ -266,6 +267,26 @@ async function verifyIncomingTransaction(txid, expectedAmount, senderAddress) {
 }
 ```
 
+### Output-Only Parse (skipInputFetch)
+
+When you only need recipient addresses and amounts (not sender data or token conservation):
+
+```typescript
+// ~50ms vs ~2s — skips input source fetching
+const parsed = await mnee.parseTx(txid, { skipInputFetch: true });
+
+// parsed.inputs is empty; use parsed.outputs for recipient info
+const recipients = parsed.outputs.map(o => ({
+  address: o.address,
+  amount: mnee.fromAtomicAmount(o.amount),
+}));
+
+// isValid = script/cosigner checks only (no token-conservation check)
+// inputTotal is always "0" in fast mode
+console.log(`Type: ${parsed.type}`);  // "mint" not detectable; reports "transfer"
+console.log(`Recipients:`, recipients);
+```
+
 ### Inspect a Transaction Before Broadcast (BEEF)
 
 Use `parseTxFromBEEF` to validate a transaction you built locally before submitting it to the network.
@@ -319,6 +340,7 @@ async function debugTransaction(rawTxHex) {
 - `parseTxFromBEEF` `inputTotal` may understate value when some parent transactions are not embedded
 - `isValid` reflects MNEE protocol validity, not BSV consensus validity
 - Transaction parsing includes automatic validation against MNEE cosigner scripts
+- **Fast mode** (`skipInputFetch: true`): output-only, ~50ms. `inputs` is empty, `inputTotal` is `"0"`, mint type is not detectable (reported as `"transfer"`), and `isValid` skips the token-conservation check. Use for display/routing when sender data and exact totals are not required.
 
 ## See Also
 

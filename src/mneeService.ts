@@ -77,6 +77,9 @@ export class MNEEService {
   private mneeConfig: MNEEConfig | undefined;
   private configReady: Promise<MNEEConfig>;
   private mneeApi: string;
+  private static readonly TX_CACHE_MAX = 5000;
+  private readonly txFetchCache = new Map<string, Promise<Transaction | undefined>>();
+  private readonly inputFetchLimiter = new RateLimiter(3, 334);
 
   constructor(config: SdkConfig) {
     if (config.environment !== 'production' && config.environment !== 'sandbox') {
@@ -344,6 +347,19 @@ export class MNEEService {
   }
 
   public async fetchRawTx(txid: string, retries: number = 3): Promise<Transaction | undefined> {
+    const cached = this.txFetchCache.get(txid);
+    if (cached) return cached;
+    const promise = this._doFetchRawTx(txid, retries);
+    if (this.txFetchCache.size >= MNEEService.TX_CACHE_MAX) {
+      const firstKey = this.txFetchCache.keys().next().value!;
+      this.txFetchCache.delete(firstKey);
+    }
+    this.txFetchCache.set(txid, promise);
+    promise.catch(() => this.txFetchCache.delete(txid));
+    return promise;
+  }
+
+  private async _doFetchRawTx(txid: string, retries: number): Promise<Transaction | undefined> {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const resp = await fetch(`${this.mneeApi}/v1/tx/${txid}?auth_token=${this.mneeApiKey}`);
@@ -509,16 +525,28 @@ export class MNEEService {
   }
 
   public async getAllUtxos(address: string): Promise<MNEEUtxo[]> {
-    // loop through and get all utxos
+    const PAGE_SIZE = 100;
+    const WINDOW = 4;
     let page = 1;
-    let size = 100;
-    let utxos: MNEEUtxo[] = [];
+    const utxos: MNEEUtxo[] = [];
+
     while (true) {
-      const pageUtxos = await this.getUtxos(address, page, size);
-      if (pageUtxos.length === 0) break;
-      utxos.push(...pageUtxos);
-      page++;
+      const pageNums = Array.from({ length: WINDOW }, (_, i) => page + i);
+      const pages = await Promise.all(pageNums.map((p) => this.getUtxos(address, p, PAGE_SIZE)));
+
+      let done = false;
+      for (const pageResults of pages) {
+        utxos.push(...pageResults);
+        if (pageResults.length < PAGE_SIZE) {
+          done = true;
+          break;
+        }
+      }
+
+      if (done) break;
+      page += WINDOW;
     }
+
     return utxos;
   }
 
@@ -1275,9 +1303,6 @@ export class MNEEService {
     let environment: Environment | undefined;
     let type: TxOperation | undefined;
 
-    // Create a rate limiter for 3 requests per second (default MNEE API rate limit ok being hardcoded)
-    const rateLimiter = new RateLimiter(3, 334);
-
     const fetchTasks = tx.inputs.map(async (input, index) => {
       if (!input.sourceTXID) {
         return { index, sourceTx: null };
@@ -1296,7 +1321,7 @@ export class MNEEService {
       }
 
       try {
-        const sourceTx = await rateLimiter.execute(() => this.fetchRawTx(input.sourceTXID!));
+        const sourceTx = await this.inputFetchLimiter.execute(() => this.fetchRawTx(input.sourceTXID!));
         return { index, sourceTx };
       } catch (error) {
         if (isNetworkError(error)) {
@@ -1507,41 +1532,66 @@ export class MNEEService {
   ): Promise<ParseTxResponse | ParseTxExtendedResponse> {
     const txid = tx.id('hex');
 
-    const inputData = await this.processTransactionInputs(tx, config, internalOpts);
+    const hasEmbeddedSources = tx.inputs.some((i) => i.sourceTransaction);
+    const useFastPath = options?.skipInputFetch === true && !hasEmbeddedSources;
+
     const outputData = this.processTransactionOutputs(tx, config);
 
-    const environment = outputData.environment || inputData.environment || 'sandbox';
+    let inputData: TxInputResponse;
+    let type: TxOperation;
+    let isValid: boolean;
 
-    let type = outputData.type || inputData.type || 'transfer';
+    if (useFastPath) {
+      const emptyInputs: ProcessedInput[] = tx.inputs.map(() => ({
+        address: undefined,
+        amount: 0,
+        satoshis: 0,
+        inscription: null,
+        cosigner: undefined,
+      }));
+      inputData = { inputs: emptyInputs, total: BigInt(0) };
 
-    if (type === 'transfer') {
-      const hasMintInputAddress = inputData.inputs.some(
-        (input) => input.inscription && (input.address === PROD_MINT_ADDRESS || input.address === SANDBOX_MINT_ADDRESS),
-      );
+      // Output-only type determination: mint detection not possible without input sources
+      type = outputData.type || 'transfer';
 
-      if (hasMintInputAddress) {
-        type = 'mint';
+      // Redeem check is output-based, still valid in fast path
+      if (type === 'transfer') {
+        const hasRedeemOutput = outputData.outputs.some((output) => output.inscription?.metadata?.action === 'redeem');
+        if (hasRedeemOutput) type = 'redeem';
       }
-    }
 
-    // Check if any output has redeem metadata (check this for any transfer-like operation)
-    // This should override mint/transfer types as redeem is a special operation marked by metadata
-    if (type === 'transfer' || type === 'mint') {
-      const hasRedeemOutput = outputData.outputs.some((output) => output.inscription?.metadata?.action === 'redeem');
+      // Script/cosigner/token-ID validation only — no token-conservation check
+      isValid = this.processMneeValidation(tx, config);
+    } else {
+      inputData = await this.processTransactionInputs(tx, config, internalOpts);
 
-      if (hasRedeemOutput) {
-        type = 'redeem';
+      const environment = outputData.environment || inputData.environment || 'sandbox';
+      type = outputData.type || inputData.type || 'transfer';
+
+      if (type === 'transfer') {
+        const hasMintInputAddress = inputData.inputs.some(
+          (input) => input.inscription && (input.address === PROD_MINT_ADDRESS || input.address === SANDBOX_MINT_ADDRESS),
+        );
+        if (hasMintInputAddress) type = 'mint';
       }
+
+      if (type === 'transfer' || type === 'mint') {
+        const hasRedeemOutput = outputData.outputs.some((output) => output.inscription?.metadata?.action === 'redeem');
+        if (hasRedeemOutput) type = 'redeem';
+      }
+
+      // If there are no inputs with inscriptions, it can be nothing but a deploy
+      const inputsWithInscriptions = inputData.inputs.filter((input) => input.inscription);
+      if (inputsWithInscriptions.length === 0 && inputData.inputs.length > 0) {
+        type = 'deploy';
+      }
+
+      isValid = this.validateTransaction(config, tx, type, inputData.total, outputData.total);
+
+      return this.buildParseResponse(txid, environment, type, inputData, outputData, isValid, tx, options);
     }
 
-    // If there are no inputs with inscriptions, it can be nothing but a deploy
-    const inputsWithInscriptions = inputData.inputs.filter((input) => input.inscription);
-    if (inputsWithInscriptions.length === 0 && inputData.inputs.length > 0) {
-      type = 'deploy';
-    }
-
-    const isValid = this.validateTransaction(config, tx, type, inputData.total, outputData.total);
-
+    const environment = outputData.environment || 'sandbox';
     return this.buildParseResponse(txid, environment, type, inputData, outputData, isValid, tx, options);
   }
 

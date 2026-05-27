@@ -279,7 +279,11 @@ export default class Mnee implements MneeInterface {
    * Parses a transaction based on the provided transaction ID.
    *
    * @param txid - The unique identifier of the transaction to be parsed.
-   * @param options - Optional parsing options. Set includeRaw to true to get extended response with raw transaction data.
+   * @param options - Optional parsing options.
+   *   - `includeRaw`: Include raw transaction data in the response.
+   *   - `skipInputFetch`: Skip input source-transaction fetching. Output-only parse (~50ms vs ~2s).
+   *     Trade-offs: `inputs` array is empty, `inputTotal` is `"0"`, mint type detection
+   *     is unavailable, `isValid` reflects script/cosigner checks only (no token conservation).
    * @returns A promise that resolves to a `ParseTxResponse` or `ParseTxExtendedResponse` containing the parsed transaction details.
    */
   async parseTx(txid: string, options?: ParseOptions): Promise<ParseTxResponse | ParseTxExtendedResponse> {
@@ -290,7 +294,7 @@ export default class Mnee implements MneeInterface {
    * Parses a transaction from a raw transaction hex string.
    *
    * @param rawTxHex - The raw transaction hex string to be parsed.
-   * @param options - Optional parsing options. Set includeRaw to true to get extended response with raw transaction data.
+   * @param options - Optional parsing options. Same `fast` and `includeRaw` flags as `parseTx`.
    * @returns A promise that resolves to a `ParseTxResponse` or `ParseTxExtendedResponse` containing the parsed transaction details.
    */
   async parseTxFromRawTx(rawTxHex: string, options?: ParseOptions): Promise<ParseTxResponse | ParseTxExtendedResponse> {

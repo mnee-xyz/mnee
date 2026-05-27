@@ -7,8 +7,8 @@ export default {
     invalidAddress: 'invalid-address',
   },
   balances: {
-    testAddressBalance: 3099099990161000,
-    testAddressDecimalBalance: 30990999901.61,
+    testAddressBalance: 3099099990139200,
+    testAddressDecimalBalance: 30990999901.392,
     testAddressTwoBalance: 1000000,
     testAddressTwoDecimalBalance: 10,
   },

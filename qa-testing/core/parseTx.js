@@ -357,6 +357,39 @@ async function testKnownTransactionTypes() {
   }
 }
 
+// Test 13.10: skipInputFetch mode (output-only, no source tx fetch)
+async function testFastMode() {
+  try {
+    const txid = 'baa78cb903e0bf7af6e5fc5a27de59d587fc5ff4f08ed5e7886ab1a7d2741c5b';
+
+    const start = Date.now();
+    const parsed = await mnee.parseTx(txid, { skipInputFetch: true });
+    const elapsed = Date.now() - start;
+
+    console.log(`  Fast parse completed in ${elapsed}ms`);
+
+    // Standard fields present
+    assert(parsed.txid === txid, 'txid should match');
+    assert(typeof parsed.environment === 'string', 'environment should be string');
+    assert(['transfer', 'burn', 'deploy', 'mint', 'redeem'].includes(parsed.type), 'type should be valid');
+    assert(Array.isArray(parsed.outputs), 'outputs should be array');
+    assert(typeof parsed.isValid === 'boolean', 'isValid should be boolean');
+
+    // Fast-mode specific: inputs empty, inputTotal = "0"
+    assert(parsed.inputs.length === 0, 'fast mode inputs should be empty');
+    assert(parsed.inputTotal === '0', `fast mode inputTotal should be "0", got "${parsed.inputTotal}"`);
+
+    // Outputs populated (output-only parse)
+    assert(parsed.outputs.length > 0, 'outputs should be populated from output scripts');
+
+    console.log(`  Type: ${parsed.type}, isValid: ${parsed.isValid}`);
+    console.log(`  Outputs: ${parsed.outputs.length}, inputTotal: ${parsed.inputTotal}`);
+  } catch (error) {
+    console.log(`  Fast mode error: ${error.message}`);
+    throw error;
+  }
+}
+
 // Run tests
 async function runTests() {
   console.log('Running parseTx tests...\n');
@@ -401,6 +434,10 @@ async function runTests() {
     console.log('Test 13.9: Test known transaction types');
     await testKnownTransactionTypes();
     console.log('✅ Test 13.9 passed\n');
+
+    console.log('Test 13.10: skipInputFetch mode (output-only, no source tx fetch)');
+    await testFastMode();
+    console.log('✅ Test 13.10 passed\n');
 
     console.log('All tests passed! ✅');
   } catch (error) {
