@@ -251,6 +251,7 @@ try {
 - The sender must have sufficient balance to cover amounts + fees
 - When broadcast is true, the transaction is processed asynchronously and you receive a ticketId to track status
 - Before broadcast, the SDK marks the transaction's inputs into an in-memory outpoint cache on the SDK instance. Subsequent `transfer()` calls within ~35 seconds will skip those outpoints during UTXO selection, preventing collisions with the MNEE API's ~30 second outpoint lock window (which would otherwise reject the second call with HTTP 400). If every available UTXO is currently locked, `transfer()` throws `UTXOs temporarily locked by recent transactions, retry shortly` — wait ~30 seconds and retry. Note that this cache is per-SDK-instance and in-memory only; it does not coordinate across processes.
+- If the MNEE API returns an outpoint-lock error (HTTP 400 with `"was locked in a previous transaction attempt"` in the body) — common across process boundaries where the in-memory cache cannot help — `transfer()` automatically marks the locked outpoint, re-runs UTXO selection, and retries the broadcast up to 3 times with ~250ms backoff between attempts. This is transparent to the caller; the final error is only thrown if all retries fail.
 
 ## See Also
 

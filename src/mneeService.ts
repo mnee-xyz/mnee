@@ -79,6 +79,8 @@ export class MNEEService {
   private mneeApi: string;
   private static readonly TX_CACHE_MAX = 5000;
   private static readonly OUTPOINT_LOCK_TTL = 35_000;
+  private static readonly LOCK_RETRY_MAX = 3;
+  private static readonly LOCK_RETRY_BACKOFF_MS = 250;
   private readonly txFetchCache = new Map<string, Promise<Transaction | undefined>>();
   private readonly inputFetchLimiter = new RateLimiter(3, 334);
   private readonly usedOutpoints = new Map<string, number>();
@@ -478,6 +480,13 @@ export class MNEEService {
     }
   }
 
+  private extractLockedOutpoint(err: unknown): string | null {
+    const msg = (err as { message?: unknown })?.message;
+    if (typeof msg !== 'string') return null;
+    const m = msg.match(/outpoint ([0-9a-fA-F]{64})_(\d+) was locked/);
+    return m ? `${m[1]}_${m[2]}` : null;
+  }
+
   public async getEnoughUtxos(address: string, totalAtomicTokenAmount: number): Promise<MNEEUtxo[]> {
     this.evictExpiredOutpoints();
 
@@ -575,6 +584,28 @@ export class MNEEService {
   }
 
   public async transfer(
+    request: SendMNEE[],
+    wif: string,
+    transferOptions?: TransferOptions,
+  ): Promise<TransferResponse> {
+    let lastErr: unknown;
+    for (let attempt = 0; attempt <= MNEEService.LOCK_RETRY_MAX; attempt++) {
+      try {
+        return await this.transferAttempt(request, wif, transferOptions);
+      } catch (err) {
+        lastErr = err;
+        const locked = this.extractLockedOutpoint(err);
+        if (!locked || attempt === MNEEService.LOCK_RETRY_MAX) {
+          throw err;
+        }
+        this.usedOutpoints.set(locked, Date.now());
+        await new Promise((r) => setTimeout(r, MNEEService.LOCK_RETRY_BACKOFF_MS));
+      }
+    }
+    throw lastErr;
+  }
+
+  private async transferAttempt(
     request: SendMNEE[],
     wif: string,
     transferOptions?: TransferOptions,
@@ -701,6 +732,10 @@ export class MNEEService {
 
       if (!response.ok) {
         const body = await response.text().catch(() => '');
+        const lockMatch = body.match(/outpoint ([0-9a-fA-F]{64})_(\d+) was locked/);
+        if (lockMatch) {
+          this.usedOutpoints.set(`${lockMatch[1]}_${lockMatch[2]}`, Date.now());
+        }
         throw stacklessError(`Failed to submit transaction: ${body}`);
       }
 
