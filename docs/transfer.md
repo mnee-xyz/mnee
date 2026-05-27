@@ -203,32 +203,33 @@ try {
   const response = await mnee.transfer(recipients, wif);
 } catch (error) {
   switch (true) {
-    case error.message('Config not fetched'):
+    case error.message === 'Config not fetched':
       console.error('Failed to fetch cosigner configuration');
       break;
-    case error.message('Invalid transfer options'):
+    case error.message === 'Invalid transfer options':
       console.error('Invalid recipients or amounts');
       break;
-    case error.message('Private key not found'):
+    case error.message === 'Private key not found':
       console.error('Invalid WIF private key');
       break;
-    case error.message('Invalid amount'):
+    case error.message === 'Invalid amount':
       console.error('Amount must be greater than 0');
       break;
-    case error.message('Insufficient MNEE balance'):
+    case error.message === 'Insufficient MNEE balance':
       console.error('Not enough MNEE tokens');
       break;
-    case error.message('UTXOs temporarily locked by recent transactions, retry shortly'):
+    case error.message === 'UTXOs temporarily locked by recent transactions, retry shortly':
       // The SDK tracks outpoints from recently broadcast transactions in an
       // in-memory cache to avoid colliding with the MNEE API's ~30 second
       // outpoint lock window. Wait ~30 seconds and retry the transfer.
       console.error('Recently spent UTXOs are still locked. Retry after ~30 seconds.');
       break;
-    case error.message('Failed to broadcast transaction'):
+    case error.message === 'Failed to broadcast transaction':
       console.error('Cosigner rejected the transaction');
       break;
-    case error.message('Invalid API key'):
+    case error.message === 'Invalid API key':
       console.error('API key authentication failed (401/403)');
+      break;
     case error.message.includes('HTTP error! status:'):
       console.error('API request failed:', error.message);
       break;

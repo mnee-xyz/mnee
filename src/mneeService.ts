@@ -488,6 +488,13 @@ export class MNEEService {
   }
 
   public async getEnoughUtxos(address: string, totalAtomicTokenAmount: number): Promise<MNEEUtxo[]> {
+    if (
+      typeof totalAtomicTokenAmount !== 'number' ||
+      !Number.isInteger(totalAtomicTokenAmount) ||
+      totalAtomicTokenAmount <= 0
+    ) {
+      throw stacklessError('totalAtomicTokenAmount must be a positive integer');
+    }
     this.evictExpiredOutpoints();
 
     const config = await this.getConfig();
@@ -1604,6 +1611,7 @@ export class MNEEService {
     let inputData: TxInputResponse;
     let type: TxOperation;
     let isValid: boolean;
+    let environment: Environment;
 
     if (useFastPath) {
       const emptyInputs: ProcessedInput[] = tx.inputs.map(() => ({
@@ -1626,10 +1634,11 @@ export class MNEEService {
 
       // Script/cosigner/token-ID validation only — no token-conservation check
       isValid = this.processMneeValidation(tx, config);
+      environment = outputData.environment || 'sandbox';
     } else {
       inputData = await this.processTransactionInputs(tx, config, internalOpts);
 
-      const environment = outputData.environment || inputData.environment || 'sandbox';
+      environment = outputData.environment || inputData.environment || 'sandbox';
       type = outputData.type || inputData.type || 'transfer';
 
       if (type === 'transfer') {
@@ -1651,11 +1660,8 @@ export class MNEEService {
       }
 
       isValid = this.validateTransaction(config, tx, type, inputData.total, outputData.total);
-
-      return this.buildParseResponse(txid, environment, type, inputData, outputData, isValid, tx, options);
     }
 
-    const environment = outputData.environment || 'sandbox';
     return this.buildParseResponse(txid, environment, type, inputData, outputData, isValid, tx, options);
   }
 
