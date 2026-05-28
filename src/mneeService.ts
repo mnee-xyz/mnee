@@ -461,9 +461,11 @@ export class MNEEService {
         const { rawtx } = await resp.json();
         return Transaction.fromHex(Buffer.from(rawtx, 'base64').toString('hex'));
       } catch (error) {
-        // Permanent errors — re-throw immediately, retrying won't help
+        // Permanent or already-retried errors — re-throw immediately, retrying won't help.
+        // 429 is included because fetchWithBackoff already exhausted its 429 retry budget,
+        // so wrapping it in another retry loop just compounds backoff overhead.
         const msg = (error as Error)?.message ?? '';
-        if (msg === 'Transaction not found' || msg === 'Invalid API key') {
+        if (msg === 'Transaction not found' || msg === 'Invalid API key' || msg.startsWith('429')) {
           throw error;
         }
         if (attempt === retries) {
@@ -647,9 +649,16 @@ export class MNEEService {
 
   public async getAllUtxos(address: string): Promise<MNEEUtxo[]> {
     const PAGE_SIZE = 100;
+    // Fast path: most addresses fit in one page, so fetch page 1 sequentially
+    // before paying for a full parallel window of speculative fetches.
+    const firstPage = await this.getUtxos(address, 1, PAGE_SIZE);
+    const utxos: MNEEUtxo[] = [...firstPage];
+    if (firstPage.length < PAGE_SIZE) {
+      return utxos;
+    }
+
     const WINDOW = 3;
-    let page = 1;
-    const utxos: MNEEUtxo[] = [];
+    let page = 2;
 
     while (true) {
       const pageNums = Array.from({ length: WINDOW }, (_, i) => page + i);
@@ -1466,7 +1475,11 @@ export class MNEEService {
 
       // Use embedded source transaction if available (e.g. parsed from BEEF/EF format) — no network call needed
       if (input.sourceTransaction) {
-        return { index, sourceTx: input.sourceTransaction };
+        const sourceTx = input.sourceTransaction;
+        if (!sourceTx.outputs || !sourceTx.outputs[input.sourceOutputIndex]) {
+          return { index, sourceTx: null };
+        }
+        return { index, sourceTx };
       }
 
       // BEEF parsing path: never fetch from network. Missing parents become unknown inputs.
@@ -1480,6 +1493,9 @@ export class MNEEService {
       // duplicates resolve via the cached promise without queueing a limiter slot.
       try {
         const sourceTx = await this.fetchRawTx(input.sourceTXID!);
+        if (sourceTx && (!sourceTx.outputs || !sourceTx.outputs[input.sourceOutputIndex])) {
+          return { index, sourceTx: null };
+        }
         return { index, sourceTx };
       } catch (error) {
         if (isNetworkError(error)) {

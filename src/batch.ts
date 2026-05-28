@@ -127,7 +127,7 @@ export class Batch {
 
       const utxosByAddress = new Map<string, MNEEUtxo[]>();
       for (const utxo of utxos) {
-        if (!Array.isArray(utxo.owners)) continue;
+        if (!utxo || !Array.isArray(utxo.owners)) continue;
         for (const owner of utxo.owners) {
           let list = utxosByAddress.get(owner);
           if (!list) {

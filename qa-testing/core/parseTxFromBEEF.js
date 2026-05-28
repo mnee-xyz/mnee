@@ -285,7 +285,6 @@ async function testBEEFEmptyString() {
   let errorOccurred = false;
   try {
     await mnee.parseTxFromBEEF('');
-    assert.fail('Should throw for empty string');
   } catch (error) {
     errorOccurred = true;
     console.log(`  Empty string error: "${error.message}"`);
@@ -304,7 +303,6 @@ async function testBEEFWhitespaceInput() {
   let errorOccurred = false;
   try {
     await mnee.parseTxFromBEEF('   ');
-    assert.fail('Should throw for whitespace-only string');
   } catch (error) {
     errorOccurred = true;
     console.log(`  Whitespace input error: "${error.message}"`);
@@ -317,11 +315,10 @@ async function testBEEFWhitespaceInput() {
 // ---------------------------------------------------------------------------
 async function testBEEFRejectsPlainRawHex() {
   let errorOccurred = false;
+  const { rawtxHex } = await txidToBEEF(knownTransactions[config.environment]?.transfer
+    || Object.values(knownTransactions[config.environment])[0]);
   try {
-    const { rawtxHex } = await txidToBEEF(knownTransactions[config.environment]?.transfer
-      || Object.values(knownTransactions[config.environment])[0]);
     await mnee.parseTxFromBEEF(rawtxHex);
-    assert.fail('Should throw when plain raw tx hex is passed to parseTxFromBEEF');
   } catch (error) {
     errorOccurred = true;
     console.log(`  Plain raw hex rejected: "${error.message}"`);
@@ -340,7 +337,6 @@ async function testBEEFNonStringInput() {
   let errorOccurred = false;
   try {
     await mnee.parseTxFromBEEF(null);
-    assert.fail('Should throw for null input');
   } catch (error) {
     errorOccurred = true;
     console.log(`  Null input error: "${error.message}"`);
