@@ -608,7 +608,7 @@ export class MNEEService {
           throw stacklessError('UTXOs temporarily locked by recent transactions, retry shortly');
         }
         // This shouldn't happen given we checked balance, but handle gracefully
-        const maxTransferAmount = this.fromAtomicAmount(totalUtxoAmount - feeAmount);
+        const maxTransferAmount = this.fromAtomicAmount(Math.max(0, totalUtxoAmount - feeAmount));
         throw stacklessError(`Insufficient MNEE balance. Max transfer amount: ${maxTransferAmount}`);
       }
 
