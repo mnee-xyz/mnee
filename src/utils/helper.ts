@@ -60,7 +60,7 @@ export const parseInscription = (script: Script) => {
         insc.file!.content = value.data;
         break;
       case 1:
-        insc.file!.type = Buffer.from(value.data || []).toString();
+        insc.file!.type = Utils.toUTF8(value.data || []);
         break;
     }
   }

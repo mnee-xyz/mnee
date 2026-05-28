@@ -310,7 +310,7 @@ export class MNEEService {
     };
     return {
       lockingScript: applyInscription(new CosignTemplate().lock(recipient, PublicKey.fromString(config.approver)), {
-        dataB64: Buffer.from(JSON.stringify(inscriptionData)).toString('base64'),
+        dataB64: Utils.toBase64(Utils.toArray(JSON.stringify(inscriptionData), 'utf8')),
         contentType: 'application/bsv-20',
       }),
       satoshis: 1,
@@ -461,7 +461,7 @@ export class MNEEService {
         }
 
         const { rawtx } = await resp.json();
-        return Transaction.fromHex(Utils.toHex(Utils.toArray(rawtx, 'base64')));
+        return Transaction.fromBinary(Utils.toArray(rawtx, 'base64'));
       } catch (error) {
         // Permanent or already-retried errors — re-throw immediately, retrying won't help.
         // 429 is included because fetchWithBackoff already exhausted its 429 retry budget,
