@@ -238,7 +238,9 @@ export class MNEEService {
       throw stacklessError('extraData must contain at least one item');
     }
 
-    const buffers: Buffer[] = [];
+    // number[] keeps this isomorphic — Node `Buffer` is not available in browsers
+    // without polyfill, and `@bsv/sdk`'s `Utils.toArray` works in both.
+    const buffers: number[][] = [];
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
 
@@ -247,7 +249,7 @@ export class MNEEService {
       }
 
       if (item.type === 'utf8') {
-        const buf = Buffer.from(item.data, 'utf8');
+        const buf = Utils.toArray(item.data, 'utf8');
         if (buf.length === 0) {
           throw stacklessError(`extraData at index ${i} is empty after UTF-8 encoding`);
         }
@@ -262,7 +264,7 @@ export class MNEEService {
             `extraData at index ${i} is not valid hex or has odd length: "${hex}"`,
           );
         }
-        const buf = Buffer.from(hex, 'hex');
+        const buf = Utils.toArray(hex, 'hex');
         if (buf.length === 0) {
           throw stacklessError(`extraData at index ${i} decoded to an empty buffer`);
         }
@@ -283,7 +285,7 @@ export class MNEEService {
     script.writeOpCode(OP.OP_0);
     script.writeOpCode(OP.OP_RETURN);
     for (const buf of buffers) {
-      script.writeBin(Array.from(buf));
+      script.writeBin(buf);
     }
     tx.addOutput({
       satoshis: 0,
@@ -459,7 +461,7 @@ export class MNEEService {
         }
 
         const { rawtx } = await resp.json();
-        return Transaction.fromHex(Buffer.from(rawtx, 'base64').toString('hex'));
+        return Transaction.fromHex(Utils.toHex(Utils.toArray(rawtx, 'base64')));
       } catch (error) {
         // Permanent or already-retried errors — re-throw immediately, retrying won't help.
         // 429 is included because fetchWithBackoff already exhausted its 429 retry budget,
