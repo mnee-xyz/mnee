@@ -132,12 +132,14 @@ export default class Mnee implements MneeInterface {
   }
 
   /**
-   * Retrieves the configuration for the MNEE service.
+   * Retrieves the cached MNEE configuration. Network fetch happens once at SDK
+   * initialization; every subsequent call returns the in-memory value with no
+   * API request. Use {@link refreshConfig} to force a re-fetch.
    *
    * @returns {Promise<MNEEConfig>} A promise that resolves to the MNEE configuration object.
    */
   async config(): Promise<MNEEConfig> {
-    return this.service.getCosignerConfig();
+    return this.service.getConfig();
   }
 
   /**

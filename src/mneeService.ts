@@ -70,7 +70,6 @@ import {
   SANDBOX_APPROVER,
   MNEE_DECIMALS,
 } from './constants.js';
-import { RateLimiter } from './batch.js';
 
 export class MNEEService {
   private mneeApiKey: string;
@@ -82,8 +81,14 @@ export class MNEEService {
   private static readonly LOCK_RETRY_MAX = 3;
   private static readonly LOCK_RETRY_BACKOFF_MS = 250;
   private readonly txFetchCache = new Map<string, Promise<Transaction | undefined>>();
-  // 3 concurrent slots, each held ≥334ms — caps starts at ~9/s, under the MNEE API's 10/s limit.
-  private readonly inputFetchLimiter = new RateLimiter(3, 334);
+  // Reactive backoff state. No proactive rate limiter — the SDK starts at full speed,
+  // then enters a shared cooldown on HTTP 429 so every in-flight call respects the
+  // server's Retry-After (or an exponentially-growing fallback). Lets the SDK adapt
+  // to whatever per-key rate limit the API is currently enforcing, without baking a
+  // specific value into the codebase.
+  private cooldownUntil = 0;
+  private static readonly RATE_LIMIT_BACKOFF_BASE_MS = 500;
+  private static readonly RATE_LIMIT_BACKOFF_MAX_MS = 4000;
   private readonly usedOutpoints = new Map<string, number>();
 
   constructor(config: SdkConfig) {
@@ -107,9 +112,61 @@ export class MNEEService {
     this.configReady.catch(() => {});
   }
 
+  /**
+   * Wait for any active rate-limit cooldown to expire before continuing. Shared
+   * across every in-flight API call so a 429 from one path back-pressures all of them.
+   */
+  private async awaitCooldown(): Promise<void> {
+    const wait = this.cooldownUntil - Date.now();
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+  }
+
+  /**
+   * Extend the shared cooldown after a 429. Honors the server's Retry-After header
+   * (seconds, or HTTP date) when present; otherwise falls back to capped exponential
+   * backoff keyed off the caller's retry attempt.
+   */
+  private setRateLimitCooldown(retryAfterHeader: string | null, attempt: number): void {
+    let ms = 0;
+    if (retryAfterHeader) {
+      const asSeconds = Number(retryAfterHeader);
+      if (Number.isFinite(asSeconds) && asSeconds > 0) {
+        ms = Math.floor(asSeconds * 1000);
+      } else {
+        const dateMs = Date.parse(retryAfterHeader);
+        if (!Number.isNaN(dateMs)) {
+          ms = Math.max(0, dateMs - Date.now());
+        }
+      }
+    }
+    if (ms === 0) {
+      ms = Math.min(
+        MNEEService.RATE_LIMIT_BACKOFF_BASE_MS * (1 << Math.min(attempt, 5)),
+        MNEEService.RATE_LIMIT_BACKOFF_MAX_MS,
+      );
+    }
+    this.cooldownUntil = Math.max(this.cooldownUntil, Date.now() + ms);
+  }
+
+  /**
+   * fetch() wrapper that gates on the shared cooldown and transparently retries
+   * 429 Too Many Requests responses up to `retries` times. Other statuses pass
+   * through to the caller unchanged so existing error handling still applies.
+   */
+  private async fetchWithBackoff(url: string, init?: RequestInit, retries: number = 3): Promise<Response> {
+    for (let attempt = 0; ; attempt++) {
+      await this.awaitCooldown();
+      const resp = await fetch(url, init);
+      if (resp.status !== 429 || attempt >= retries) return resp;
+      this.setRateLimitCooldown(resp.headers.get('retry-after'), attempt);
+    }
+  }
+
   public async getCosignerConfig(): Promise<MNEEConfig> {
     try {
-      const response = await fetch(`${this.mneeApi}/v1/config?auth_token=${this.mneeApiKey}`, { method: 'GET' });
+      const response = await this.fetchWithBackoff(`${this.mneeApi}/v1/config?auth_token=${this.mneeApiKey}`, {
+        method: 'GET',
+      });
 
       if (response.status === 401 || response.status === 403) {
         throw stacklessError('Invalid API key');
@@ -127,7 +184,7 @@ export class MNEEService {
     }
   }
 
-  private async getConfig(): Promise<MNEEConfig> {
+  public async getConfig(): Promise<MNEEConfig> {
     if (this.mneeConfig) return this.mneeConfig;
     const currentPromise = this.configReady;
     try {
@@ -292,7 +349,7 @@ export class MNEEService {
           throw stacklessError(`Invalid Bitcoin address: ${address}`);
         }
         const arrayAddress = [address];
-        const response = await fetch(
+        const response = await this.fetchWithBackoff(
           `${this.mneeApi}/v2/utxos?auth_token=${this.mneeApiKey}${page !== undefined ? `&page=${page}` : ''}${
             size !== undefined ? `&size=${size}` : ''
           }${order ? `&order=${order}` : ''}`,
@@ -324,7 +381,7 @@ export class MNEEService {
           console.warn(`\x1b[33m${invalidAddresses.length} invalid bitcoin addresses will be ignored\x1b[0m`);
         }
 
-        const response = await fetch(
+        const response = await this.fetchWithBackoff(
           `${this.mneeApi}/v2/utxos?auth_token=${this.mneeApiKey}${page !== undefined ? `&page=${page}` : ''}${
             size !== undefined ? `&size=${size}` : ''
           }${order ? `&order=${order}` : ''}`,
@@ -354,38 +411,47 @@ export class MNEEService {
   public async fetchRawTx(txid: string, retries: number = 3): Promise<Transaction | undefined> {
     const cached = this.txFetchCache.get(txid);
     if (cached) return cached;
+    // Eagerly cache the in-flight promise so concurrent callers for the same txid dedupe.
+    // 429 backpressure is handled inside _doFetchRawTx via the shared cooldown gate.
     const promise = this._doFetchRawTx(txid, retries);
     if (this.txFetchCache.size >= MNEEService.TX_CACHE_MAX) {
       const firstKey = this.txFetchCache.keys().next().value!;
       this.txFetchCache.delete(firstKey);
     }
     this.txFetchCache.set(txid, promise);
-    promise.catch(() => {
-      // Only evict if this promise still owns the slot — protects against a race
-      // where the entry was already evicted and re-fetched by a newer promise.
-      if (this.txFetchCache.get(txid) === promise) {
-        this.txFetchCache.delete(txid);
-      }
-    });
+    // Evict on terminal failure (resolved `undefined` from exhausted retries, or rejection
+    // from "Transaction not found" / "Invalid API key") so a later caller can retry.
+    // The `=== promise` guard avoids evicting a *different* promise that already
+    // re-occupied the slot after an earlier eviction + refetch.
+    promise.then(
+      (val) => {
+        if (val === undefined && this.txFetchCache.get(txid) === promise) {
+          this.txFetchCache.delete(txid);
+        }
+      },
+      () => {
+        if (this.txFetchCache.get(txid) === promise) {
+          this.txFetchCache.delete(txid);
+        }
+      },
+    );
     return promise;
   }
 
   private async _doFetchRawTx(txid: string, retries: number): Promise<Transaction | undefined> {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        const resp = await fetch(`${this.mneeApi}/v1/tx/${txid}?auth_token=${this.mneeApiKey}`);
+        // fetchWithBackoff transparently retries 429 and gates on the shared cooldown,
+        // so anything that survives to here is either 2xx or a non-429 error response.
+        const resp = await this.fetchWithBackoff(
+          `${this.mneeApi}/v1/tx/${txid}?auth_token=${this.mneeApiKey}`,
+          undefined,
+          retries,
+        );
 
         if (resp.status === 404) throw stacklessError('Transaction not found');
         if (resp.status === 401 || resp.status === 403) {
           throw stacklessError('Invalid API key');
-        }
-
-        // Handle rate limiting with retry
-        if (resp.status === 429 && attempt < retries) {
-          // For rate limiting, use longer delay with exponential backoff
-          const delay = Math.min(500 * Math.pow(2, attempt), 2000); // 500ms, 1s, 2s max
-          await new Promise((resolve) => setTimeout(resolve, delay));
-          continue;
         }
 
         if (resp.status !== 200) {
@@ -587,16 +653,18 @@ export class MNEEService {
 
     while (true) {
       const pageNums = Array.from({ length: WINDOW }, (_, i) => page + i);
-      const pages = await Promise.all(
-        pageNums.map((p) => this.inputFetchLimiter.execute(() => this.getUtxos(address, p, PAGE_SIZE))),
-      );
+      // No proactive throttle: getUtxos uses fetchWithBackoff under the hood, so a
+      // 429 on any window member sets the shared cooldown and all siblings observe it.
+      const pages = await Promise.all(pageNums.map((p) => this.getUtxos(address, p, PAGE_SIZE)));
 
       let done = false;
       for (const pageResults of pages) {
         utxos.push(...pageResults);
         if (pageResults.length < PAGE_SIZE) {
+          // Mark done but keep processing the remaining already-awaited pages —
+          // breaking here would discard fetched data if the API ever returns a
+          // non-full interior page (gaps, pagination quirks).
           done = true;
-          break;
         }
       }
 
@@ -746,7 +814,7 @@ export class MNEEService {
       );
 
       // Submit to V2 transfer endpoint for async processing
-      const response = await fetch(`${this.mneeApi}/v2/transfer?auth_token=${this.mneeApiKey}`, {
+      const response = await this.fetchWithBackoff(`${this.mneeApi}/v2/transfer?auth_token=${this.mneeApiKey}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -780,7 +848,7 @@ export class MNEEService {
         throw stacklessError('Ticket ID is required');
       }
 
-      const response = await fetch(`${this.mneeApi}/v2/ticket?ticketID=${ticketId}&auth_token=${this.mneeApiKey}`, {
+      const response = await this.fetchWithBackoff(`${this.mneeApi}/v2/ticket?ticketID=${ticketId}&auth_token=${this.mneeApiKey}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -812,7 +880,7 @@ export class MNEEService {
       const config = await this.getConfig();
       if (!config) throw stacklessError('Config not fetched');
 
-      const response = await fetch(`${this.mneeApi}/v2/balance?auth_token=${this.mneeApiKey}`, {
+      const response = await this.fetchWithBackoff(`${this.mneeApi}/v2/balance?auth_token=${this.mneeApiKey}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -863,7 +931,7 @@ export class MNEEService {
     try {
       const config = await this.getConfig();
       if (!config) throw stacklessError('Config not fetched');
-      const response = await fetch(`${this.mneeApi}/v2/balance?auth_token=${this.mneeApiKey}`, {
+      const response = await this.fetchWithBackoff(`${this.mneeApi}/v2/balance?auth_token=${this.mneeApiKey}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1078,7 +1146,7 @@ export class MNEEService {
   ): Promise<{ address: string; syncs: MneeSync[] }[]> {
     try {
       const addressArray = Array.isArray(addresses) ? addresses : [addresses];
-      const response = await fetch(
+      const response = await this.fetchWithBackoff(
         `${this.mneeApi}/v1/sync?auth_token=${this.mneeApiKey}${fromScore ? `&from=${fromScore}` : ''}${
           limit ? `&limit=${limit}` : ''
         }${order ? `&order=${order}` : ''}`,
@@ -1408,20 +1476,10 @@ export class MNEEService {
         return { index, sourceTx: null };
       }
 
-      // Cache hit short-circuits the rate limiter: avoids paying the 334ms
-      // inter-request delay for transactions already in flight or fetched.
-      const cached = this.txFetchCache.get(input.sourceTXID!);
-      if (cached) {
-        try {
-          const sourceTx = await cached;
-          return { index, sourceTx };
-        } catch {
-          // Fall through to a fresh fetch if the cached promise rejected.
-        }
-      }
-
+      // fetchRawTx now owns rate-limiting and cache dedup internally, so concurrent
+      // duplicates resolve via the cached promise without queueing a limiter slot.
       try {
-        const sourceTx = await this.inputFetchLimiter.execute(() => this.fetchRawTx(input.sourceTXID!));
+        const sourceTx = await this.fetchRawTx(input.sourceTXID!);
         return { index, sourceTx };
       } catch (error) {
         if (isNetworkError(error)) {
