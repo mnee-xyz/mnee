@@ -280,12 +280,20 @@ export default class Mnee implements MneeInterface {
   /**
    * Parses a transaction based on the provided transaction ID.
    *
+   * Defaults to the fast path: sender addresses are derived locally from each
+   * input's unlocking script and no parent transactions are fetched (one network
+   * call for the tx itself). `inputTotal` is projected from `outputTotal` for
+   * approver-validated transactions; per-input token amounts are reported as 0.
+   *
+   * Pass `skipInputFetch: false` to fetch each parent transaction and verify
+   * token conservation independently — slower (one round trip per input) and
+   * needed only when independent conservation proof or per-input amounts matter.
+   *
    * @param txid - The unique identifier of the transaction to be parsed.
    * @param options - Optional parsing options.
    *   - `includeRaw`: Include raw transaction data in the response.
-   *   - `skipInputFetch`: Skip input source-transaction fetching. Output-only parse (~50ms vs ~2s).
-   *     Trade-offs: `inputs` array is empty, `inputTotal` is `"0"`, mint type detection
-   *     is unavailable, `isValid` reflects script/cosigner checks only (no token conservation).
+   *   - `skipInputFetch`: Defaults to `true`. Set to `false` to fetch parent
+   *     transactions and populate per-input token amounts + verify conservation.
    * @returns A promise that resolves to a `ParseTxResponse` or `ParseTxExtendedResponse` containing the parsed transaction details.
    */
   async parseTx(txid: string, options?: ParseOptions): Promise<ParseTxResponse | ParseTxExtendedResponse> {
@@ -295,8 +303,13 @@ export default class Mnee implements MneeInterface {
   /**
    * Parses a transaction from a raw transaction hex string.
    *
+   * Same default behavior as `parseTx` (fast path; `skipInputFetch` defaults to
+   * `true`). With the default, this is a pure local parse with zero network
+   * calls. Pass `skipInputFetch: false` to fetch parents and validate
+   * conservation; that path makes one fetch per input.
+   *
    * @param rawTxHex - The raw transaction hex string to be parsed.
-   * @param options - Optional parsing options. Same `fast` and `includeRaw` flags as `parseTx`.
+   * @param options - Optional parsing options. Same `skipInputFetch` and `includeRaw` flags as `parseTx`.
    * @returns A promise that resolves to a `ParseTxResponse` or `ParseTxExtendedResponse` containing the parsed transaction details.
    */
   async parseTxFromRawTx(rawTxHex: string, options?: ParseOptions): Promise<ParseTxResponse | ParseTxExtendedResponse> {

@@ -4,11 +4,13 @@ The MNEE SDK provides three methods to parse and analyze MNEE transactions. All 
 
 ## Choosing a Parse Method
 
-| Method | You provide | Network calls | Use when |
+| Method | You provide | Network calls (default) | Use when |
 |---|---|---|---|
-| `parseTx(txid)` | transaction ID | fetches raw tx + parent txs from MNEE API | you only have a txid |
-| `parseTxFromRawTx(rawHex)` | raw transaction hex | may fetch parent txs from MNEE API | you have raw hex, API lookups are acceptable |
-| `parseTxFromBEEF(beefHex)` | BEEF hex | **none** | you need compute-only / offline parsing, or want to avoid API quota |
+| `parseTx(txid)` | transaction ID | one (the tx itself); sender addresses derived locally from input scripts | you only have a txid |
+| `parseTxFromRawTx(rawHex)` | raw transaction hex | **none** by default | you have raw hex and want a local parse |
+| `parseTxFromBEEF(beefHex)` | BEEF hex | **none** | embedded parents enable on-chain conservation check locally |
+
+Pass `skipInputFetch: false` to `parseTx` or `parseTxFromRawTx` to additionally fetch each parent transaction (one call per input) — needed only when independent token-conservation proof or per-input token amounts are required.
 
 ## Parse Transaction by ID
 
@@ -113,15 +115,15 @@ A "complete" BEEF (every parent embedded) is often not constructible in practice
 - **txid**: Transaction ID (64-character hex string)
 - **options** (optional): `ParseOptions` object
   - **includeRaw**: Include detailed raw transaction data in the response
-  - **skipInputFetch**: Skip input source-transaction fetching (~50ms vs ~2s). Trade-offs: `inputs` is empty, `inputTotal` is `"0"`, `type` is output-only (mint detection unavailable), `isValid` reflects script/cosigner checks only (no token-conservation check).
+  - **skipInputFetch**: Default `true`. Fast path — sender addresses derived from each input's unlocking script; `inputTotal` projected from `outputTotal` for approver-validated transactions; per-input token amounts are `0`. Set to `false` to fetch each parent transaction, populate per-input amounts, and verify token conservation independently (slower: one network round trip per input).
 
 ### parseTxFromRawTx
 - **rawTxHex**: Raw transaction in hexadecimal format
-- **options** (optional): Same `includeRaw` and `skipInputFetch` flags as `parseTx`
+- **options** (optional): Same `includeRaw` and `skipInputFetch` flags as `parseTx`. With the default `skipInputFetch: true` this method makes zero network calls.
 
 ### parseTxFromBEEF
 - **beefHex**: BEEF-encoded transaction hex string (produced via `tx.toHexBEEF()`)
-- **options** (optional): Same as above (`skipInputFetch` is ignored for BEEF — embedded sources make it compute-only already)
+- **options** (optional): Same as above. When BEEF includes parent transactions, conservation is checked locally regardless of the `skipInputFetch` setting.
 
 ## Response
 
@@ -267,24 +269,22 @@ async function verifyIncomingTransaction(txid, expectedAmount, senderAddress) {
 }
 ```
 
-### Output-Only Parse (skipInputFetch)
+### Independent Conservation Check (skipInputFetch: false)
 
-When you only need recipient addresses and amounts (not sender data or token conservation):
+The default fast path projects `inputTotal` from `outputTotal` for approver-validated transactions (cosigner signatures make conservation a protocol invariant). When you need to verify conservation independently of the approver — or need per-input token amounts — pass `skipInputFetch: false` to fetch each parent transaction and read on-chain inscriptions:
 
 ```typescript
-// ~50ms vs ~2s — skips input source fetching
-const parsed = await mnee.parseTx(txid, { skipInputFetch: true });
+// Slow: one network round trip per input
+const parsed = await mnee.parseTx(txid, { skipInputFetch: false });
 
-// parsed.inputs is empty; use parsed.outputs for recipient info
-const recipients = parsed.outputs.map(o => ({
-  address: o.address,
-  amount: mnee.fromAtomicAmount(o.amount),
-}));
+// inputTotal is summed from parent inscriptions, not projected
+console.log(`Input total:  ${parsed.inputTotal}`);
+console.log(`Output total: ${parsed.outputTotal}`);
 
-// isValid = script/cosigner checks only (no token-conservation check)
-// inputTotal is always "0" in fast mode
-console.log(`Type: ${parsed.type}`);  // "mint" not detectable; reports "transfer"
-console.log(`Recipients:`, recipients);
+// Per-input token amounts are populated
+parsed.inputs.forEach((input, i) => {
+  console.log(`Input ${i}: ${input.address} — ${input.amount}`);
+});
 ```
 
 ### Inspect a Transaction Before Broadcast (BEEF)
@@ -340,7 +340,8 @@ async function debugTransaction(rawTxHex) {
 - `parseTxFromBEEF` `inputTotal` may understate value when some parent transactions are not embedded
 - `isValid` reflects MNEE protocol validity, not BSV consensus validity
 - Transaction parsing includes automatic validation against MNEE cosigner scripts
-- **Fast mode** (`skipInputFetch: true`): output-only, ~50ms. `inputs` is empty, `inputTotal` is `"0"`, mint type is not detectable (reported as `"transfer"`), and `isValid` skips the token-conservation check. Use for display/routing when sender data and exact totals are not required.
+- **Fast mode** (default; `skipInputFetch: true`): no parent fetches. Sender addresses are derived from each input's unlocking script; mint type is detected when a derived sender matches the mint sentinel; `inputTotal` equals `outputTotal` for approver-validated transactions and is `"0"` when `isValid` is false. Per-input token amounts (`inputs[i].amount`) are reported as `0` — request the slow path to populate them. Note: `inputs[]` may include plain BSV fee payers in transfers because the fast path cannot tell a MNEE-locked P2PKH input from a fee-paying P2PKH input without fetching the parent.
+- **Validated mode** (`skipInputFetch: false`): one network call per input. Per-input token amounts populated and conservation checked independently of the approver signature.
 
 ## See Also
 

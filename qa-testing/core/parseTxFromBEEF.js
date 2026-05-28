@@ -189,9 +189,13 @@ async function testBEEFvsRawTxConsistency() {
   try {
     const { txid, beefHex, rawtxHex } = await getTestBEEF();
 
+    // BEEF carries embedded parents, so its parse populates per-input token amounts
+    // directly. parseTxFromRawTx defaults to the fast (no-fetch) path which leaves
+    // per-input amounts at 0; pass skipInputFetch:false to fetch parents and produce
+    // a comparable response.
     const [fromBEEF, fromRaw] = await Promise.all([
       mnee.parseTxFromBEEF(beefHex),
-      mnee.parseTxFromRawTx(rawtxHex),
+      mnee.parseTxFromRawTx(rawtxHex, { skipInputFetch: false }),
     ]);
 
     assert(fromBEEF.txid === fromRaw.txid, 'txid must match between BEEF and raw parsing');

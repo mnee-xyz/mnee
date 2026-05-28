@@ -47,7 +47,9 @@ import {
 import CosignTemplate from './mneeCosignTemplate.js';
 import { applyInscription } from './utils/applyInscription.js';
 import {
+  deriveAddressFromUnlockingScript,
   isValidHex,
+  looksLikeMneeUnlock,
   parseCosignerScripts,
   parseInscription,
   parseSyncToTxHistory,
@@ -1641,8 +1643,14 @@ export class MNEEService {
     tx: Transaction,
     options?: ParseOptions,
   ): ParseTxResponse | ParseTxExtendedResponse {
+    // Validated path: `input.address` is set only for inputs whose parent output
+    // resolved a cosigner/P2PKH MNEE address.
+    // Fast path: `input.address` is set for any input whose unlocking script
+    // matches a MNEE-spendable template (cosigner 3-chunk or plain P2PKH 2-chunk).
+    // The 2-chunk shape lets us surface mint sentinel inputs without a parent
+    // fetch, at the cost of also surfacing plain BSV fee payers in transfers.
     const simpleInputs: TxAddressAmount[] = inputData.inputs
-      .filter((input) => input.inscription && input.address)
+      .filter((input) => input.address)
       .map((input) => ({
         address: input.address!,
         amount: input.amount,
@@ -1709,7 +1717,12 @@ export class MNEEService {
     const txid = tx.id('hex');
 
     const hasEmbeddedSources = tx.inputs.some((i) => i.sourceTransaction);
-    const useFastPath = options?.skipInputFetch === true && !hasEmbeddedSources;
+    // Default: fast path (no per-input source fetch). Caller opts into the full
+    // input-fetching path with `skipInputFetch: false` for cases that need
+    // per-input token amounts (e.g. proving conservation independently of the
+    // approver signature). Embedded sources (BEEF) always take the full path
+    // because validation is free when parents are already present.
+    const useFastPath = options?.skipInputFetch !== false && !hasEmbeddedSources;
 
     const outputData = this.processTransactionOutputs(tx, config);
 
@@ -1719,27 +1732,47 @@ export class MNEEService {
     let environment: Environment;
 
     if (useFastPath) {
-      const emptyInputs: ProcessedInput[] = tx.inputs.map(() => ({
-        address: undefined,
-        amount: 0,
-        satoshis: 0,
-        inscription: null,
-        cosigner: undefined,
-      }));
-      inputData = { inputs: emptyInputs, total: BigInt(0) };
+      // Derive sender addresses from each input's unlocking script. Pubkey lives in
+      // the unlocking script (last data push) for both cosigner and plain P2PKH
+      // templates, so the address resolves without fetching the parent tx.
+      const fastInputs: ProcessedInput[] = tx.inputs.map((input) => {
+        const address = deriveAddressFromUnlockingScript(input.unlockingScript);
+        const isMneeInput = looksLikeMneeUnlock(input.unlockingScript);
+        return {
+          address: isMneeInput ? address : undefined,
+          amount: 0,
+          satoshis: 0,
+          inscription: null,
+          cosigner: undefined,
+        };
+      });
+      inputData = { inputs: fastInputs, total: BigInt(0) };
 
-      // Output-only type determination: mint detection not possible without input sources
+      // Mint detection: input from the mint sentinel address now works in fast
+      // path because we derived addresses locally.
       type = outputData.type || 'transfer';
+      if (type === 'transfer') {
+        const hasMintInputAddress = fastInputs.some(
+          (i) => i.address === PROD_MINT_ADDRESS || i.address === SANDBOX_MINT_ADDRESS,
+        );
+        if (hasMintInputAddress) type = 'mint';
+      }
 
       // Redeem check is output-based, still valid in fast path
-      if (type === 'transfer') {
+      if (type === 'transfer' || type === 'mint') {
         const hasRedeemOutput = outputData.outputs.some((output) => output.inscription?.metadata?.action === 'redeem');
         if (hasRedeemOutput) type = 'redeem';
       }
 
-      // Script/cosigner/token-ID validation only — no token-conservation check
+      // Script/cosigner/token-ID validation only — no independent token-conservation
+      // check. For approver-signed transactions (isValid === true) conservation is
+      // a protocol invariant, so we project inputTotal = outputTotal. Callers that
+      // need to verify conservation independently must pass `skipInputFetch: false`.
       isValid = this.processMneeValidation(tx, config);
       environment = outputData.environment || 'sandbox';
+      if (isValid && type !== 'deploy') {
+        inputData.total = outputData.total;
+      }
     } else {
       inputData = await this.processTransactionInputs(tx, config, internalOpts);
 
