@@ -31,7 +31,7 @@
   },
   "scripts": {
     "clean": "rm -rf dist",
-    "build": "tsup && rm -f mnee-ts-sdk-*.tgz && npm pack",
+    "build": "npm run clean && tsup && rm -f mnee-ts-sdk-*.tgz && npm pack",
     "start": "node dist/index.js",
     "test": "cd qa-testing && npm run prepare-package && node run-all.js",
     "prepublishOnly": "npm run build"
