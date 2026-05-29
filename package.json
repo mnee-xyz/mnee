@@ -6,31 +6,31 @@
   "version": "1.2.0",
   "description": "Official typescript SDK of MNEE USD stablecoin",
   "type": "module",
-  "source": "src/index.ts",
-  "main": "dist/index.js",
+  "files": ["dist"],
+  "main": "dist/index.cjs",
+  "module": "./dist/index.js",
   "types": "dist/index.d.ts",
+  "unpkg": "./dist/index.umd.js",
   "exports": {
     ".": {
       "require": {
-        "types": "./dist/index.d.ts",
+        "types": "./dist/index.d.cts",
         "default": "./dist/index.cjs"
       },
       "import": {
         "types": "./dist/index.d.ts",
-        "default": "./dist/index.modern.js"
+        "default": "./dist/index.js"
       },
       "default": {
         "types": "./dist/index.d.ts",
-        "default": "./dist/index.modern.js"
+        "default": "./dist/index.js"
       }
     }
   },
-  "module": "./dist/index.module.js",
-  "unpkg": "./dist/index.umd.js",
   "scripts": {
     "clean": "rm -rf dist",
-    "build": "npm run clean && microbundle --globals @bsv/sdk=bsv && rm -f mnee-ts-sdk-*.tgz && npm pack",
-    "start": "node dist/index.modern.js",
+    "build": "tsup && rm -f mnee-ts-sdk-*.tgz && npm pack",
+    "start": "node dist/index.js",
     "test": "cd qa-testing && npm run prepare-package && node run-all.js",
     "prepublishOnly": "npm run build"
   },
@@ -53,13 +53,13 @@
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
-    "microbundle": "^0.15.1",
     "ts-node": "^10.9.2",
+    "tsup": "^8.5.1",
     "tsx": "^4.19.3",
     "typescript": "^5.4.5"
   },
   "dependencies": {
-    "@bsv/sdk": "1.3.30",
+    "@bsv/sdk": "2.1.4",
     "bip39": "^3.1.0"
   },
   "overrides": {
