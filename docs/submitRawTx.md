@@ -271,14 +271,15 @@ try {
     case 'Callback URL cannot be provided when broadcast is false':
       console.error('Cannot use webhook without broadcasting');
       break;
-    case 'Failed to submit transaction':
-      console.error('Submission to network failed');
-      break;
     case 'Invalid API key':
       console.error('API key authentication failed (401/403)');
       break;
     default:
-      if (error.message.includes('HTTP error! status:')) {
+      // Error message now includes the API response body for debuggability,
+      // e.g. "Failed to submit transaction: <api response body>"
+      if (error.message.startsWith('Failed to submit transaction:')) {
+        console.error('Submission to network failed:', error.message);
+      } else if (error.message.includes('HTTP error! status:')) {
         console.error('API request failed:', error.message);
       } else {
         console.error('Submit failed:', error.message);

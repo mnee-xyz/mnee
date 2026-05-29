@@ -203,26 +203,33 @@ try {
   const response = await mnee.transfer(recipients, wif);
 } catch (error) {
   switch (true) {
-    case error.message('Config not fetched'):
+    case error.message === 'Config not fetched':
       console.error('Failed to fetch cosigner configuration');
       break;
-    case error.message('Invalid transfer options'):
+    case error.message === 'Invalid transfer options':
       console.error('Invalid recipients or amounts');
       break;
-    case error.message('Private key not found'):
+    case error.message === 'Private key not found':
       console.error('Invalid WIF private key');
       break;
-    case error.message('Invalid amount'):
+    case error.message === 'Invalid amount':
       console.error('Amount must be greater than 0');
       break;
-    case error.message('Insufficient MNEE balance'):
+    case error.message === 'Insufficient MNEE balance':
       console.error('Not enough MNEE tokens');
       break;
-    case error.message('Failed to broadcast transaction'):
+    case error.message === 'UTXOs temporarily locked by recent transactions, retry shortly':
+      // The SDK tracks outpoints from recently broadcast transactions in an
+      // in-memory cache to avoid colliding with the MNEE API's ~30 second
+      // outpoint lock window. Wait ~30 seconds and retry the transfer.
+      console.error('Recently spent UTXOs are still locked. Retry after ~30 seconds.');
+      break;
+    case error.message === 'Failed to broadcast transaction':
       console.error('Cosigner rejected the transaction');
       break;
-    case error.message('Invalid API key'):
+    case error.message === 'Invalid API key':
       console.error('API key authentication failed (401/403)');
+      break;
     case error.message.includes('HTTP error! status:'):
       console.error('API request failed:', error.message);
       break;
@@ -244,6 +251,8 @@ try {
 - All recipients must have valid Bitcoin addresses
 - The sender must have sufficient balance to cover amounts + fees
 - When broadcast is true, the transaction is processed asynchronously and you receive a ticketId to track status
+- Before broadcast, the SDK marks the transaction's inputs into an in-memory outpoint cache on the SDK instance. Subsequent `transfer()` calls within ~35 seconds will skip those outpoints during UTXO selection, preventing collisions with the MNEE API's ~30 second outpoint lock window (which would otherwise reject the second call with HTTP 400). If every available UTXO is currently locked, `transfer()` throws `UTXOs temporarily locked by recent transactions, retry shortly` — wait ~30 seconds and retry. Note that this cache is per-SDK-instance and in-memory only; it does not coordinate across processes.
+- If the MNEE API returns an outpoint-lock error (HTTP 400 with `"was locked in a previous transaction attempt"` in the body) — common across process boundaries where the in-memory cache cannot help — `transfer()` automatically marks the locked outpoint, re-runs UTXO selection, and retries the broadcast up to 3 times with ~250ms backoff between attempts. This is transparent to the caller; the final error is only thrown if all retries fail.
 
 ## See Also
 

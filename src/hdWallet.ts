@@ -88,10 +88,16 @@ export class HDWallet {
       path: fullPath,
     };
 
-    // Add to cache if within limit
-    if (this.cache.size < this.cacheSize) {
-      this.cache.set(fullPath, addressInfo);
+    // Maintain a bounded FIFO cache: evict the oldest entry when at capacity.
+    // Using a plain Map is sufficient because Map preserves insertion order,
+    // so the first key() is always the oldest-inserted entry.
+    if (this.cache.size >= this.cacheSize) {
+      const oldestKey = this.cache.keys().next().value;
+      if (oldestKey !== undefined) {
+        this.cache.delete(oldestKey);
+      }
     }
+    this.cache.set(fullPath, addressInfo);
 
     return addressInfo;
   }

@@ -1,0 +1,24 @@
+{
+  "environments": [
+    {
+      "name": "dev",
+      "branch": "develop",
+      "isProduction": false
+    },
+    {
+      "name": "qa",
+      "branch": "qa",
+      "isProduction": false
+    },
+    {
+      "name": "stg",
+      "branch": "stg",
+      "isProduction": false
+    },
+    {
+      "name": "prod",
+      "branch": "main",
+      "isProduction": true
+    }
+  ]
+}

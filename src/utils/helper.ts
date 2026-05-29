@@ -60,7 +60,7 @@ export const parseInscription = (script: Script) => {
         insc.file!.content = value.data;
         break;
       case 1:
-        insc.file!.type = Buffer.from(value.data || []).toString();
+        insc.file!.type = Utils.toUTF8(value.data || []);
         break;
     }
   }
@@ -105,6 +105,53 @@ export const parseCosignerScripts = (scripts: Script[]): ParsedCosigner[] => {
       return undefined as any;
     })
     .filter((result): result is ParsedCosigner => result !== undefined);
+};
+
+/**
+ * Derive the spender's address from an input's unlocking script.
+ *
+ * Works for both MNEE cosigner unlocks (chunks: [approverSig, userSig, userPubkey])
+ * and plain P2PKH unlocks (chunks: [userSig, userPubkey]). In both cases the user
+ * public key is the last data push; hash160 + base58Check yields the address.
+ *
+ * Returns undefined for non-standard unlocking scripts (no terminal 33/65-byte
+ * pubkey push). Lets the parser surface sender addresses without fetching the
+ * parent transaction.
+ */
+export const deriveAddressFromUnlockingScript = (script: Script | undefined): string | undefined => {
+  const chunks = script?.chunks;
+  if (!chunks || chunks.length === 0) return undefined;
+  const last = chunks[chunks.length - 1];
+  const data = last?.data;
+  if (!data || (data.length !== 33 && data.length !== 65)) return undefined;
+  try {
+    return Utils.toBase58Check(Hash.hash160(data), [0]);
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * Heuristic: does an unlocking script look like one that spends a MNEE-attributable UTXO?
+ *
+ * Accepts two on-chain templates the SDK treats as MNEE:
+ *   - Cosigner unlock: 3 chunks `[approverSig, userSig, userPubkey]` (transfer/burn/redeem).
+ *   - Plain P2PKH unlock: 2 chunks `[userSig, userPubkey]`. Used by the mint sentinel
+ *     UTXOs (cosigner='') so mint-from-supply transactions can be detected without
+ *     fetching parents — see `determineEnvironment`'s `cosigner === '' && address === MINT_ADDRESS`
+ *     special case.
+ *
+ * Plain BSV fee inputs also match the 2-chunk pattern, so callers using this for
+ * `simpleInputs` filtering will surface the fee payer alongside MNEE senders. That's a
+ * cosmetic widening (not a correctness break) — callers requiring strict input-side
+ * attribution must opt into `skipInputFetch: false`.
+ */
+export const looksLikeMneeUnlock = (script: Script | undefined): boolean => {
+  const chunks = script?.chunks;
+  if (!chunks) return false;
+  if (chunks.length !== 2 && chunks.length !== 3) return false;
+  const last = chunks[chunks.length - 1];
+  return !!last?.data && (last.data.length === 33 || last.data.length === 65);
 };
 
 export const parseSyncToTxHistory = (sync: MneeSync, address: string, config: MNEEConfig): TxHistory | null => {

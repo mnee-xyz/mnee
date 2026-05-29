@@ -9,6 +9,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const tests = [
   // Core configuration
   { file: 'core/config.js', description: 'Configuration management' },
+  { file: 'core/refreshConfig.js', description: 'Config cache refresh' },
 
   // Balance operations
   { file: 'core/balance.js', description: 'Single address balance queries' },
@@ -38,6 +39,7 @@ const tests = [
   // Parsing operations
   { file: 'core/parseTx.js', description: 'Transaction parsing by txid' },
   { file: 'core/parseTxFromRawTx.js', description: 'Transaction parsing from raw hex' },
+  { file: 'core/parseTxFromBEEF.js', description: 'Transaction parsing from BEEF hex (compute-only)' },
   { file: 'core/parseInscription.js', description: 'Inscription detection' },
   { file: 'core/parseCosignerScripts.js', description: 'Cosigner script parsing' },
 

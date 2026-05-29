@@ -29,6 +29,7 @@ export * from './mnee.types.js';
 
 export interface MneeInterface {
   config(): Promise<MNEEConfig>;
+  refreshConfig(): Promise<MNEEConfig>;
   balance(address: string): Promise<MNEEBalance>;
   balances(addresses: string[]): Promise<MNEEBalance[]>;
   getUtxos(address: string | string[], page?: number, size?: number, order?: 'asc' | 'desc'): Promise<MNEEUtxo[]>;
@@ -50,6 +51,7 @@ export interface MneeInterface {
   recentTxHistories(params: AddressHistoryParams[]): Promise<TxHistoryResponse[]>;
   parseTx(txid: string, options?: ParseOptions): Promise<ParseTxResponse | ParseTxExtendedResponse>;
   parseTxFromRawTx(rawTxHex: string, options?: ParseOptions): Promise<ParseTxResponse | ParseTxExtendedResponse>;
+  parseTxFromBEEF(beefHex: string, options?: ParseOptions): Promise<ParseTxResponse | ParseTxExtendedResponse>;
   parseInscription(script: Script): Inscription | undefined;
   parseCosignerScripts(scripts: Script[]): ParsedCosigner[];
   HDWallet(mnemonic: string, options: HDWalletOptions): HDWallet;
@@ -130,12 +132,23 @@ export default class Mnee implements MneeInterface {
   }
 
   /**
-   * Retrieves the configuration for the MNEE service.
+   * Retrieves the cached MNEE configuration. Network fetch happens once at SDK
+   * initialization; every subsequent call returns the in-memory value with no
+   * API request. Use {@link refreshConfig} to force a re-fetch.
    *
    * @returns {Promise<MNEEConfig>} A promise that resolves to the MNEE configuration object.
    */
   async config(): Promise<MNEEConfig> {
-    return this.service.getCosignerConfig();
+    return this.service.getConfig();
+  }
+
+  /**
+   * Forces a refresh of the cached MNEE config from the API.
+   * Config is normally fetched once at SDK initialization and cached.
+   * Call this only if you need to pick up updated fee tiers or approver keys.
+   */
+  async refreshConfig(): Promise<MNEEConfig> {
+    return this.service.refreshConfig();
   }
 
   /**
@@ -267,8 +280,20 @@ export default class Mnee implements MneeInterface {
   /**
    * Parses a transaction based on the provided transaction ID.
    *
+   * Defaults to the fast path: sender addresses are derived locally from each
+   * input's unlocking script and no parent transactions are fetched (one network
+   * call for the tx itself). `inputTotal` is projected from `outputTotal` for
+   * approver-validated transactions; per-input token amounts are reported as 0.
+   *
+   * Pass `skipInputFetch: false` to fetch each parent transaction and verify
+   * token conservation independently — slower (one round trip per input) and
+   * needed only when independent conservation proof or per-input amounts matter.
+   *
    * @param txid - The unique identifier of the transaction to be parsed.
-   * @param options - Optional parsing options. Set includeRaw to true to get extended response with raw transaction data.
+   * @param options - Optional parsing options.
+   *   - `includeRaw`: Include raw transaction data in the response.
+   *   - `skipInputFetch`: Defaults to `true`. Set to `false` to fetch parent
+   *     transactions and populate per-input token amounts + verify conservation.
    * @returns A promise that resolves to a `ParseTxResponse` or `ParseTxExtendedResponse` containing the parsed transaction details.
    */
   async parseTx(txid: string, options?: ParseOptions): Promise<ParseTxResponse | ParseTxExtendedResponse> {
@@ -278,12 +303,39 @@ export default class Mnee implements MneeInterface {
   /**
    * Parses a transaction from a raw transaction hex string.
    *
+   * Same default behavior as `parseTx` (fast path; `skipInputFetch` defaults to
+   * `true`). With the default, this is a pure local parse with zero network
+   * calls. Pass `skipInputFetch: false` to fetch parents and validate
+   * conservation; that path makes one fetch per input.
+   *
    * @param rawTxHex - The raw transaction hex string to be parsed.
-   * @param options - Optional parsing options. Set includeRaw to true to get extended response with raw transaction data.
+   * @param options - Optional parsing options. Same `skipInputFetch` and `includeRaw` flags as `parseTx`.
    * @returns A promise that resolves to a `ParseTxResponse` or `ParseTxExtendedResponse` containing the parsed transaction details.
    */
   async parseTxFromRawTx(rawTxHex: string, options?: ParseOptions): Promise<ParseTxResponse | ParseTxExtendedResponse> {
     return this.service.parseTxFromRawTx(rawTxHex, options);
+  }
+
+  /**
+   * Parses a transaction from a BEEF (Bitcoin Extended Format) hex string.
+   *
+   * Compute-only alternative to `parseTxFromRawTx` — makes zero network calls.
+   * BEEF embeds parent transactions inline so input amounts resolve locally.
+   *
+   * Partial BEEF is supported: inputs whose parent is NOT embedded (e.g. plain BSV fee
+   * inputs or oversized MNEE distribution txs the API can't serve) resolve as unknown
+   * ({ address: undefined, satoshis: 0 }) rather than triggering a fetch. As a result,
+   * `inputTotal` may understate the true value when parents are absent.
+   *
+   * Produce a BEEF hex from a built transaction using `tx.toHexBEEF()` from \@bsv/sdk.
+   * Plain raw hex is rejected — use `parseTxFromRawTx` for that.
+   *
+   * @param beefHex - A BEEF-encoded transaction hex string
+   * @param options - Optional parsing options. Set includeRaw to true to get extended response.
+   * @returns A promise that resolves to a `ParseTxResponse` or `ParseTxExtendedResponse`.
+   */
+  async parseTxFromBEEF(beefHex: string, options?: ParseOptions): Promise<ParseTxResponse | ParseTxExtendedResponse> {
+    return this.service.parseTxFromBEEF(beefHex, options);
   }
 
   /**

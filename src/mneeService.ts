@@ -16,6 +16,7 @@ import {
   GetSignatures,
   MNEEBalance,
   MNEEConfig,
+  MNEEFee,
   MneeInscription,
   SdkConfig,
   MneeSync,
@@ -46,7 +47,9 @@ import {
 import CosignTemplate from './mneeCosignTemplate.js';
 import { applyInscription } from './utils/applyInscription.js';
 import {
+  deriveAddressFromUnlockingScript,
   isValidHex,
+  looksLikeMneeUnlock,
   parseCosignerScripts,
   parseInscription,
   parseSyncToTxHistory,
@@ -69,12 +72,26 @@ import {
   SANDBOX_APPROVER,
   MNEE_DECIMALS,
 } from './constants.js';
-import { RateLimiter } from './batch.js';
 
 export class MNEEService {
   private mneeApiKey: string;
   private mneeConfig: MNEEConfig | undefined;
+  private configReady: Promise<MNEEConfig>;
   private mneeApi: string;
+  private static readonly TX_CACHE_MAX = 5000;
+  private static readonly OUTPOINT_LOCK_TTL = 35_000;
+  private static readonly LOCK_RETRY_MAX = 3;
+  private static readonly LOCK_RETRY_BACKOFF_MS = 250;
+  private readonly txFetchCache = new Map<string, Promise<Transaction | undefined>>();
+  // Reactive backoff state. No proactive rate limiter — the SDK starts at full speed,
+  // then enters a shared cooldown on HTTP 429 so every in-flight call respects the
+  // server's Retry-After (or an exponentially-growing fallback). Lets the SDK adapt
+  // to whatever per-key rate limit the API is currently enforcing, without baking a
+  // specific value into the codebase.
+  private cooldownUntil = 0;
+  private static readonly RATE_LIMIT_BACKOFF_BASE_MS = 500;
+  private static readonly RATE_LIMIT_BACKOFF_MAX_MS = 4000;
+  private readonly usedOutpoints = new Map<string, number>();
 
   constructor(config: SdkConfig) {
     if (config.environment !== 'production' && config.environment !== 'sandbox') {
@@ -91,12 +108,67 @@ export class MNEEService {
       this.mneeApiKey = isProd ? PUBLIC_PROD_MNEE_API_TOKEN : PUBLIC_SANDBOX_MNEE_API_TOKEN;
     }
     this.mneeApi = isProd ? MNEE_PROXY_API_URL : SANDBOX_MNEE_API_URL;
-    this.getCosignerConfig().catch(() => {});
+    this.configReady = this.getCosignerConfig();
+    // Prevent an unhandled-rejection crash if the initial fetch fails before
+    // it is awaited (e.g. when the caller replaces configReady via refreshConfig()).
+    this.configReady.catch(() => {});
+  }
+
+  /**
+   * Wait for any active rate-limit cooldown to expire before continuing. Shared
+   * across every in-flight API call so a 429 from one path back-pressures all of them.
+   */
+  private async awaitCooldown(): Promise<void> {
+    const wait = this.cooldownUntil - Date.now();
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+  }
+
+  /**
+   * Extend the shared cooldown after a 429. Honors the server's Retry-After header
+   * (seconds, or HTTP date) when present; otherwise falls back to capped exponential
+   * backoff keyed off the caller's retry attempt.
+   */
+  private setRateLimitCooldown(retryAfterHeader: string | null, attempt: number): void {
+    let ms = 0;
+    if (retryAfterHeader) {
+      const asSeconds = Number(retryAfterHeader);
+      if (Number.isFinite(asSeconds) && asSeconds > 0) {
+        ms = Math.floor(asSeconds * 1000);
+      } else {
+        const dateMs = Date.parse(retryAfterHeader);
+        if (!Number.isNaN(dateMs)) {
+          ms = Math.max(0, dateMs - Date.now());
+        }
+      }
+    }
+    if (ms === 0) {
+      ms = Math.min(
+        MNEEService.RATE_LIMIT_BACKOFF_BASE_MS * (1 << Math.min(attempt, 5)),
+        MNEEService.RATE_LIMIT_BACKOFF_MAX_MS,
+      );
+    }
+    this.cooldownUntil = Math.max(this.cooldownUntil, Date.now() + ms);
+  }
+
+  /**
+   * fetch() wrapper that gates on the shared cooldown and transparently retries
+   * 429 Too Many Requests responses up to `retries` times. Other statuses pass
+   * through to the caller unchanged so existing error handling still applies.
+   */
+  private async fetchWithBackoff(url: string, init?: RequestInit, retries: number = 3): Promise<Response> {
+    for (let attempt = 0; ; attempt++) {
+      await this.awaitCooldown();
+      const resp = await fetch(url, init);
+      if (resp.status !== 429 || attempt >= retries) return resp;
+      this.setRateLimitCooldown(resp.headers.get('retry-after'), attempt);
+    }
   }
 
   public async getCosignerConfig(): Promise<MNEEConfig> {
     try {
-      const response = await fetch(`${this.mneeApi}/v1/config?auth_token=${this.mneeApiKey}`, { method: 'GET' });
+      const response = await this.fetchWithBackoff(`${this.mneeApi}/v1/config?auth_token=${this.mneeApiKey}`, {
+        method: 'GET',
+      });
 
       if (response.status === 401 || response.status === 403) {
         throw stacklessError('Invalid API key');
@@ -112,6 +184,115 @@ export class MNEEService {
       }
       throw error;
     }
+  }
+
+  public async getConfig(): Promise<MNEEConfig> {
+    if (this.mneeConfig) return this.mneeConfig;
+    const currentPromise = this.configReady;
+    try {
+      return await currentPromise;
+    } catch (err) {
+      if (this.configReady === currentPromise) {
+        this.configReady = this.getCosignerConfig();
+        this.configReady.catch(() => {});
+      }
+      throw err;
+    }
+  }
+
+  public async refreshConfig(): Promise<MNEEConfig> {
+    // Fetch first — if it fails, the existing cached config is preserved
+    // and the SDK remains operational (no state is mutated on error).
+    const newConfig = await this.getCosignerConfig();
+    this.mneeConfig = newConfig;
+    this.configReady = Promise.resolve(newConfig);
+    return newConfig;
+  }
+
+  /**
+   * Look up the fee for a given atomic token amount from the fee tiers in config.
+   * Returns undefined if no tier covers the amount.
+   */
+  private lookupFee(atomicAmount: number, fees: MNEEFee[]): number | undefined {
+    return fees.find((f) => atomicAmount >= f.min && atomicAmount <= f.max)?.fee;
+  }
+
+  /**
+   * Filter a UTXO array to only those with spendable op-codes (transfer / deploy+mint).
+   * Extracted from getUtxos() where the same Set + filter appeared twice.
+   */
+  private static readonly VALID_UTXO_OPS = new Set(['transfer', 'deploy+mint']);
+
+  private filterValidUtxos(data: MNEEUtxo[]): MNEEUtxo[] {
+    return data.filter((utxo) =>
+      MNEEService.VALID_UTXO_OPS.has(utxo.data.bsv21.op.toLowerCase()),
+    );
+  }
+
+  /**
+   * Validate and append an OP_RETURN output carrying arbitrary user data.
+   * Extracted from transfer() and transferMulti() where the identical block appeared twice.
+   */
+  private addExtraDataOutput(tx: Transaction, extraData: NonNullable<TransferOptions['extraData']>): void {
+    const items = Array.isArray(extraData) ? extraData : [extraData];
+
+    if (items.length === 0) {
+      throw stacklessError('extraData must contain at least one item');
+    }
+
+    // number[] keeps this isomorphic — Node `Buffer` is not available in browsers
+    // without polyfill, and `@bsv/sdk`'s `Utils.toArray` works in both.
+    const buffers: number[][] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+
+      if (!item || typeof item.data !== 'string') {
+        throw stacklessError(`Invalid extraData at index ${i}: data must be a string`);
+      }
+
+      if (item.type === 'utf8') {
+        const buf = Utils.toArray(item.data, 'utf8');
+        if (buf.length === 0) {
+          throw stacklessError(`extraData at index ${i} is empty after UTF-8 encoding`);
+        }
+        buffers.push(buf);
+      } else if (item.type === 'hex') {
+        const hex = item.data.trim();
+        if (!hex) {
+          throw stacklessError(`extraData at index ${i} is empty`);
+        }
+        if (!/^[0-9a-fA-F]+$/.test(hex) || hex.length % 2 !== 0) {
+          throw stacklessError(
+            `extraData at index ${i} is not valid hex or has odd length: "${hex}"`,
+          );
+        }
+        const buf = Utils.toArray(hex, 'hex');
+        if (buf.length === 0) {
+          throw stacklessError(`extraData at index ${i} decoded to an empty buffer`);
+        }
+        buffers.push(buf);
+      } else {
+        throw stacklessError(`Unsupported extraData type at index ${i}: ${(item as any).type}`);
+      }
+    }
+
+    const totalBytes = buffers.reduce((sum, b) => sum + b.length, 0);
+    if (totalBytes > 512) {
+      throw stacklessError(
+        `extraData is too large: ${totalBytes} bytes (max allowed is 512 bytes)`,
+      );
+    }
+
+    const script = new Script();
+    script.writeOpCode(OP.OP_0);
+    script.writeOpCode(OP.OP_RETURN);
+    for (const buf of buffers) {
+      script.writeBin(buf);
+    }
+    tx.addOutput({
+      satoshis: 0,
+      lockingScript: LockingScript.fromBinary(script.toBinary()),
+    });
   }
 
   public toAtomicAmount(amount: number): number {
@@ -131,7 +312,7 @@ export class MNEEService {
     };
     return {
       lockingScript: applyInscription(new CosignTemplate().lock(recipient, PublicKey.fromString(config.approver)), {
-        dataB64: Buffer.from(JSON.stringify(inscriptionData)).toString('base64'),
+        dataB64: Utils.toBase64(Utils.toArray(JSON.stringify(inscriptionData), 'utf8')),
         contentType: 'application/bsv-20',
       }),
       satoshis: 1,
@@ -172,7 +353,7 @@ export class MNEEService {
           throw stacklessError(`Invalid Bitcoin address: ${address}`);
         }
         const arrayAddress = [address];
-        const response = await fetch(
+        const response = await this.fetchWithBackoff(
           `${this.mneeApi}/v2/utxos?auth_token=${this.mneeApiKey}${page !== undefined ? `&page=${page}` : ''}${
             size !== undefined ? `&size=${size}` : ''
           }${order ? `&order=${order}` : ''}`,
@@ -187,10 +368,7 @@ export class MNEEService {
         }
         if (!response.ok) throw stacklessError(`HTTP error! status: ${response.status}`);
         const data: MNEEUtxo[] = await response.json();
-        const ops = ['transfer', 'deploy+mint'];
-        return data.filter((utxo) =>
-          ops.includes(utxo.data.bsv21.op.toLowerCase() as 'transfer' | 'burn' | 'deploy+mint'),
-        );
+        return this.filterValidUtxos(data);
       }
 
       // Handle array of addresses - filter out invalid ones
@@ -207,7 +385,7 @@ export class MNEEService {
           console.warn(`\x1b[33m${invalidAddresses.length} invalid bitcoin addresses will be ignored\x1b[0m`);
         }
 
-        const response = await fetch(
+        const response = await this.fetchWithBackoff(
           `${this.mneeApi}/v2/utxos?auth_token=${this.mneeApiKey}${page !== undefined ? `&page=${page}` : ''}${
             size !== undefined ? `&size=${size}` : ''
           }${order ? `&order=${order}` : ''}`,
@@ -222,10 +400,7 @@ export class MNEEService {
         }
         if (!response.ok) throw stacklessError(`HTTP error! status: ${response.status}`);
         const data: MNEEUtxo[] = await response.json();
-        const ops = ['transfer', 'deploy+mint'];
-        return data.filter((utxo) =>
-          ops.includes(utxo.data.bsv21.op.toLowerCase() as 'transfer' | 'burn' | 'deploy+mint'),
-        );
+        return this.filterValidUtxos(data);
       }
 
       throw stacklessError('Invalid input type for address');
@@ -238,21 +413,49 @@ export class MNEEService {
   }
 
   public async fetchRawTx(txid: string, retries: number = 3): Promise<Transaction | undefined> {
+    const cached = this.txFetchCache.get(txid);
+    if (cached) return cached;
+    // Eagerly cache the in-flight promise so concurrent callers for the same txid dedupe.
+    // 429 backpressure is handled inside _doFetchRawTx via the shared cooldown gate.
+    const promise = this._doFetchRawTx(txid, retries);
+    if (this.txFetchCache.size >= MNEEService.TX_CACHE_MAX) {
+      const firstKey = this.txFetchCache.keys().next().value!;
+      this.txFetchCache.delete(firstKey);
+    }
+    this.txFetchCache.set(txid, promise);
+    // Evict on terminal failure (resolved `undefined` from exhausted retries, or rejection
+    // from "Transaction not found" / "Invalid API key") so a later caller can retry.
+    // The `=== promise` guard avoids evicting a *different* promise that already
+    // re-occupied the slot after an earlier eviction + refetch.
+    promise.then(
+      (val) => {
+        if (val === undefined && this.txFetchCache.get(txid) === promise) {
+          this.txFetchCache.delete(txid);
+        }
+      },
+      () => {
+        if (this.txFetchCache.get(txid) === promise) {
+          this.txFetchCache.delete(txid);
+        }
+      },
+    );
+    return promise;
+  }
+
+  private async _doFetchRawTx(txid: string, retries: number): Promise<Transaction | undefined> {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        const resp = await fetch(`${this.mneeApi}/v1/tx/${txid}?auth_token=${this.mneeApiKey}`);
+        // fetchWithBackoff transparently retries 429 and gates on the shared cooldown,
+        // so anything that survives to here is either 2xx or a non-429 error response.
+        const resp = await this.fetchWithBackoff(
+          `${this.mneeApi}/v1/tx/${txid}?auth_token=${this.mneeApiKey}`,
+          undefined,
+          retries,
+        );
 
         if (resp.status === 404) throw stacklessError('Transaction not found');
         if (resp.status === 401 || resp.status === 403) {
           throw stacklessError('Invalid API key');
-        }
-
-        // Handle rate limiting with retry
-        if (resp.status === 429 && attempt < retries) {
-          // For rate limiting, use longer delay with exponential backoff
-          const delay = Math.min(500 * Math.pow(2, attempt), 2000); // 500ms, 1s, 2s max
-          await new Promise((resolve) => setTimeout(resolve, delay));
-          continue;
         }
 
         if (resp.status !== 200) {
@@ -260,15 +463,22 @@ export class MNEEService {
         }
 
         const { rawtx } = await resp.json();
-        return Transaction.fromHex(Buffer.from(rawtx, 'base64').toString('hex'));
+        return Transaction.fromBinary(Utils.toArray(rawtx, 'base64'));
       } catch (error) {
+        // Permanent or already-retried errors — re-throw immediately, retrying won't help.
+        // 429 is included because fetchWithBackoff already exhausted its 429 retry budget,
+        // so wrapping it in another retry loop just compounds backoff overhead.
+        const msg = (error as Error)?.message ?? '';
+        if (msg === 'Transaction not found' || msg === 'Invalid API key' || msg.startsWith('429')) {
+          throw error;
+        }
         if (attempt === retries) {
           if (isNetworkError(error)) {
             logNetworkError(error, 'fetch transaction');
           }
           return undefined;
         }
-        // For network errors, use a shorter fixed delay
+        // For transient errors, use a shorter fixed delay before retrying
         await new Promise((resolve) => setTimeout(resolve, 200));
       }
     }
@@ -342,13 +552,34 @@ export class MNEEService {
     }
   }
 
+  private evictExpiredOutpoints(): void {
+    const cutoff = Date.now() - MNEEService.OUTPOINT_LOCK_TTL;
+    for (const [key, ts] of this.usedOutpoints) {
+      if (ts < cutoff) this.usedOutpoints.delete(key);
+    }
+  }
+
+  private extractLockedOutpoint(err: unknown): string | null {
+    const msg = (err as { message?: unknown })?.message;
+    if (typeof msg !== 'string') return null;
+    const m = msg.match(/outpoint ([0-9a-fA-F]{64})_(\d+) was locked/);
+    return m ? `${m[1]}_${m[2]}` : null;
+  }
+
   public async getEnoughUtxos(address: string, totalAtomicTokenAmount: number): Promise<MNEEUtxo[]> {
-    const config = this.mneeConfig || (await this.getCosignerConfig());
+    if (
+      typeof totalAtomicTokenAmount !== 'number' ||
+      !Number.isInteger(totalAtomicTokenAmount) ||
+      totalAtomicTokenAmount <= 0
+    ) {
+      throw stacklessError('totalAtomicTokenAmount must be a positive integer');
+    }
+    this.evictExpiredOutpoints();
+
+    const config = await this.getConfig();
     if (!config) throw stacklessError('Config not fetched');
-    const fees = config.fees;
-    const fee = fees.find((f) => totalAtomicTokenAmount >= f.min && totalAtomicTokenAmount <= f.max);
-    if (!fee) throw stacklessError('Fee not found');
-    const feeAmount = fee.fee;
+    const feeAmount = this.lookupFee(totalAtomicTokenAmount, config.fees);
+    if (feeAmount === undefined) throw stacklessError('Fee not found');
     const requiredAmount = totalAtomicTokenAmount + feeAmount;
 
     const balance = await this.getBalance(address);
@@ -361,21 +592,42 @@ export class MNEEService {
     let size = 25;
     let allUtxos: MNEEUtxo[] = [];
     let totalUtxoAmount = 0;
+    // Track whether *this address* had any UTXO filtered out by the lock cache.
+    // usedOutpoints is shared across all addresses on the instance, so checking
+    // its size would misreport locks belonging to a different address.
+    let sawLockedForAddress = false;
 
-    // Collect UTXOs until we have enough
+    // Collect UTXOs until we have enough, skipping recently-used outpoints
     while (totalUtxoAmount < requiredAmount) {
       const pageUtxos = await this.getUtxos(address, page, size);
+      const available = pageUtxos.filter((u) => {
+        const isLocked = this.usedOutpoints.has(`${u.txid}_${u.vout}`);
+        if (isLocked) sawLockedForAddress = true;
+        return !isLocked;
+      });
       if (pageUtxos.length === 0) {
+        if (sawLockedForAddress) {
+          throw stacklessError('UTXOs temporarily locked by recent transactions, retry shortly');
+        }
         // This shouldn't happen given we checked balance, but handle gracefully
-        const maxTransferAmount = this.fromAtomicAmount(totalUtxoAmount - feeAmount);
+        const maxTransferAmount = this.fromAtomicAmount(Math.max(0, totalUtxoAmount - feeAmount));
         throw stacklessError(`Insufficient MNEE balance. Max transfer amount: ${maxTransferAmount}`);
       }
 
-      allUtxos.push(...pageUtxos);
+      allUtxos.push(...available);
       totalUtxoAmount = allUtxos.reduce((sum, utxo) => sum + utxo.data.bsv21.amt, 0);
 
       if (totalUtxoAmount >= requiredAmount) {
         break;
+      }
+
+      if (pageUtxos.length < size) {
+        if (sawLockedForAddress) {
+          throw stacklessError('UTXOs temporarily locked by recent transactions, retry shortly');
+        }
+        // No more pages — can't satisfy with available UTXOs
+        const maxTransferAmount = this.fromAtomicAmount(Math.max(0, totalUtxoAmount - feeAmount));
+        throw stacklessError(`Insufficient MNEE balance. Max transfer amount: ${maxTransferAmount}`);
       }
 
       page++;
@@ -400,16 +652,39 @@ export class MNEEService {
   }
 
   public async getAllUtxos(address: string): Promise<MNEEUtxo[]> {
-    // loop through and get all utxos
-    let page = 1;
-    let size = 100;
-    let utxos: MNEEUtxo[] = [];
-    while (true) {
-      const pageUtxos = await this.getUtxos(address, page, size);
-      if (pageUtxos.length === 0) break;
-      utxos.push(...pageUtxos);
-      page++;
+    const PAGE_SIZE = 100;
+    // Fast path: most addresses fit in one page, so fetch page 1 sequentially
+    // before paying for a full parallel window of speculative fetches.
+    const firstPage = await this.getUtxos(address, 1, PAGE_SIZE);
+    const utxos: MNEEUtxo[] = [...firstPage];
+    if (firstPage.length < PAGE_SIZE) {
+      return utxos;
     }
+
+    const WINDOW = 3;
+    let page = 2;
+
+    while (true) {
+      const pageNums = Array.from({ length: WINDOW }, (_, i) => page + i);
+      // No proactive throttle: getUtxos uses fetchWithBackoff under the hood, so a
+      // 429 on any window member sets the shared cooldown and all siblings observe it.
+      const pages = await Promise.all(pageNums.map((p) => this.getUtxos(address, p, PAGE_SIZE)));
+
+      let done = false;
+      for (const pageResults of pages) {
+        utxos.push(...pageResults);
+        if (pageResults.length < PAGE_SIZE) {
+          // Mark done but keep processing the remaining already-awaited pages —
+          // breaking here would discard fetched data if the API ever returns a
+          // non-full interior page (gaps, pagination quirks).
+          done = true;
+        }
+      }
+
+      if (done) break;
+      page += WINDOW;
+    }
+
     return utxos;
   }
 
@@ -418,8 +693,30 @@ export class MNEEService {
     wif: string,
     transferOptions?: TransferOptions,
   ): Promise<TransferResponse> {
+    let lastErr: unknown;
+    for (let attempt = 0; attempt <= MNEEService.LOCK_RETRY_MAX; attempt++) {
+      try {
+        return await this.transferAttempt(request, wif, transferOptions);
+      } catch (err) {
+        lastErr = err;
+        const locked = this.extractLockedOutpoint(err);
+        if (!locked || attempt === MNEEService.LOCK_RETRY_MAX) {
+          throw err;
+        }
+        this.usedOutpoints.set(locked, Date.now());
+        await new Promise((r) => setTimeout(r, MNEEService.LOCK_RETRY_BACKOFF_MS));
+      }
+    }
+    throw lastErr;
+  }
+
+  private async transferAttempt(
+    request: SendMNEE[],
+    wif: string,
+    transferOptions?: TransferOptions,
+  ): Promise<TransferResponse> {
     try {
-      const config = this.mneeConfig || (await this.getCosignerConfig());
+      const config = await this.getConfig();
       if (!config) throw stacklessError('Config not fetched');
 
       const { isValid, totalAmount, privateKey, error } = validateTransferOptions(request, wif);
@@ -432,17 +729,8 @@ export class MNEEService {
       const address = privateKey.toAddress();
       const utxos = await this.getEnoughUtxos(address, totalAtomicTokenAmount);
 
-      // const fee =
-      //   request.find((req) => req.address === config.burnAddress) !== undefined
-      //     ? 0
-      //     : config.fees.find(
-      //         (fee: { min: number; max: number }) =>
-      //           totalAtomicTokenAmount >= fee.min && totalAtomicTokenAmount <= fee.max,
-      //       )?.fee;
-      const fee = config.fees.find(
-                  (fee: { min: number; max: number }) =>
-                    totalAtomicTokenAmount >= fee.min && totalAtomicTokenAmount <= fee.max,
-                  )?.fee;// changes made for resolving burnAddress transfer MN-122
+      // Note: burn-address fee exemption was removed in MN-122; fee is always looked up from tiers.
+      const fee = this.lookupFee(totalAtomicTokenAmount, config.fees);
       if (fee === undefined) throw stacklessError('Fee ranges inadequate');
 
       const tx = new Transaction(1, [], [], 0);
@@ -480,66 +768,9 @@ export class MNEEService {
         tx.addOutput(await this.createInscription(changeAddress, change, config));
       }
       if (transferOptions?.extraData) {
-        const items = Array.isArray(transferOptions.extraData)
-          ? transferOptions.extraData
-          : [transferOptions.extraData];
-
-        if (items.length === 0) {
-          throw stacklessError('extraData must contain at least one item');
-        }
-        const buffers: Buffer[] = [];
-        for (let i = 0; i < items.length; i++) {
-          const item = items[i];
-    
-        if (!item || typeof item.data !== 'string') {
-          throw stacklessError(`Invalid extraData at index ${i}: data must be a string`);
-        }
-        if (item.type === 'utf8') {
-          const buf = Buffer.from(item.data, 'utf8');
-          if (buf.length === 0) {
-            throw stacklessError(`extraData at index ${i} is empty after UTF-8 encoding`);
-          }
-          buffers.push(buf);
-        } else if (item.type === 'hex') {
-          const hex = item.data.trim();
-          if (!hex) {
-            throw stacklessError(`extraData at index ${i} is empty`);
-          }
-          if (!/^[0-9a-fA-F]+$/.test(hex) || hex.length % 2 !== 0) {
-            throw stacklessError(
-              `extraData at index ${i} is not valid hex or has odd length: "${hex}"`,
-            );
-          }
-          const buf = Buffer.from(hex, 'hex');
-          if (buf.length === 0) {
-            throw stacklessError(`extraData at index ${i} decoded to an empty buffer`);
-          }
-
-          buffers.push(buf);
-        } else {
-          throw stacklessError(`Unsupported extraData type at index ${i}: ${(item as any).type}`);
-        }
-      }
-      const totalBytes = buffers.reduce((sum, b) => sum + b.length, 0);
-      if (totalBytes > 512) {
-        throw stacklessError(
-          `extraData is too large: ${totalBytes} bytes (max allowed is 512 bytes)`,
-        );
+        this.addExtraDataOutput(tx, transferOptions.extraData);
       }
 
-      const script = new Script();
-      script.writeOpCode(OP.OP_0);
-      script.writeOpCode(OP.OP_RETURN);
-      for (const buf of buffers) {
-        script.writeBin(Array.from(buf));
-      }
-      tx.addOutput({
-        satoshis: 0,
-        lockingScript: LockingScript.fromBinary(script.toBinary()),
-      });
-     }
-
-    
       const privateKeys = new Map<number, PrivateKey>();
       for (let i = 0; i < tx.inputs.length; i++) {
         privateKeys.set(i, privateKey);
@@ -554,6 +785,10 @@ export class MNEEService {
         return { rawtx };
       }
 
+      const now = Date.now();
+      for (const input of tx.inputs) {
+        this.usedOutpoints.set(`${input.sourceTXID}_${input.sourceOutputIndex}`, now);
+      }
       const { ticketId } = await this.submitRawTx(rawtx, transferOptions);
       if (!ticketId) throw stacklessError('Failed to broadcast transaction');
       return { ticketId };
@@ -592,7 +827,7 @@ export class MNEEService {
       );
 
       // Submit to V2 transfer endpoint for async processing
-      const response = await fetch(`${this.mneeApi}/v2/transfer?auth_token=${this.mneeApiKey}`, {
+      const response = await this.fetchWithBackoff(`${this.mneeApi}/v2/transfer?auth_token=${this.mneeApiKey}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -601,7 +836,12 @@ export class MNEEService {
       });
 
       if (!response.ok) {
-        throw stacklessError(`Failed to submit transaction`);
+        const body = await response.text().catch(() => '');
+        const lockMatch = body.match(/outpoint ([0-9a-fA-F]{64})_(\d+) was locked/);
+        if (lockMatch) {
+          this.usedOutpoints.set(`${lockMatch[1]}_${lockMatch[2]}`, Date.now());
+        }
+        throw stacklessError(`Failed to submit transaction: ${body}`);
       }
 
       const ticketId = await response.text();
@@ -621,7 +861,7 @@ export class MNEEService {
         throw stacklessError('Ticket ID is required');
       }
 
-      const response = await fetch(`${this.mneeApi}/v2/ticket?ticketID=${ticketId}&auth_token=${this.mneeApiKey}`, {
+      const response = await this.fetchWithBackoff(`${this.mneeApi}/v2/ticket?ticketID=${ticketId}&auth_token=${this.mneeApiKey}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -650,10 +890,10 @@ export class MNEEService {
     }
 
     try {
-      const config = this.mneeConfig || (await this.getCosignerConfig());
+      const config = await this.getConfig();
       if (!config) throw stacklessError('Config not fetched');
 
-      const response = await fetch(`${this.mneeApi}/v2/balance?auth_token=${this.mneeApiKey}`, {
+      const response = await this.fetchWithBackoff(`${this.mneeApi}/v2/balance?auth_token=${this.mneeApiKey}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -702,9 +942,9 @@ export class MNEEService {
       console.warn(`\x1b[33m${totalInvalidAddresses} invalid bitcoin addresses will be ignored\x1b[0m`);
     }
     try {
-      const config = this.mneeConfig || (await this.getCosignerConfig());
+      const config = await this.getConfig();
       if (!config) throw stacklessError('Config not fetched');
-      const response = await fetch(`${this.mneeApi}/v2/balance?auth_token=${this.mneeApiKey}`, {
+      const response = await this.fetchWithBackoff(`${this.mneeApi}/v2/balance?auth_token=${this.mneeApiKey}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -882,7 +1122,7 @@ export class MNEEService {
 
   public async validateMneeTx(rawTx: string, request?: SendMNEE[]) {
     try {
-      const config = this.mneeConfig || (await this.getCosignerConfig());
+      const config = await this.getConfig();
       if (!config) throw stacklessError('Config not fetched');
       const tx = Transaction.fromHex(rawTx);
       const isValid = this.processMneeValidation(tx, config, request);
@@ -919,7 +1159,7 @@ export class MNEEService {
   ): Promise<{ address: string; syncs: MneeSync[] }[]> {
     try {
       const addressArray = Array.isArray(addresses) ? addresses : [addresses];
-      const response = await fetch(
+      const response = await this.fetchWithBackoff(
         `${this.mneeApi}/v1/sync?auth_token=${this.mneeApiKey}${fromScore ? `&from=${fromScore}` : ''}${
           limit ? `&limit=${limit}` : ''
         }${order ? `&order=${order}` : ''}`,
@@ -980,7 +1220,7 @@ export class MNEEService {
     }
 
     try {
-      const config = this.mneeConfig || (await this.getCosignerConfig());
+      const config = await this.getConfig();
       if (!config) throw stacklessError('Config not fetched');
 
       const syncsByAddress = await this.getMneeSyncs(address, fromScore, limit, order);
@@ -1065,7 +1305,7 @@ export class MNEEService {
     }
 
     try {
-      const config = this.mneeConfig || (await this.getCosignerConfig());
+      const config = await this.getConfig();
       if (!config) throw stacklessError('Config not fetched');
 
       // Group addressParams by fromScore, limit, and order to batch requests efficiently
@@ -1221,23 +1461,45 @@ export class MNEEService {
     return 'transfer';
   }
 
-  private async processTransactionInputs(tx: Transaction, config: MNEEConfig): Promise<TxInputResponse> {
+  private async processTransactionInputs(
+    tx: Transaction,
+    config: MNEEConfig,
+    opts?: { noNetwork?: boolean },
+  ): Promise<TxInputResponse> {
     const txid = tx.id('hex');
     const inputs: ProcessedInput[] = new Array(tx.inputs.length);
     let total = BigInt(0);
     let environment: Environment | undefined;
     let type: TxOperation | undefined;
 
-    // Create a rate limiter for 3 requests per second (default MNEE API rate limit ok being hardcoded)
-    const rateLimiter = new RateLimiter(3, 334);
-
     const fetchTasks = tx.inputs.map(async (input, index) => {
       if (!input.sourceTXID) {
         return { index, sourceTx: null };
       }
 
+      // Use embedded source transaction if available (e.g. parsed from BEEF/EF format) — no network call needed
+      if (input.sourceTransaction) {
+        const sourceTx = input.sourceTransaction;
+        if (!sourceTx.outputs || !sourceTx.outputs[input.sourceOutputIndex]) {
+          return { index, sourceTx: null };
+        }
+        return { index, sourceTx };
+      }
+
+      // BEEF parsing path: never fetch from network. Missing parents become unknown inputs.
+      // The MNEE API doesn't serve non-MNEE BSV transactions (e.g. plain fee inputs) or oversized
+      // MNEE distribution txs, so a "complete" BEEF often isn't constructible — that's expected.
+      if (opts?.noNetwork) {
+        return { index, sourceTx: null };
+      }
+
+      // fetchRawTx now owns rate-limiting and cache dedup internally, so concurrent
+      // duplicates resolve via the cached promise without queueing a limiter slot.
       try {
-        const sourceTx = await rateLimiter.execute(() => this.fetchRawTx(input.sourceTXID!));
+        const sourceTx = await this.fetchRawTx(input.sourceTXID!);
+        if (sourceTx && (!sourceTx.outputs || !sourceTx.outputs[input.sourceOutputIndex])) {
+          return { index, sourceTx: null };
+        }
         return { index, sourceTx };
       } catch (error) {
         if (isNetworkError(error)) {
@@ -1381,8 +1643,14 @@ export class MNEEService {
     tx: Transaction,
     options?: ParseOptions,
   ): ParseTxResponse | ParseTxExtendedResponse {
+    // Validated path: `input.address` is set only for inputs whose parent output
+    // resolved a cosigner/P2PKH MNEE address.
+    // Fast path: `input.address` is set for any input whose unlocking script
+    // matches a MNEE-spendable template (cosigner 3-chunk or plain P2PKH 2-chunk).
+    // The 2-chunk shape lets us surface mint sentinel inputs without a parent
+    // fetch, at the cost of also surfacing plain BSV fee payers in transfers.
     const simpleInputs: TxAddressAmount[] = inputData.inputs
-      .filter((input) => input.inscription && input.address)
+      .filter((input) => input.address)
       .map((input) => ({
         address: input.address!,
         amount: input.amount,
@@ -1444,43 +1712,93 @@ export class MNEEService {
     tx: Transaction,
     config: MNEEConfig,
     options?: ParseOptions,
+    internalOpts?: { noNetwork?: boolean },
   ): Promise<ParseTxResponse | ParseTxExtendedResponse> {
     const txid = tx.id('hex');
 
-    const inputData = await this.processTransactionInputs(tx, config);
+    const hasEmbeddedSources = tx.inputs.some((i) => i.sourceTransaction);
+    // Default: fast path (no per-input source fetch). Caller opts into the full
+    // input-fetching path with `skipInputFetch: false` for cases that need
+    // per-input token amounts (e.g. proving conservation independently of the
+    // approver signature). Embedded sources (BEEF) always take the full path
+    // because validation is free when parents are already present.
+    const useFastPath = options?.skipInputFetch !== false && !hasEmbeddedSources;
+
     const outputData = this.processTransactionOutputs(tx, config);
 
-    const environment = outputData.environment || inputData.environment || 'sandbox';
+    let inputData: TxInputResponse;
+    let type: TxOperation;
+    let isValid: boolean;
+    let environment: Environment;
 
-    let type = outputData.type || inputData.type || 'transfer';
+    if (useFastPath) {
+      // Derive sender addresses from each input's unlocking script. Pubkey lives in
+      // the unlocking script (last data push) for both cosigner and plain P2PKH
+      // templates, so the address resolves without fetching the parent tx.
+      const fastInputs: ProcessedInput[] = tx.inputs.map((input) => {
+        const address = deriveAddressFromUnlockingScript(input.unlockingScript);
+        const isMneeInput = looksLikeMneeUnlock(input.unlockingScript);
+        return {
+          address: isMneeInput ? address : undefined,
+          amount: 0,
+          satoshis: 0,
+          inscription: null,
+          cosigner: undefined,
+        };
+      });
+      inputData = { inputs: fastInputs, total: BigInt(0) };
 
-    if (type === 'transfer') {
-      const hasMintInputAddress = inputData.inputs.some(
-        (input) => input.inscription && (input.address === PROD_MINT_ADDRESS || input.address === SANDBOX_MINT_ADDRESS),
-      );
-
-      if (hasMintInputAddress) {
-        type = 'mint';
+      // Mint detection: input from the mint sentinel address now works in fast
+      // path because we derived addresses locally.
+      type = outputData.type || 'transfer';
+      if (type === 'transfer') {
+        const hasMintInputAddress = fastInputs.some(
+          (i) => i.address === PROD_MINT_ADDRESS || i.address === SANDBOX_MINT_ADDRESS,
+        );
+        if (hasMintInputAddress) type = 'mint';
       }
-    }
 
-    // Check if any output has redeem metadata (check this for any transfer-like operation)
-    // This should override mint/transfer types as redeem is a special operation marked by metadata
-    if (type === 'transfer' || type === 'mint') {
-      const hasRedeemOutput = outputData.outputs.some((output) => output.inscription?.metadata?.action === 'redeem');
-
-      if (hasRedeemOutput) {
-        type = 'redeem';
+      // Redeem check is output-based, still valid in fast path
+      if (type === 'transfer' || type === 'mint') {
+        const hasRedeemOutput = outputData.outputs.some((output) => output.inscription?.metadata?.action === 'redeem');
+        if (hasRedeemOutput) type = 'redeem';
       }
-    }
 
-    // If there are no inputs with inscriptions, it can be nothing but a deploy
-    const inputsWithInscriptions = inputData.inputs.filter((input) => input.inscription);
-    if (inputsWithInscriptions.length === 0 && inputData.inputs.length > 0) {
-      type = 'deploy';
-    }
+      // Script/cosigner/token-ID validation only — no independent token-conservation
+      // check. For approver-signed transactions (isValid === true) conservation is
+      // a protocol invariant, so we project inputTotal = outputTotal. Callers that
+      // need to verify conservation independently must pass `skipInputFetch: false`.
+      isValid = this.processMneeValidation(tx, config);
+      environment = outputData.environment || 'sandbox';
+      if (isValid && type !== 'deploy') {
+        inputData.total = outputData.total;
+      }
+    } else {
+      inputData = await this.processTransactionInputs(tx, config, internalOpts);
 
-    const isValid = this.validateTransaction(config, tx, type, inputData.total, outputData.total);
+      environment = outputData.environment || inputData.environment || 'sandbox';
+      type = outputData.type || inputData.type || 'transfer';
+
+      if (type === 'transfer') {
+        const hasMintInputAddress = inputData.inputs.some(
+          (input) => input.inscription && (input.address === PROD_MINT_ADDRESS || input.address === SANDBOX_MINT_ADDRESS),
+        );
+        if (hasMintInputAddress) type = 'mint';
+      }
+
+      if (type === 'transfer' || type === 'mint') {
+        const hasRedeemOutput = outputData.outputs.some((output) => output.inscription?.metadata?.action === 'redeem');
+        if (hasRedeemOutput) type = 'redeem';
+      }
+
+      // If there are no inputs with inscriptions, it can be nothing but a deploy
+      const inputsWithInscriptions = inputData.inputs.filter((input) => input.inscription);
+      if (inputsWithInscriptions.length === 0 && inputData.inputs.length > 0) {
+        type = 'deploy';
+      }
+
+      isValid = this.validateTransaction(config, tx, type, inputData.total, outputData.total);
+    }
 
     return this.buildParseResponse(txid, environment, type, inputData, outputData, isValid, tx, options);
   }
@@ -1491,7 +1809,7 @@ export class MNEEService {
       throw stacklessError('A valid transaction ID is required');
     }
 
-    const config = this.mneeConfig || (await this.getCosignerConfig());
+    const config = await this.getConfig();
     if (!config) throw stacklessError('Config not fetched');
     const tx = await this.fetchRawTx(txid);
     if (!tx) throw stacklessError('Failed to fetch transaction');
@@ -1509,9 +1827,45 @@ export class MNEEService {
       throw stacklessError('Invalid raw transaction hex');
     }
     const tx = Transaction.fromHex(rawTxHex);
-    const config = this.mneeConfig || (await this.getCosignerConfig());
+    const config = await this.getConfig();
     if (!config) throw stacklessError('Config not fetched');
     return await this.parseTransaction(tx, config, options);
+  }
+
+  /**
+   * Parse a transaction from BEEF (Bitcoin Extended Format) hex — purely compute-based, no API calls.
+   *
+   * BEEF embeds parent transactions inline; embedded parents resolve locally with no network
+   * lookup. Inputs whose parent is NOT embedded (e.g. plain BSV fee inputs the MNEE API doesn't
+   * serve, or oversized MNEE distribution txs the indexer can't return) resolve as "unknown" —
+   * address: undefined, amount/satoshis: 0 — rather than triggering a network fetch. This keeps
+   * the call strictly compute-only and matches the lenient behaviour of parseTxFromRawTx when
+   * a parent can't be obtained.
+   *
+   * Use `Transaction.toHexBEEF()` from @bsv/sdk to produce the BEEF hex after building a tx.
+   *
+   * @param beefHex - A BEEF-encoded transaction hex string
+   * @param options - Optional parse options (e.g. includeRaw)
+   */
+  public async parseTxFromBEEF(
+    beefHex: string,
+    options?: ParseOptions,
+  ): Promise<ParseTxResponse | ParseTxExtendedResponse> {
+    if (!beefHex || typeof beefHex !== 'string' || beefHex.trim() === '') {
+      throw stacklessError('A valid BEEF hex string is required');
+    }
+
+    let tx: Transaction;
+    try {
+      tx = Transaction.fromHexBEEF(beefHex);
+    } catch {
+      throw stacklessError('Invalid BEEF hex: could not deserialise transaction');
+    }
+
+    const config = await this.getConfig();
+    if (!config) throw stacklessError('Config not fetched');
+
+    return this.parseTransaction(tx, config, options, { noNetwork: true });
   }
 
   public parseInscription(script: Script) {
@@ -1759,7 +2113,7 @@ export class MNEEService {
   }
 
   public async buildUnsignedMneeTransaction(options: MultisigBuildOptions): Promise<UnsignedTransactionResult> {
-    const config = this.mneeConfig || (await this.getCosignerConfig());
+    const config = await this.getConfig();
     if (!config) throw stacklessError('Config not fetched');
 
     // Calculate total output amount
@@ -1941,7 +2295,7 @@ export class MNEEService {
     transferOptions?: TransferOptions,
   ): Promise<TransferResponse> {
     try {
-      const config = this.mneeConfig || (await this.getCosignerConfig());
+      const config = await this.getConfig();
       if (!config) throw stacklessError('Config not fetched');
 
       const { isValid, error } = validateTransferMultiOptions(options);
@@ -2009,70 +2363,9 @@ export class MNEEService {
       );
       if (changeResult.error) throw stacklessError(changeResult.error);
       
-      // === ADD OP_RETURN LOGIC HERE (SAME AS IN transfer METHOD) ===
       if (transferOptions?.extraData) {
-        const items = Array.isArray(transferOptions.extraData)
-          ? transferOptions.extraData
-          : [transferOptions.extraData];
-
-        if (items.length === 0) {
-          throw stacklessError('extraData must contain at least one item');
-        }
-
-        const buffers: Buffer[] = [];
-        for (let i = 0; i < items.length; i++) {
-          const item = items[i];
-    
-          if (!item || typeof item.data !== 'string') {
-            throw stacklessError(`Invalid extraData at index ${i}: data must be a string`);
-          }
-
-          if (item.type === 'utf8') {
-            const buf = Buffer.from(item.data, 'utf8');
-            if (buf.length === 0) {
-              throw stacklessError(`extraData at index ${i} is empty after UTF-8 encoding`);
-            }
-            buffers.push(buf);
-          } else if (item.type === 'hex') {
-            const hex = item.data.trim();
-            if (!hex) {
-              throw stacklessError(`extraData at index ${i} is empty`);
-            }
-            if (!/^[0-9a-fA-F]+$/.test(hex) || hex.length % 2 !== 0) {
-              throw stacklessError(
-                `extraData at index ${i} is not valid hex or has odd length: "${hex}"`,
-              );
-            }
-            const buf = Buffer.from(hex, 'hex');
-            if (buf.length === 0) {
-              throw stacklessError(`extraData at index ${i} decoded to an empty buffer`);
-            }
-            buffers.push(buf);
-          } else {
-            throw stacklessError(`Unsupported extraData type at index ${i}: ${(item as any).type}`);
-          }
-        }
-
-        const totalBytes = buffers.reduce((sum, b) => sum + b.length, 0);
-        if (totalBytes > 512) {
-          throw stacklessError(
-            `extraData is too large: ${totalBytes} bytes (max allowed is 512 bytes)`,
-          );
-        }
-
-        const script = new Script();
-        script.writeOpCode(OP.OP_0);
-        script.writeOpCode(OP.OP_RETURN);
-        for (const buf of buffers) {
-          script.writeBin(Array.from(buf));
-        }
-      
-        tx.addOutput({
-          satoshis: 0,
-          lockingScript: LockingScript.fromBinary(script.toBinary()),
-        });
+        this.addExtraDataOutput(tx, transferOptions.extraData);
       }
-      // === END OP_RETURN LOGIC ===
       
       const signResult = await this.signAllInputs(tx, privateKeys);
       if (signResult.error) throw stacklessError(signResult.error);
@@ -2084,6 +2377,11 @@ export class MNEEService {
 
       if (!transferOptions?.broadcast) {
         return { rawtx };
+      }
+
+      const now = Date.now();
+      for (const input of tx.inputs) {
+        this.usedOutpoints.set(`${input.sourceTXID}_${input.sourceOutputIndex}`, now);
       }
 
       const { ticketId } = await this.submitRawTx(rawtx, transferOptions);

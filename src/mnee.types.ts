@@ -231,6 +231,34 @@ export type ParseTxResponse = {
 
 export interface ParseOptions {
   includeRaw?: boolean;
+  /**
+   * Skip fetching input source transactions from the network. Defaults to `true`.
+   *
+   * Fast path (default, `skipInputFetch !== false`):
+   *   - sender addresses derived from each input's unlocking script (no network call)
+   *   - mint type detected when a derived sender address matches the mint sentinel
+   *   - `inputs[]` may also include plain BSV fee payers in transfers because the
+   *     fast path cannot distinguish a MNEE-locked P2PKH input from a fee-paying
+   *     P2PKH input without fetching the parent. Pass `skipInputFetch: false`
+   *     when strict MNEE-only input attribution matters.
+   *   - `inputTotal` projected to equal `outputTotal` for approver-validated
+   *     transactions (cosigner signature guarantees conservation as a protocol
+   *     invariant); reported as `"0"` when `isValid` is false
+   *   - `isValid` reflects script/cosigner/token-id checks only — conservation is
+   *     not verified independently
+   *
+   * Validated path (`skipInputFetch: false`):
+   *   - parent transactions fetched per input to read on-chain inscriptions
+   *   - per-input token amounts populated
+   *   - `inputTotal` summed from parent inscriptions and conservation checked
+   *     against `outputTotal`
+   *   - significantly slower (one network round trip per input)
+   *
+   * Use the validated path only when you need to verify conservation
+   * independently of the approver signature or when per-input token amounts
+   * are required.
+   */
+  skipInputFetch?: boolean;
 }
 
 export interface ParseTxExtendedResponse extends ParseTxResponse {

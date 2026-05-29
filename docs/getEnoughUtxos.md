@@ -60,7 +60,11 @@ type MNEEUtxo = {
 
 ## Error Handling
 
-The method throws an error if there are insufficient MNEE tokens in the address to meet the required amount:
+The method can throw the following errors:
+
+### Insufficient Balance
+
+Thrown when the address does not hold enough MNEE tokens to meet the required amount:
 
 ```typescript
 try {
@@ -70,6 +74,27 @@ try {
   console.error(error.message);
 }
 ```
+
+### UTXOs Temporarily Locked
+
+```typescript
+try {
+  const utxos = await mnee.getEnoughUtxos(address, 1000000);
+} catch (error) {
+  if (error.message === 'UTXOs temporarily locked by recent transactions, retry shortly') {
+    // Wait ~30 seconds and retry
+    await new Promise((resolve) => setTimeout(resolve, 30000));
+    const utxos = await mnee.getEnoughUtxos(address, 1000000);
+  }
+}
+```
+
+Thrown when the SDK's client-side outpoint cache has marked enough recently broadcast UTXOs that the remaining unlocked UTXOs cannot cover the required amount.
+
+- The SDK tracks outpoints used in recent broadcasts to avoid the MNEE API's ~30s outpoint lock window, which would otherwise cause double-spend rejections on rapid successive transfers from the same instance.
+- Cached outpoints have a TTL of 35 seconds; after expiry they become eligible for selection again.
+- Callers should wait approximately 30 seconds before retrying.
+- Note: the cache is per-instance. Callers that broadcast from multiple SDK instances or across processes do not share this cache and still rely on the MNEE API's server-side outpoint lock for double-spend protection.
 
 ## Performance Considerations
 

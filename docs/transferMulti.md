@@ -292,6 +292,7 @@ async function spendSpecificUTXOs(utxoList, recipient) {
 - Change calculation is manual unless using single change address
 - When using multiple change addresses, ensure amounts are specified correctly
 - Fees are automatically calculated and deducted from outputs
+- After a successful broadcast, `transferMulti` marks the supplied input outpoints into the SDK instance's in-memory outpoint cache. A subsequent `transfer()` call on the same SDK instance within ~35 seconds will not attempt to reuse those outpoints during automatic UTXO selection. Because `transferMulti` requires caller-supplied inputs, the locked-retry error does not surface from this method directly; however, passing outpoints that were recently spent (by this SDK or elsewhere) will still be rejected by the MNEE API with HTTP 400, now surfaced with the response body included in the error message via the updated `submitRawTx` error format.
 
 ## Error Handling
 
@@ -313,6 +314,16 @@ try {
       break;
     case error.message.includes('Insufficient MNEE balance'):
       console.error("Input UTXOs don't cover output amounts + fees");
+      break;
+    case error.message.includes('HTTP 400'):
+      // The MNEE API locks outpoints for ~30 seconds after a broadcast.
+      // Because `transferMulti` accepts caller-supplied inputs, the SDK
+      // cannot pre-filter them: passing an outpoint that was just spent
+      // by a recent broadcast will surface as an HTTP 400 from the API
+      // (the response body is now included in the error message via the
+      // updated `submitRawTx` error format). Wait ~30 seconds and retry,
+      // or supply different inputs.
+      console.error('API rejected inputs (possibly recently spent). Retry after ~30 seconds or use different UTXOs.');
       break;
     case error.message.includes('Failed to broadcast transaction'):
       console.error('Cosigner rejected the transaction');

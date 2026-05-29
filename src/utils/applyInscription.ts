@@ -1,4 +1,4 @@
-import { LockingScript } from '@bsv/sdk';
+import { LockingScript, Utils } from '@bsv/sdk';
 import { stacklessError } from './stacklessError';
 
 /**
@@ -26,7 +26,7 @@ export type Inscription = {
  * @returns {string} The hexadecimal representation of the input string
  */
 const toHex = (utf8Str: string): string => {
-  return Buffer.from(utf8Str).toString('hex');
+  return Utils.toHex(Utils.toArray(utf8Str, 'utf8'));
 };
 
 export const MAP_PREFIX = '1PuQa7K62MiKCtssSLKy1kh56WWU7MtUR5';
@@ -41,8 +41,7 @@ export const applyInscription = (
   // This can be omitted for reinscriptions that just update metadata
   if (inscription?.dataB64 !== undefined && inscription?.contentType !== undefined) {
     const ordHex = toHex('ord');
-    const fsBuffer = Buffer.from(inscription.dataB64, 'base64');
-    const fileHex = fsBuffer.toString('hex').trim();
+    const fileHex = Utils.toHex(Utils.toArray(inscription.dataB64, 'base64')).trim();
     if (!fileHex) {
       throw stacklessError('Invalid file data');
     }

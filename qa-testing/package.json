@@ -6,7 +6,7 @@
   "scripts": {
     "build": "cd .. && npm run build && cd qa-testing && npm run prepare-package",
     "prepare-package": "mkdir -p versions && cp ../mnee-ts-sdk-*.tgz versions/mnee-ts-sdk-latest.tgz && npm run install:latest",
-    "install:latest": "rm -f package-lock.json && npm install",
+    "install:latest": "rm -f package-lock.json && rm -rf node_modules && npm install",
     "test:balance": "node balance.js",
     "test:balances": "node balances.js",
     "test:batch": "node batch.js",
@@ -14,12 +14,14 @@
     "test:transfer": "node transfer.js",
     "test:transferMulti": "node transferMulti.js",
     "test:all": "npm run test:balance && npm run test:balances && npm run test:batch && npm run test:config",
+    "test:perf": "node perf/perf-suite.mjs",
+    "test:perf:full": "node perf/perf-suite.mjs --include-mutating --out perf/report.json",
     "webhook": "node webhook-server.js",
     "test-webhook": "node test-webhook.js"
   },
   "dependencies": {
-    "express": "^4.21.2",
-    "@mnee/ts-sdk": "file:versions/mnee-ts-sdk-latest.tgz"
+    "@mnee/ts-sdk": "file:versions/mnee-ts-sdk-latest.tgz",
+    "express": "^4.21.2"
   },
   "engines": {
     "node": ">=16.14.0"

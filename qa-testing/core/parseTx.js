@@ -192,28 +192,39 @@ async function testAmountCalculations() {
   try {
     const history = await mnee.recentTxHistory(TEST_ADDRESS, undefined, 1);
 
-    if (history.history.length > 0) {
-      const txid = history.history[0].txid;
-      const parsed = await mnee.parseTx(txid);
-
-      // Calculate totals manually
-      const inputTotal = parsed.inputs.reduce((sum, input) => sum + input.amount, 0);
-      const outputTotal = parsed.outputs.reduce((sum, output) => sum + output.amount, 0);
-
-      console.log(`  Input total: ${inputTotal} atomic units (${parsed.inputTotal})`);
-      console.log(`  Output total: ${outputTotal} atomic units (${parsed.outputTotal})`);
-
-      // Totals are provided as strings, parse them
-      assert(parseInt(parsed.inputTotal) === inputTotal, 'Input total should match sum of inputs');
-      assert(parseInt(parsed.outputTotal) === outputTotal, 'Output total should match sum of outputs');
-
-      // Fee calculation (if inputs > outputs)
-      if (inputTotal > outputTotal) {
-        const fee = inputTotal - outputTotal;
-        console.log(`  Transaction fee: ${fee} atomic units (${mnee.fromAtomicAmount(fee)} MNEE)`);
-      }
-    } else {
+    if (history.history.length === 0) {
       console.log('  No transactions to test amount calculations');
+      return;
+    }
+
+    const txid = history.history[0].txid;
+
+    // Default (fast) mode: per-input token amounts are 0; inputTotal is projected
+    // from outputTotal for approver-validated transactions.
+    const fast = await mnee.parseTx(txid);
+    const outputSum = fast.outputs.reduce((sum, output) => sum + output.amount, 0);
+    const inputSumFast = fast.inputs.reduce((sum, input) => sum + input.amount, 0);
+
+    console.log(`  [fast]      inputTotal=${fast.inputTotal} outputTotal=${fast.outputTotal} per-input sum=${inputSumFast}`);
+    assert(parseInt(fast.outputTotal) === outputSum, 'Output total should match sum of outputs');
+    assert(inputSumFast === 0, 'Fast mode per-input amounts should be 0');
+    if (fast.isValid) {
+      assert(fast.inputTotal === fast.outputTotal, 'Fast mode: inputTotal projected to outputTotal when valid');
+    }
+
+    // Validated mode: per-input amounts populated from parent inscriptions and
+    // should sum to inputTotal.
+    const full = await mnee.parseTx(txid, { skipInputFetch: false });
+    const inputSumFull = full.inputs.reduce((sum, input) => sum + input.amount, 0);
+    const outputSumFull = full.outputs.reduce((sum, output) => sum + output.amount, 0);
+
+    console.log(`  [validated] inputTotal=${full.inputTotal} outputTotal=${full.outputTotal} per-input sum=${inputSumFull}`);
+    assert(parseInt(full.inputTotal) === inputSumFull, 'Validated mode: input total should match sum of inputs');
+    assert(parseInt(full.outputTotal) === outputSumFull, 'Validated mode: output total should match sum of outputs');
+
+    if (inputSumFull > outputSumFull) {
+      const fee = inputSumFull - outputSumFull;
+      console.log(`  Transaction fee: ${fee} atomic units (${mnee.fromAtomicAmount(fee)} MNEE)`);
     }
   } catch (error) {
     console.log(`  Amount calculations error: ${error.message}`);
@@ -357,6 +368,84 @@ async function testKnownTransactionTypes() {
   }
 }
 
+// Test 13.10: fast (default) mode — addresses derived from scriptSig, no parent fetch
+async function testFastMode() {
+  try {
+    const txid = 'baa78cb903e0bf7af6e5fc5a27de59d587fc5ff4f08ed5e7886ab1a7d2741c5b';
+
+    const start = Date.now();
+    const parsed = await mnee.parseTx(txid); // default — skipInputFetch is true
+    const elapsed = Date.now() - start;
+
+    console.log(`  Fast parse completed in ${elapsed}ms`);
+
+    // Standard fields present
+    assert(parsed.txid === txid, 'txid should match');
+    assert(typeof parsed.environment === 'string', 'environment should be string');
+    assert(['transfer', 'burn', 'deploy', 'mint', 'redeem'].includes(parsed.type), 'type should be valid');
+    assert(Array.isArray(parsed.inputs), 'inputs should be array');
+    assert(Array.isArray(parsed.outputs), 'outputs should be array');
+    assert(typeof parsed.isValid === 'boolean', 'isValid should be boolean');
+
+    // Sender addresses derived locally — populated even without source-tx fetch
+    assert(parsed.inputs.length > 0, 'fast mode should surface inputs derived from scriptSig');
+    for (const input of parsed.inputs) {
+      assert(typeof input.address === 'string' && input.address.length > 0, 'fast mode input should have address');
+      assert(input.amount === 0, 'fast mode per-input amount should be 0');
+    }
+
+    // inputTotal is projected from outputTotal when valid (cosigner conservation invariant)
+    if (parsed.isValid) {
+      assert(parsed.inputTotal === parsed.outputTotal, 'fast mode inputTotal should equal outputTotal when valid');
+    } else {
+      assert(parsed.inputTotal === '0', 'fast mode inputTotal should be "0" when isValid is false');
+    }
+
+    assert(parsed.outputs.length > 0, 'outputs should be populated from output scripts');
+
+    console.log(`  Type: ${parsed.type}, isValid: ${parsed.isValid}`);
+    console.log(`  Inputs: ${parsed.inputs.length}, Outputs: ${parsed.outputs.length}`);
+    console.log(`  inputTotal=${parsed.inputTotal} outputTotal=${parsed.outputTotal}`);
+  } catch (error) {
+    console.log(`  Fast mode error: ${error.message}`);
+    throw error;
+  }
+}
+
+// Test 13.11: validated mode — skipInputFetch:false fetches parents + populates per-input amounts
+async function testValidatedMode() {
+  try {
+    const txid = 'baa78cb903e0bf7af6e5fc5a27de59d587fc5ff4f08ed5e7886ab1a7d2741c5b';
+
+    const start = Date.now();
+    const parsed = await mnee.parseTx(txid, { skipInputFetch: false });
+    const elapsed = Date.now() - start;
+
+    console.log(`  Validated parse completed in ${elapsed}ms`);
+
+    assert(parsed.txid === txid, 'txid should match');
+    assert(Array.isArray(parsed.inputs), 'inputs should be array');
+    assert(parsed.inputs.length > 0, 'validated mode should populate inputs');
+
+    for (const input of parsed.inputs) {
+      assert(typeof input.address === 'string' && input.address.length > 0, 'validated mode input should have address');
+      assert(typeof input.amount === 'number', 'validated mode input amount should be a number');
+    }
+
+    const inputSum = parsed.inputs.reduce((s, i) => s + i.amount, 0);
+    assert(
+      parseInt(parsed.inputTotal) === inputSum,
+      `validated inputTotal should equal sum of per-input amounts (${parsed.inputTotal} vs ${inputSum})`,
+    );
+
+    console.log(`  Type: ${parsed.type}, isValid: ${parsed.isValid}`);
+    console.log(`  Inputs: ${parsed.inputs.length}, sum=${inputSum}, inputTotal=${parsed.inputTotal}`);
+  } catch (error) {
+    console.log(`  Validated mode error: ${error.message}`);
+    throw error;
+  }
+}
+
 // Run tests
 async function runTests() {
   console.log('Running parseTx tests...\n');
@@ -401,6 +490,14 @@ async function runTests() {
     console.log('Test 13.9: Test known transaction types');
     await testKnownTransactionTypes();
     console.log('✅ Test 13.9 passed\n');
+
+    console.log('Test 13.10: fast (default) mode — addresses derived from scriptSig, no parent fetch');
+    await testFastMode();
+    console.log('✅ Test 13.10 passed\n');
+
+    console.log('Test 13.11: validated mode — skipInputFetch:false fetches parents');
+    await testValidatedMode();
+    console.log('✅ Test 13.11 passed\n');
 
     console.log('All tests passed! ✅');
   } catch (error) {

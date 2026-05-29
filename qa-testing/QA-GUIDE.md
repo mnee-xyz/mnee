@@ -2,20 +2,33 @@
 
 ## Quick Start for QA Team
 
+> This repository contains **two** `package.json` files:
+> - **`./package.json`** — the SDK itself (`@mnee/ts-sdk`). This is what gets published.
+> - **`./qa-testing/package.json`** — a standalone consumer project that installs the built SDK from a local `.tgz` and runs the test suite.
+>
+> **Always run testing from the repository root.** Do not `cd qa-testing` first; the root `npm test` script handles building the SDK, packaging it, installing it into `qa-testing/`, and running the suite.
+
 ```bash
 # Clone and setup
 git clone [repo-url]
 cd mnee
 git checkout qa-testing
-cd qa-testing
 
-# Build and install
-npm run build
+# One-time install of SDK dev dependencies
 npm install
 
-# Run all tests
-node run-all.js
+# Build the SDK and run the full QA test suite
+npm run build
+npm test
 ```
+
+That's it. `npm test` (defined in the root `package.json`) does:
+
+```
+cd qa-testing && npm run prepare-package && node run-all.js
+```
+
+`prepare-package` copies the freshly built `mnee-ts-sdk-*.tgz` into `qa-testing/versions/`, reinstalls it, and then `run-all.js` executes every test.
 
 ## Project Overview
 
@@ -114,48 +127,34 @@ The test suite is now completely isolated from the main project:
 
 ### Prerequisites
 
-1. Navigate to the test directory: `cd qa-testing`
-2. Build the mnee package locally: `npm run build`
-3. Install dependencies: `npm install`
-4. Test configuration is already set up in `testConfig.js`
+All commands below are run **from the repository root** (the directory containing the SDK `package.json`), unless explicitly stated otherwise. Test configuration is already set up in `qa-testing/testConfig.js`.
 
-### Building and Version Management
+### Building and Packaging
 
-The test suite uses its own versioning system independent of the main package:
+The root `npm run build` builds the SDK and produces a `mnee-ts-sdk-<version>.tgz` in the root directory. The `qa-testing` project then installs that tarball via its `prepare-package` script.
 
 ```bash
-# From the qa-testing directory
+# From repository root
 
-# Build the current SDK and create a QA version
+# Build SDK and emit mnee-ts-sdk-*.tgz
 npm run build
 
-# Bump the QA version (e.g., 0.0.1 → 0.0.2)
-npm run bump
-
-# Install the latest QA version
-npm run install:latest
+# Run full test suite (handles tgz copy + install + run)
+npm test
 ```
 
-**Version Management:**
-- QA versions start at 0.0.1 and increment independently from the SDK version
-- Version number is stored in `versions/.qa-version`
-- Built packages are stored as `versions/qa-mnee-X.X.X.tgz`
-- All `.tgz` files are gitignored - each developer builds locally
-
-**Workflow for Testing Changes:**
-1. Make changes to the SDK in the parent directory
-2. In qa-testing, run `npm run bump` to increment version
-3. Run `npm run build` to build and package the SDK
-4. Run `npm run install:latest` to install the new version
-5. Run tests to verify changes
+**Workflow for testing SDK changes:**
+1. Edit SDK source in `src/`.
+2. From the root: `npm run build` to rebuild and repackage.
+3. From the root: `npm test` to install the new tarball into `qa-testing/` and run every test.
 
 ### Running Tests
 
 #### Run All Tests (Recommended)
 
 ```bash
-# From the qa-testing directory
-node run-all.js
+# From repository root
+npm test
 ```
 
 This will:
@@ -168,8 +167,10 @@ This will:
 
 #### Run Individual Tests
 
+Individual test files must be invoked from inside `qa-testing/` because they import the SDK from that project's `node_modules/`. **Run `npm test` from the root at least once first** so the SDK tarball is built and installed.
+
 ```bash
-# From the qa-testing directory
+# From qa-testing/
 node core/balance.js
 node core/transfer.js
 # ... etc
@@ -318,6 +319,38 @@ node core/transfer.js
   - Monitor memory usage
   - Verify rate limiting works correctly
 
+#### Performance Suite
+
+A standalone perf-suite measures latency for every public SDK method. Run `npm test` from the root once first so the SDK is built and installed; perf scripts run from inside `qa-testing/`.
+
+```bash
+# From qa-testing/
+npm run test:perf
+
+# Custom iteration count
+node perf/perf-suite.mjs --iters 20
+
+# Include mutating ops (consumes sandbox funds)
+node perf/perf-suite.mjs --include-mutating
+
+# Write JSON report
+node perf/perf-suite.mjs --out perf/report.json
+```
+
+The suite:
+
+- Runs each SDK method N times (default 10) and prints a table of
+  `count / min / mean / p50 / p95 / p99 / max` per method.
+- Defaults to a 350 ms gap between network calls to respect the 3 req/s
+  rate limit (override with `--gap MS`).
+- Skips mutating methods (`transfer`, `transferMulti`, `submitRawTx`,
+  `refreshConfig`) by default — opt in with `--include-mutating`.
+- Builds fixtures (recent txid, raw tx hex, BEEF hex, inscription /
+  cosigner scripts) once from the test address history.
+
+The helper module `perf/perfTimer.js` exports `Recorder`, `time()`, and
+`repeat()` so any existing test file can opt in to per-call timings.
+
 ## Method-Specific Testing Guidelines
 
 ### Essential Methods Priority
@@ -408,9 +441,10 @@ When reporting issues, please include:
 For rapid validation, QA can run:
 
 ```bash
-# From the qa-testing directory
-npm install  # Install mnee package if not already done
-node run-all.js  # Run complete test suite
+# From repository root
+npm install      # Install SDK dev dependencies (one-time)
+npm run build    # Build SDK and emit mnee-ts-sdk-*.tgz
+npm test         # Package, install into qa-testing/, run full suite
 ```
 
 This runs all tests with proper cooldown periods to prevent overwhelming the API server. The test suite includes:
