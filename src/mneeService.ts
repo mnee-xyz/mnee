@@ -2109,7 +2109,7 @@ export class MNEEService {
         .writeBin(Utils.toArray(sigResponse.sig, 'hex'))
         .writeBin(Utils.toArray(sigResponse.pubKey, 'hex'));
     }
-    (tx as any).invalidateSerializationCaches();
+    (tx as unknown as { invalidateSerializationCaches(): void }).invalidateSerializationCaches();
     return tx;
   }
 

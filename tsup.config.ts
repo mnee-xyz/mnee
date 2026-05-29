@@ -1,3 +1,4 @@
+import { NodeGlobalsPolyfillPlugin } from '@esbuild-plugins/node-globals-polyfill'
 import { defineConfig } from 'tsup'
 
 export default defineConfig([
@@ -16,5 +17,6 @@ export default defineConfig([
     dts: false,
     outExtension: () => ({ js: '.umd.js' }),
     sourcemap: true,
+    esbuildPlugins: [NodeGlobalsPolyfillPlugin({ buffer: true, process: true })],
   },
 ])
