@@ -567,10 +567,10 @@ export class MNEEService {
   }
 
   private isAlreadySpentError(err: unknown): boolean {
-    if (typeof err === 'string') return err.includes('already spent');
+    if (typeof err === 'string') return err.toLowerCase().includes('already spent');
     const msg = (err as { message?: unknown })?.message;
     if (typeof msg !== 'string') return false;
-    return msg.includes('already spent');
+    return msg.toLowerCase().includes('already spent');
   }
 
   public async getEnoughUtxos(address: string, totalAtomicTokenAmount: number): Promise<MNEEUtxo[]> {
