@@ -708,8 +708,8 @@ export class MNEEService {
         lastErr = err;
         const locked = this.extractLockedOutpoint(err);
         if (locked) {
-          if (attempt === MNEEService.LOCK_RETRY_MAX) throw err;
           this.usedOutpoints.set(locked, Date.now());
+          if (attempt === MNEEService.LOCK_RETRY_MAX) throw err;
           await new Promise((r) => setTimeout(r, MNEEService.LOCK_RETRY_BACKOFF_MS));
           continue;
         }
