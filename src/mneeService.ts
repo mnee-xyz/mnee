@@ -566,6 +566,11 @@ export class MNEEService {
     return m ? `${m[1]}_${m[2]}` : null;
   }
 
+  private isAlreadySpentError(err: unknown): boolean {
+    const msg = typeof err === 'string' ? err : (err as { message?: unknown })?.message;
+    return typeof msg === 'string' && msg.toLowerCase().includes('already spent');
+  }
+
   public async getEnoughUtxos(address: string, totalAtomicTokenAmount: number): Promise<MNEEUtxo[]> {
     if (
       typeof totalAtomicTokenAmount !== 'number' ||
@@ -700,11 +705,18 @@ export class MNEEService {
       } catch (err) {
         lastErr = err;
         const locked = this.extractLockedOutpoint(err);
-        if (!locked || attempt === MNEEService.LOCK_RETRY_MAX) {
-          throw err;
+        if (locked) {
+          this.usedOutpoints.set(locked, Date.now());
+          if (attempt === MNEEService.LOCK_RETRY_MAX) throw err;
+          await new Promise((r) => setTimeout(r, MNEEService.LOCK_RETRY_BACKOFF_MS));
+          continue;
         }
-        this.usedOutpoints.set(locked, Date.now());
-        await new Promise((r) => setTimeout(r, MNEEService.LOCK_RETRY_BACKOFF_MS));
+        if (this.isAlreadySpentError(err) && attempt < MNEEService.LOCK_RETRY_MAX) {
+          // Inputs already marked in usedOutpoints (pre-submit); just retry with fresh UTXO selection.
+          await new Promise((r) => setTimeout(r, MNEEService.LOCK_RETRY_BACKOFF_MS));
+          continue;
+        }
+        throw err;
       }
     }
     throw lastErr;
@@ -2109,6 +2121,7 @@ export class MNEEService {
         .writeBin(Utils.toArray(sigResponse.sig, 'hex'))
         .writeBin(Utils.toArray(sigResponse.pubKey, 'hex'));
     }
+    (tx as any).invalidateSerializationCaches?.();
     return tx;
   }
 
