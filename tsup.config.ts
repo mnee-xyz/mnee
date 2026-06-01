@@ -14,7 +14,7 @@ export default defineConfig([
     format: ['iife'],
     globalName: 'mnee',
     dts: false,
-    outExtension: () => ({ js: '.umd.js' }),
+    outExtension: () => ({ js: '.global.js' }),
     sourcemap: true,
     esbuildPlugins: [NodeGlobalsPolyfillPlugin({ buffer: true, process: true })],
   },
